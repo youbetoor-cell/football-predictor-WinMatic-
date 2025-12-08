@@ -1,0 +1,289 @@
+{
+  "league_id": 292,
+  "seasons": [
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "team_index": {
+    "2746": 0,
+    "2747": 1,
+    "2748": 2,
+    "2749": 3,
+    "2750": 4,
+    "2752": 5,
+    "2753": 6,
+    "2756": 7,
+    "2757": 8,
+    "2759": 9,
+    "2761": 10,
+    "2762": 11,
+    "2763": 12,
+    "2764": 13,
+    "2765": 14,
+    "2766": 15,
+    "2767": 16,
+    "2768": 17,
+    "7078": 18
+  },
+  "attack_strength": {
+    "2746": 0.9118773045035243,
+    "2747": 0.9050296651705817,
+    "2748": 0.0,
+    "2749": 0.7566641462901584,
+    "2750": 1.012038295663087,
+    "2752": 1.5133282925803169,
+    "2753": 3.0266565851606337,
+    "2756": 1.0286675975709345,
+    "2757": 0.7168397175380449,
+    "2759": 0.8761374325464993,
+    "2761": 0.9109838077045987,
+    "2762": 1.1055157981512056,
+    "2763": 0.8363130037943858,
+    "2764": 0.9906326652088259,
+    "2765": 0.7961422756618188,
+    "2766": 1.0304570939609397,
+    "2767": 1.2246011841274933,
+    "2768": 0.979783061221872,
+    "7078": 0.3783320731450792
+  },
+  "defense_strength": {
+    "2746": 0.990736870085581,
+    "2747": 1.0250916016958123,
+    "2748": 0.0,
+    "2749": 1.5227088840724199,
+    "2750": 1.0468623577997886,
+    "2752": 0.7613544420362099,
+    "2753": 2.28406332610863,
+    "2756": 1.26892407006035,
+    "2757": 1.1620673062657942,
+    "2759": 0.9082824922537241,
+    "2761": 0.9917643389682208,
+    "2762": 0.8355123422345421,
+    "2763": 0.8915861229108248,
+    "2764": 0.8815683013050852,
+    "2765": 1.0327938518056412,
+    "2766": 0.9216395877280437,
+    "2767": 0.786398996050559,
+    "2768": 0.9272906665825633,
+    "7078": 0.7613544420362099
+  },
+  "team_summary": {
+    "2746": {
+      "team_id": 2746,
+      "team_name": "Gangwon FC",
+      "matches": 156,
+      "gf": 188.0,
+      "ga": 203.0,
+      "attack_strength": 0.9118773045035243,
+      "defense_strength": 0.990736870085581,
+      "rating": 0.9204031181606831
+    },
+    "2747": {
+      "team_id": 2747,
+      "team_name": "Daegu FC",
+      "matches": 153,
+      "gf": 183.0,
+      "ga": 206.0,
+      "attack_strength": 0.9050296651705817,
+      "defense_strength": 1.0250916016958123,
+      "rating": 0.882876870392254
+    },
+    "2748": {
+      "team_id": 2748,
+      "team_name": "FC Anyang",
+      "matches": 1,
+      "gf": 0.0,
+      "ga": 0.0,
+      "attack_strength": 0.0,
+      "defense_strength": 0.0,
+      "rating": 1.0
+    },
+    "2749": {
+      "team_id": 2749,
+      "team_name": "Seoul E-Land FC",
+      "matches": 2,
+      "gf": 2.0,
+      "ga": 4.0,
+      "attack_strength": 0.7566641462901584,
+      "defense_strength": 1.5227088840724199,
+      "rating": 0.49691976858143266
+    },
+    "2750": {
+      "team_id": 2750,
+      "team_name": "Daejeon Citizen",
+      "matches": 80,
+      "gf": 107.0,
+      "ga": 110.0,
+      "attack_strength": 1.012038295663087,
+      "defense_strength": 1.0468623577997886,
+      "rating": 0.9667348225129689
+    },
+    "2752": {
+      "team_id": 2752,
+      "team_name": "Busan I Park",
+      "matches": 1,
+      "gf": 2.0,
+      "ga": 1.0,
+      "attack_strength": 1.5133282925803169,
+      "defense_strength": 0.7613544420362099,
+      "rating": 1.9876790743257307
+    },
+    "2753": {
+      "team_id": 2753,
+      "team_name": "Asan Mugunghwa",
+      "matches": 1,
+      "gf": 4.0,
+      "ga": 3.0,
+      "attack_strength": 3.0266565851606337,
+      "defense_strength": 2.28406332610863,
+      "rating": 1.3251193828838201
+    },
+    "2756": {
+      "team_id": 2756,
+      "team_name": "Suwon City FC",
+      "matches": 153,
+      "gf": 208.0,
+      "ga": 255.0,
+      "attack_strength": 1.0286675975709345,
+      "defense_strength": 1.26892407006035,
+      "rating": 0.8106612695289256
+    },
+    "2757": {
+      "team_id": 2757,
+      "team_name": "Seongnam FC",
+      "matches": 76,
+      "gf": 72.0,
+      "ga": 116.0,
+      "attack_strength": 0.7168397175380449,
+      "defense_strength": 1.1620673062657942,
+      "rating": 0.6168659196183301
+    },
+    "2759": {
+      "team_id": 2759,
+      "team_name": "Gwangju FC",
+      "matches": 114,
+      "gf": 132.0,
+      "ga": 136.0,
+      "attack_strength": 0.8761374325464993,
+      "defense_strength": 0.9082824922537241,
+      "rating": 0.9646089625404282
+    },
+    "2761": {
+      "team_id": 2761,
+      "team_name": "Jeju United FC",
+      "matches": 152,
+      "gf": 183.0,
+      "ga": 198.0,
+      "attack_strength": 0.9109838077045987,
+      "defense_strength": 0.9917643389682208,
+      "rating": 0.9185486631353756
+    },
+    "2762": {
+      "team_id": 2762,
+      "team_name": "Jeonbuk Motors",
+      "matches": 154,
+      "gf": 225.0,
+      "ga": 169.0,
+      "attack_strength": 1.1055157981512056,
+      "defense_strength": 0.8355123422345421,
+      "rating": 1.3231591471103237
+    },
+    "2763": {
+      "team_id": 2763,
+      "team_name": "Incheon United",
+      "matches": 152,
+      "gf": 168.0,
+      "ga": 178.0,
+      "attack_strength": 0.8363130037943858,
+      "defense_strength": 0.8915861229108248,
+      "rating": 0.9380058552997831
+    },
+    "2764": {
+      "team_id": 2764,
+      "team_name": "Pohang Steelers",
+      "matches": 152,
+      "gf": 199.0,
+      "ga": 176.0,
+      "attack_strength": 0.9906326652088259,
+      "defense_strength": 0.8815683013050852,
+      "rating": 1.1237162948602852
+    },
+    "2765": {
+      "team_id": 2765,
+      "team_name": "Suwon Bluewings",
+      "matches": 115,
+      "gf": 121.0,
+      "ga": 156.0,
+      "attack_strength": 0.7961422756618188,
+      "defense_strength": 1.0327938518056412,
+      "rating": 0.7708627179276071
+    },
+    "2766": {
+      "team_id": 2766,
+      "team_name": "FC Seoul",
+      "matches": 152,
+      "gf": 207.0,
+      "ga": 184.0,
+      "attack_strength": 1.0304570939609397,
+      "defense_strength": 0.9216395877280437,
+      "rating": 1.1180694793082235
+    },
+    "2767": {
+      "team_id": 2767,
+      "team_name": "Ulsan Hyundai FC",
+      "matches": 152,
+      "gf": 246.0,
+      "ga": 157.0,
+      "attack_strength": 1.2246011841274933,
+      "defense_strength": 0.786398996050559,
+      "rating": 1.557226281159649
+    },
+    "2768": {
+      "team_id": 2768,
+      "team_name": "Sangju Sangmu FC",
+      "matches": 78,
+      "gf": 101.0,
+      "ga": 95.0,
+      "attack_strength": 0.979783061221872,
+      "defense_strength": 0.9272906665825633,
+      "rating": 1.0566083500363097
+    },
+    "7078": {
+      "team_id": 7078,
+      "team_name": "Gimpo Citizen",
+      "matches": 2,
+      "gf": 1.0,
+      "ga": 2.0,
+      "attack_strength": 0.3783320731450792,
+      "defense_strength": 0.7613544420362099,
+      "rating": 0.49691976858143266
+    }
+  },
+  "feature_cols": [
+    "home_team_idx",
+    "away_team_idx",
+    "home_advantage",
+    "home_att_str",
+    "home_def_str",
+    "away_att_str",
+    "away_def_str",
+    "home_form_gf",
+    "home_form_ga",
+    "away_form_gf",
+    "away_form_ga"
+  ],
+  "target_cols": [
+    "home_goals",
+    "away_goals"
+  ],
+  "metrics": {
+    "samples_total": 923,
+    "samples_train": 738,
+    "samples_test": 185,
+    "logloss_1x2": 0.89509,
+    "brier_1x2": 0.52852
+  },
+  "trained_at": "2025-12-01T21:00:14.595445+00:00"
+}

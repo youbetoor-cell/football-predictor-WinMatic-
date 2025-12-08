@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WINMATIC – Model Metrics</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet" href="/static/assets/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap" rel="stylesheet" />
+</head>
+
+<body>
+    <header class="wm-main-header">
+      <div class="wm-main-logo">
+       <span class="wm-main-logo-mark">W</span>
+       <span class="wm-main-logo-text">WinMatic</span>
+      </div>
+      <nav class="wm-main-nav">
+        <a href="/static/index.html" class="wm-main-link">Home</a>
+        <a href="/static/predictor.html" class="wm-main-link">Predictions</a>
+        <a href="/static/all-matches.html" class="wm-main-link">All Matches</a>
+        <a href="/static/bet-of-day.html" class="wm-main-link">Bet of the Day</a>
+        <a href="/static/results.html" class="wm-main-link">Results</a>
+        <a href="/static/metrics.html" class="wm-main-link">Progress</a>
+        <a href="/static/tutorial.html" class="wm-main-link">Tutorial</a>
+      </nav>
+      <button class="wm-main-cta">Launch App</button>
+   </header>
+
+  <div class="wm-page-shell">
+
+    <!-- SHARED NAVBAR -->
+    <header class="wm-main-header">
+      <div class="wm-brand">
+        <span class="wm-logo">WINMATIC</span>
+        <span class="wm-tagline">AI FOOTBALL EDGE</span>
+      </div>
+
+      <nav class="wm-nav">
+        <a href="/static/index.html" class="wm-nav-link">Home</a>
+        <a href="/static/predictor.html" class="wm-nav-link">Predictions</a>
+        <a href="/static/metrics.html" class="wm-nav-link wm-nav-link--active">Metrics</a>
+      </nav>
+
+      <div class="wm-nav-cta">
+        <button class="wm-btn wm-btn--ghost">Log in</button>
+        <button class="wm-btn wm-btn--primary">Get Access</button>
+      </div>
+    </header>
+
+    <!-- METRICS CONTENT -->
+    <main class="wm-main">
+      <section class="wm-metrics-hero">
+        <h1 class="wm-section-title">Model performance & tracking</h1>
+        <p class="wm-section-subtitle">
+          Explore how WINMATIC performs across leagues, timeframes, and edge sizes.
+        </p>
+      </section>
+
+      <section class="wm-metrics-grid">
+        <div class="wm-metric-card">
+      <h3>Model hit-rate (holdout)</h3>
+      <p class="wm-metric-main">
+       <span id="metricHitActual">--%</span>
+      </p>
+      <p class="wm-metric-sub">
+        Expected (average confidence): <span id="metricHitExpected">--%</span>
+      </p>
+    </div>
+
+
+        <div class="wm-metric-card">
+          <h3>Average model edge (holdout)</h3>
+          <p class="wm-metric-main">
+            <span id="metricEdge">-- pts</span>
+          </p>
+         <p class="wm-metric-sub">
+           Versus simple baseline (always picks the most common outcome). Baseline hit-rate:
+           <span id="metricBaseline">--%</span>
+         </p>
+        </div>
+
+
+        <div class="wm-metric-card">
+          <h3>Tracked leagues</h3>
+          <p class="wm-metric-main">22</p>
+          <p class="wm-metric-sub">Top European + key international competitions.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+        <div class="wm-metric-card">
+          <h3>Market baseline (holdout)</h3>
+          <p class="wm-metric-main">
+            <span id="metricMarketHit">--%</span>
+          </p>
+          <p class="wm-metric-sub">
+            Model vs market edge: <span id="metricMarketEdge">-- pts</span>
+          </p>
+        </div>
+
+  
+      <!-- NEW: calibration chart section -->
+      <section class="wm-section">
+        <h2>Calibration: Probabilities vs Reality</h2>
+        <p class="wm-section-subtitle">
+          Each line compares the model’s predicted probabilities to how often those outcomes really happened on the holdout test set.
+        </p>
+        <div class="wm-card">
+          <canvas id="calibrationChart" width="400" height="280"></canvas>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Chart.js for the calibration plot -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- NEW: inline script to load calibration data and draw the chart -->
+    <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      var canvas = document.getElementById("calibrationChart");
+      var hitActualEl = document.getElementById("metricHitActual");
+      var hitExpectedEl = document.getElementById("metricHitExpected");
+      var edgeEl = document.getElementById("metricEdge");
+      var baselineEl = document.getElementById("metricBaseline");
+      var marketHitEl = document.getElementById("metricMarketHit");
+      var marketEdgeEl = document.getElementById("metricMarketEdge");
+
+
+      fetch("/model-info?league=39")
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+          if (!data.ok || !data.info || !data.info.metrics) {
+            if (canvas) {
+              canvas.insertAdjacentHTML(
+                "beforebegin",
+                "<p class='wm-metric-sub'>No metrics available yet – train the model first.</p>"
+              );
+            }
+            return;
+          }
+
+          var metrics = data.info.metrics || {};
+
+          // --- fill hit-rate numbers ---
+          if (hitActualEl && typeof metrics.hit_rate_actual === "number") {
+            hitActualEl.textContent = (metrics.hit_rate_actual * 100).toFixed(1) + "%";
+          }
+          if (hitExpectedEl && typeof metrics.hit_rate_expected === "number") {
+            hitExpectedEl.textContent = (metrics.hit_rate_expected * 100).toFixed(1) + "%";
+          }
+                    // --- fill baseline + edge numbers ---
+          if (baselineEl && typeof metrics.baseline_hit_rate === "number") {
+            baselineEl.textContent = (metrics.baseline_hit_rate * 100).toFixed(1) + "%";
+          }
+          if (edgeEl && typeof metrics.edge_vs_baseline === "number") {
+            // edge is in absolute probability terms (e.g. 0.058 → 5.8 pts)
+            edgeEl.textContent = (metrics.edge_vs_baseline * 100).toFixed(1) + " pts";
+          }
+
+                    // --- fill market baseline metrics ---
+          if (marketHitEl && typeof metrics.market_hit_rate === "number") {
+            marketHitEl.textContent = (metrics.market_hit_rate * 100).toFixed(1) + "%";
+          }
+          if (marketEdgeEl && typeof metrics.edge_vs_market === "number") {
+            marketEdgeEl.textContent = (metrics.edge_vs_market * 100).toFixed(1) + " pts";
+          }
+
+          // --- draw calibration chart if canvas + calibration data exist ---
+          if (!canvas || !metrics.calibration) {
+            return;
+          }
+
+          var calib = metrics.calibration;
+          var home = calib.home || {};
+          var draw = calib.draw || {};
+          var away = calib.away || {};
+
+          var labels = home.predicted || [];
+          if (!labels.length) {
+            canvas.insertAdjacentHTML(
+              "beforebegin",
+              "<p class='wm-metric-sub'>Calibration data is empty.</p>"
+            );
+            return;
+          }
+
+          function toPercentTicks(arr) {
+            return arr.map(function (v) { return Math.round(v * 100); });
+          }
+
+          var ctx = canvas.getContext("2d");
+          new Chart(ctx, {
+            type: "line",
+            data: {
+              labels: toPercentTicks(labels),
+              datasets: [
+                {
+                  label: "Home win",
+                  data: home.observed || [],
+                  borderColor: "#4da3ff",
+                  backgroundColor: "rgba(77,163,255,0.15)",
+                  tension: 0.2
+                },
+                {
+                  label: "Draw",
+                  data: draw.observed || [],
+                  borderColor: "#f5c35f",
+                  backgroundColor: "rgba(245,195,95,0.15)",
+                  tension: 0.2
+                },
+                {
+                  label: "Away win",
+                  data: away.observed || [],
+                  borderColor: "#7dd3a8",
+                  backgroundColor: "rgba(125,211,168,0.15)",
+                  tension: 0.2
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: { position: "bottom" },
+                title: {
+                  display: true,
+                  text: "Calibration: predicted vs actual frequency"
+                }
+              },
+              scales: {
+                x: {
+                  title: {
+                    display: true,
+                    text: "Predicted probability (%)"
+                  }
+                },
+                y: {
+                  min: 0,
+                  max: 1,
+                  title: {
+                    display: true,
+                    text: "Actual frequency"
+                  }
+                }
+              }
+            }
+          });
+        })
+        .catch(function (err) {
+          console.error("Failed to load metrics/model-info", err);
+          if (canvas) {
+            canvas.insertAdjacentHTML(
+              "beforebegin",
+              "<p class='wm-metric-sub'>Could not load calibration data – check console.</p>"
+            );
+          }
+        });
+    });
+  </script>
+
+
+  <!-- If you have metrics.js -->
+  <script src="/static/assets/metrics.js"></script>
+</body>
+</html>

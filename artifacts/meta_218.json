@@ -1,0 +1,237 @@
+{
+  "league_id": 218,
+  "seasons": [
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "team_index": {
+    "571": 0,
+    "601": 1,
+    "618": 2,
+    "637": 3,
+    "781": 4,
+    "1023": 5,
+    "1025": 6,
+    "1026": 7,
+    "1028": 8,
+    "1072": 9,
+    "1394": 10,
+    "1398": 11,
+    "1399": 12,
+    "1405": 13,
+    "4256": 14
+  },
+  "attack_strength": {
+    "571": 1.5845940331941866,
+    "601": 1.0804589784363212,
+    "618": 0.6373459395504293,
+    "637": 1.4091777195564537,
+    "781": 1.1113243627634952,
+    "1023": 0.8419983054611175,
+    "1025": 1.1661785315947262,
+    "1026": 1.1226644072814902,
+    "1028": 0.7835262009152066,
+    "1072": 0.9826884379257826,
+    "1394": 0.8186094636427532,
+    "1398": 0.8969888648508598,
+    "1399": 0.827823249813624,
+    "1405": 0.9414008831891661,
+    "4256": 0.7952206218243888
+  },
+  "defense_strength": {
+    "571": 0.5763303877674137,
+    "601": 0.837228425413295,
+    "618": 1.0221708764176771,
+    "637": 0.7448798407937328,
+    "781": 0.9121112140309898,
+    "1023": 1.0004225598981522,
+    "1025": 0.9872724150258813,
+    "1026": 0.817209469218517,
+    "1028": 1.1309124590153024,
+    "1072": 1.0625131734729794,
+    "1394": 1.0112967181579147,
+    "1398": 1.1740770566876422,
+    "1399": 1.244267320874645,
+    "1405": 1.3048989911715028,
+    "4256": 1.1744090920543526
+  },
+  "team_summary": {
+    "571": {
+      "team_id": 571,
+      "team_name": "Red Bull Salzburg",
+      "matches": 128,
+      "gf": 271.0,
+      "ga": 106.0,
+      "attack_strength": 1.5845940331941866,
+      "defense_strength": 0.5763303877674137,
+      "rating": 2.7494542485128717
+    },
+    "601": {
+      "team_id": 601,
+      "team_name": "Austria Vienna",
+      "matches": 133,
+      "gf": 192.0,
+      "ga": 160.0,
+      "attack_strength": 1.0804589784363212,
+      "defense_strength": 0.837228425413295,
+      "rating": 1.2905187469034587
+    },
+    "618": {
+      "team_id": 618,
+      "team_name": "SCR Altach",
+      "matches": 128,
+      "gf": 109.0,
+      "ga": 188.0,
+      "attack_strength": 0.6373459395504293,
+      "defense_strength": 1.0221708764176771,
+      "rating": 0.6235219122893484
+    },
+    "637": {
+      "team_id": 637,
+      "team_name": "Sturm Graz",
+      "matches": 128,
+      "gf": 241.0,
+      "ga": 137.0,
+      "attack_strength": 1.4091777195564537,
+      "defense_strength": 0.7448798407937328,
+      "rating": 1.8918188443049484
+    },
+    "781": {
+      "team_id": 781,
+      "team_name": "Rapid Vienna",
+      "matches": 132,
+      "gf": 196.0,
+      "ga": 173.0,
+      "attack_strength": 1.1113243627634952,
+      "defense_strength": 0.9121112140309898,
+      "rating": 1.2184088361901633
+    },
+    "1023": {
+      "team_id": 1023,
+      "team_name": "Admira Wacker",
+      "matches": 32,
+      "gf": 36.0,
+      "ga": 46.0,
+      "attack_strength": 0.8419983054611175,
+      "defense_strength": 1.0004225598981522,
+      "rating": 0.8416426610239947
+    },
+    "1025": {
+      "team_id": 1025,
+      "team_name": "Wolfsberger AC",
+      "matches": 129,
+      "gf": 201.0,
+      "ga": 183.0,
+      "attack_strength": 1.1661785315947262,
+      "defense_strength": 0.9872724150258813,
+      "rating": 1.1812125142422367
+    },
+    "1026": {
+      "team_id": 1026,
+      "team_name": "Lask Linz",
+      "matches": 132,
+      "gf": 198.0,
+      "ga": 155.0,
+      "attack_strength": 1.1226644072814902,
+      "defense_strength": 0.817209469218517,
+      "rating": 1.3737780208972301
+    },
+    "1028": {
+      "team_id": 1028,
+      "team_name": "Ried",
+      "matches": 64,
+      "gf": 67.0,
+      "ga": 104.0,
+      "attack_strength": 0.7835262009152066,
+      "defense_strength": 1.1309124590153024,
+      "rating": 0.6928265708536196
+    },
+    "1072": {
+      "team_id": 1072,
+      "team_name": "TSV Hartberg",
+      "matches": 131,
+      "gf": 172.0,
+      "ga": 200.0,
+      "attack_strength": 0.9826884379257826,
+      "defense_strength": 1.0625131734729794,
+      "rating": 0.9248717686141453
+    },
+    "1394": {
+      "team_id": 1394,
+      "team_name": "FC BW Linz",
+      "matches": 64,
+      "gf": 70.0,
+      "ga": 93.0,
+      "attack_strength": 0.8186094636427532,
+      "defense_strength": 1.0112967181579147,
+      "rating": 0.8094651638283343
+    },
+    "1398": {
+      "team_id": 1398,
+      "team_name": "WSG Wattens",
+      "matches": 131,
+      "gf": 157.0,
+      "ga": 221.0,
+      "attack_strength": 0.8969888648508598,
+      "defense_strength": 1.1740770566876422,
+      "rating": 0.7639948841019722
+    },
+    "1399": {
+      "team_id": 1399,
+      "team_name": "Austria Lustenau",
+      "matches": 66,
+      "gf": 73.0,
+      "ga": 118.0,
+      "attack_strength": 0.827823249813624,
+      "defense_strength": 1.244267320874645,
+      "rating": 0.6653098059601164
+    },
+    "1405": {
+      "team_id": 1405,
+      "team_name": "Austria Klagenfurt",
+      "matches": 128,
+      "gf": 161.0,
+      "ga": 240.0,
+      "attack_strength": 0.9414008831891661,
+      "defense_strength": 1.3048989911715028,
+      "rating": 0.721435827262003
+    },
+    "4256": {
+      "team_id": 4256,
+      "team_name": "Grazer AK",
+      "matches": 32,
+      "gf": 34.0,
+      "ga": 54.0,
+      "attack_strength": 0.7952206218243888,
+      "defense_strength": 1.1744090920543526,
+      "rating": 0.6771240338690986
+    }
+  },
+  "feature_cols": [
+    "home_team_idx",
+    "away_team_idx",
+    "home_advantage",
+    "home_att_str",
+    "home_def_str",
+    "away_att_str",
+    "away_def_str",
+    "home_form_gf",
+    "home_form_ga",
+    "away_form_gf",
+    "away_form_ga"
+  ],
+  "target_cols": [
+    "home_goals",
+    "away_goals"
+  ],
+  "metrics": {
+    "samples_total": 779,
+    "samples_train": 623,
+    "samples_test": 156,
+    "logloss_1x2": 0.89249,
+    "brier_1x2": 0.52404
+  },
+  "trained_at": "2025-12-01T20:57:12.493198+00:00"
+}

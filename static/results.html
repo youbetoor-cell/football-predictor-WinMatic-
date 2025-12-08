@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WinMatic – Results & Accuracy</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+        .page-controls {
+      margin-top: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      color: var(--text-soft);
+    }
+
+    .page-controls-select {
+      border-radius: 9999px;
+      border: 1px solid var(--border-subtle);
+      background: #020617;
+      color: var(--text);
+      padding: 4px 10px;
+      font-size: 0.8rem;
+      outline: none;
+    }
+
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --border-subtle: #111827;
+      --accent-purple: #8b5cf6;
+      --accent-green: #22c55e;
+      --accent-blue: #38bdf8;
+      --text: #e5e7eb;
+      --text-soft: #9ca3af;
+      --text-softer: #6b7280;
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --shadow-soft: 0 24px 70px rgba(0, 0, 0, 0.85);
+      --shadow-card: 0 18px 50px rgba(15, 23, 42, 0.98);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #2a145a 0, #05051b 40%, #020617 100%);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      transition: background 0.5s ease;
+    }
+
+    /* TOP BAR (same as other pages) */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 22px;
+      background: rgba(2, 6, 23, 0.96);
+      border-bottom: 1px solid rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-logo {
+      width:36px;
+      height:36px;
+      border-radius:9999px;
+      background: radial-gradient(circle at 20% 10%, #a855f7, #6366f1 40%, #22c55e 95%);
+      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 0 40px rgba(129,140,248,.9);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:800;
+      font-size:1.1rem;
+      color:#f9fafb;
+    }
+
+    .brand-name {
+      font-weight:800;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      font-size:.9rem;
+    }
+
+    .brand-tagline {
+      font-size:.75rem;
+      color:var(--text-soft);
+    }
+
+    .nav {
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:0;
+    }
+
+    .nav-item {
+      border-radius:9999px;
+      padding:6px 11px;
+      font-size:.82rem;
+      color:var(--text-soft);
+      display:flex;
+      align-items:center;
+      gap:8px;
+      cursor:pointer;
+      border:1px solid transparent;
+      transition:.18s;
+      position: relative;
+      text-decoration: none;
+    }
+
+    .nav-item::before {
+      content:"●";
+      font-size:.5rem;
+      opacity:.7;
+    }
+
+    .nav-item:hover {
+      background:#061126;
+      color:var(--text);
+      border-color:#111827;
+      transform: translateY(-1px);
+    }
+
+    .nav-item.active {
+      background:rgba(139,92,246,.18);
+      border-color:rgba(139,92,246,.8);
+      color:#ddd6fe;
+      box-shadow:0 0 18px rgba(139,92,246,.8);
+    }
+
+    @media (max-width: 860px) {
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .nav {
+        width: 100%;
+      }
+    }
+
+    /* LAYOUT */
+    .main {
+      flex:1;
+      padding:18px 22px 26px;
+      max-width: 1100px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .page-header {
+      margin-bottom: 18px;
+    }
+
+    .page-kicker {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--accent-blue);
+      margin-bottom: 4px;
+    }
+
+    .page-title {
+      font-size: 1.7rem;
+      font-weight: 700;
+      margin: 0 0 6px;
+    }
+
+    .page-subtitle {
+      font-size: 0.9rem;
+      color: var(--text-soft);
+      max-width: 520px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+      margin-top: 14px;
+    }
+
+    @media (max-width: 800px) {
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .stat-card {
+      border-radius: 18px;
+      padding: 10px 13px;
+      background: linear-gradient(180deg, rgba(15,23,42,.98), #020617);
+      border: 1px solid rgba(15,23,42,1);
+      box-shadow: var(--shadow-card);
+      font-size: .8rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-label {
+      color: var(--text-soft);
+      margin-bottom: 3px;
+      font-size: 0.78rem;
+    }
+
+    .stat-value {
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+
+    .stat-sub {
+      font-size: .75rem;
+      color: var(--text-softer);
+      margin-top: 2px;
+    }
+
+    .stat-good { color: #bbf7d0; }
+    .stat-bad { color: #fecaca; }
+
+    .panel {
+      border-radius: 18px;
+      padding: 11px 13px 14px;
+      background: radial-gradient(circle at top left, rgba(15,23,42,.96), #020617);
+      border: 1px solid rgba(15,23,42,1);
+      box-shadow: var(--shadow-card);
+    }
+
+    .panel-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:8px;
+      gap:10px;
+    }
+
+    .panel-title {
+      font-size:.96rem;
+      font-weight:600;
+    }
+
+    .panel-subtitle {
+      font-size:.78rem;
+      color:var(--text-softer);
+    }
+
+    .btn {
+      border-radius:9999px;
+      padding:6px 14px;
+      border:1px solid rgba(148,163,184,.4);
+      background:rgba(15,23,42,.95);
+      color:var(--text-soft);
+      font-size:.8rem;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+    }
+
+    .btn:hover {
+      background:rgba(15,23,42,1);
+      color:var(--text);
+    }
+
+    .status-line {
+      font-size: .78rem;
+      color: var(--text-softer);
+      margin-bottom: 6px;
+    }
+
+    .status-line.error {
+      color: #fecaca;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+
+    th, td {
+      padding: 7px 8px;
+      text-align: left;
+      border-bottom: 1px solid rgba(31,41,55,0.9);
+      white-space: nowrap;
+    }
+
+    th {
+      font-weight: 500;
+      color: var(--text-soft);
+      font-size: 0.78rem;
+      background: rgba(15,23,42,0.95);
+    }
+
+    tbody tr:nth-child(even) {
+      background: rgba(15,23,42,0.85);
+    }
+
+    .empty-row {
+      text-align:center;
+      color:var(--text-soft);
+      padding:12px 0;
+    }
+  </style>
+</head>
+<body>
+  <!-- GLOBAL TOP NAV -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="brand">
+        <div class="brand-logo">W</div>
+        <div>
+          <div class="brand-name">WINMATIC</div>
+          <div class="brand-tagline">AI Match Edge Engine</div>
+        </div>
+      </a>
+    </div>
+    <div class="topbar-right">
+      <nav class="nav">
+        <a class="nav-item" href="index.html">Home</a>
+
+        <a class="nav-item" href="predictor.html">Predictions</a>
+        <a class="nav-item" href="predictor.html#today">All matches (today)</a>
+
+        <a class="nav-item" href="bets.html">Bet of the day</a>
+        <a class="nav-item" href="value.html">Value Scanner</a>
+
+        <a class="nav-item active" href="results.html">Results</a>
+        <a class="nav-item" href="progress.html">Progress</a>
+        <a class="nav-item" href="metrics.html#metrics">Metrics</a>
+
+        <a class="nav-item" href="tutorial.html">Tutorial</a>
+        <a class="nav-item" href="pricing.html">View pricing</a>
+        <a class="nav-item" href="contact.html">Contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="page-header">
+      <div class="page-kicker">Model results</div>
+      <h1 class="page-title">Prediction accuracy & recent bets</h1>
+      <p class="page-subtitle">
+        This page reads from <code>predictions_history</code> and shows how often the model was right,
+        plus the last few finished matches.
+      </p>
+
+      <!-- League dropdown -->
+      <div class="page-controls">
+        <span class="page-controls-label">League:</span>
+        <select id="league-select" class="page-controls-select">
+          <option value="39">Premier League (39)</option>
+          <option value="140">La Liga (140)</option>
+          <option value="78">Bundesliga (78)</option>
+          <option value="135">Serie A (135)</option>
+          <option value="61">Ligue 1 (61)</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- SUMMARY CARDS -->
+    <section class="summary-grid">
+      <article class="stat-card">
+        <div class="stat-label">Total finished bets</div>
+        <div id="stat-total" class="stat-value">–</div>
+        <div class="stat-sub">Rows with prediction + actual result</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-label">Correct predictions</div>
+        <div id="stat-correct" class="stat-value stat-good">–</div>
+        <div class="stat-sub">When predicted side matched result</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-label">Hit rate</div>
+        <div id="stat-accuracy" class="stat-value">–</div>
+        <div class="stat-sub">Correct / total</div>
+      </article>
+    </section>
+
+    <!-- TABLE -->
+    <section class="panel">
+      <header class="panel-header">
+        <div>
+          <div class="panel-title">Recent finished matches</div>
+          <div class="panel-subtitle">Latest predictions with known results (league 39 by default).</div>
+        </div>
+        <button id="btn-refresh" class="btn">🔄 Update results</button>
+      </header>
+
+      <div id="results-message" class="status-line">Loading…</div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Fixture</th>
+              <th>Model pick</th>
+              <th>Edge</th>
+              <th>Actual</th>
+              <th>Outcome</th>
+            </tr>
+          </thead>
+          <tbody id="results-body">
+            <tr>
+              <td colspan="6" class="empty-row">Loading…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+  // Current league (default 39)
+  let CURRENT_LEAGUE = 39;
+
+  function getLeagueId() {
+    const sel = document.getElementById("league-select");
+    if (!sel) return CURRENT_LEAGUE;
+    const val = parseInt(sel.value, 10);
+    if (!Number.isNaN(val)) {
+      CURRENT_LEAGUE = val;
+    }
+    return CURRENT_LEAGUE;
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function fmtPct(x) {
+    if (!Number.isFinite(x)) return "0.0%";
+    return (x * 100).toFixed(1) + "%";
+  }
+
+  async function loadResults() {
+    const league = getLeagueId();
+
+    const msg = document.getElementById("results-message");
+    const tbody = document.getElementById("results-body");
+    const elTotal = document.getElementById("stat-total");
+    const elCorrect = document.getElementById("stat-correct");
+    const elAcc = document.getElementById("stat-accuracy");
+
+    if (msg) msg.textContent = `Loading results for league ${league}…`;
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-row">Loading…</td></tr>';
+    }
+
+    try {
+      const res = await fetch(`/results/recent?league=${league}&limit=50`);
+      const data = await res.json();
+
+      if (!data.ok) {
+        if (msg) msg.textContent = data.error || "Backend returned ok=false.";
+        if (tbody) {
+          tbody.innerHTML =
+            '<tr><td colspan="6" class="empty-row">Error loading data.</td></tr>';
+        }
+        return;
+      }
+
+      const fixtures = Array.isArray(data.fixtures) ? data.fixtures : [];
+      const total = fixtures.length;
+      const correct = fixtures.filter(f => f.won).length;
+      const acc = total ? correct / total : 0;
+
+      if (elTotal) elTotal.textContent = String(total);
+      if (elCorrect) elCorrect.textContent = String(correct);
+      if (elAcc) elAcc.textContent = total ? fmtPct(acc) : "0.0%";
+
+      if (!fixtures.length) {
+        if (msg) msg.textContent =
+          `No finished matches with results yet for league ${league}.`;
+        if (tbody) {
+          tbody.innerHTML =
+            '<tr><td colspan="6" class="empty-row">No data yet.</td></tr>';
+        }
+        return;
+      }
+
+      if (msg) msg.textContent =
+        `Showing ${fixtures.length} finished matches for league ${league}.`;
+
+      if (!tbody) return;
+      tbody.innerHTML = "";
+
+      fixtures.forEach(f => {
+        const tr = document.createElement("tr");
+
+        const date = fmtDate(f.kickoff_utc);
+        const fixture = `${f.home_team || "?"} vs ${f.away_team || "?"}`;
+        const pick = (f.predicted_side || "-").toUpperCase();
+        const edge = (typeof f.edge_value === "number")
+          ? (f.edge_value * 100).toFixed(1) + "%"
+          : "–";
+        const actual = (f.actual_result || "-").toUpperCase();
+        const outcome = f.won ? "✅ Correct" : "❌ Wrong";
+
+        tr.innerHTML = `
+          <td>${date}</td>
+          <td>${fixture}</td>
+          <td>${pick}</td>
+          <td>${edge}</td>
+          <td>${actual}</td>
+          <td>${outcome}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch (err) {
+      console.error("Error loading /results/recent:", err);
+      if (msg) msg.textContent = "Error loading results.";
+      if (tbody) {
+        tbody.innerHTML =
+          '<tr><td colspan="6" class="empty-row">Error loading results.</td></tr>';
+      }
+    }
+  }
+
+  async function refreshAndReload() {
+    const league = getLeagueId();
+    const btn = document.getElementById("btn-refresh");
+    const msg = document.getElementById("results-message");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Updating…";
+    }
+    if (msg) msg.textContent =
+      `Calling /update-results for league ${league}…`;
+
+    try {
+      await fetch(`/update-results?league=${league}`);
+    } catch (err) {
+      console.error("Error calling /update-results:", err);
+    }
+
+    await loadResults();
+
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🔄 Update results";
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    // Initial load for default league (39)
+    loadResults();
+
+    // React to league changes
+    const sel = document.getElementById("league-select");
+    if (sel) {
+      sel.addEventListener("change", () => {
+        loadResults();
+      });
+    }
+
+    const btn = document.getElementById("btn-refresh");
+    if (btn) btn.addEventListener("click", refreshAndReload);
+  });
+</script>
+
+</body>
+</html>

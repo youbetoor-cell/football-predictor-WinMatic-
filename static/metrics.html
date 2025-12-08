@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WinMatic – Model Results & Metrics</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --border-subtle: #111827;
+      --accent-purple: #8b5cf6;
+      --accent-green: #22c55e;
+      --accent-blue: #38bdf8;
+      --text: #e5e7eb;
+      --text-soft: #9ca3af;
+      --text-softer: #6b7280;
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --shadow-soft: 0 24px 70px rgba(0, 0, 0, 0.85);
+      --shadow-card: 0 18px 50px rgba(15, 23, 42, 0.98);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, #2a145a 0, #05051b 40%, #020617 100%);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      transition: background 0.5s ease;
+    }
+
+    /* TOP BAR */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 22px;
+      background: rgba(2, 6, 23, 0.96);
+      border-bottom: 1px solid rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-logo {
+      width:36px;
+      height:36px;
+      border-radius:9999px;
+      background: radial-gradient(circle at 20% 10%, #a855f7, #6366f1 40%, #22c55e 95%);
+      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 0 40px rgba(129,140,248,.9);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:800;
+      font-size:1.1rem;
+      color:#f9fafb;
+    }
+
+    .brand-name {
+      font-weight:800;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      font-size:.9rem;
+    }
+
+    .brand-tagline {
+      font-size:.75rem;
+      color:var(--text-soft);
+    }
+
+    .nav {
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:0;
+    }
+
+    .nav-item {
+      border-radius:9999px;
+      padding:6px 11px;
+      font-size:.82rem;
+      color:var(--text-soft);
+      display:flex;
+      align-items:center;
+      gap:8px;
+      cursor:pointer;
+      border:1px solid transparent;
+      transition:.18s;
+      position: relative;
+      text-decoration: none;
+    }
+
+    .nav-item::before {
+      content:"●";
+      font-size:.5rem;
+      opacity:.7;
+    }
+
+    .nav-item:hover {
+      background:#061126;
+      color:var(--text);
+      border-color:#111827;
+      transform: translateY(-1px);
+    }
+
+    .nav-item.active {
+      background:rgba(139,92,246,.18);
+      border-color:rgba(139,92,246,.8);
+      color:#ddd6fe;
+      box-shadow:0 0 18px rgba(139,92,246,.8);
+    }
+
+    @media (max-width: 860px) {
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .nav {
+        width: 100%;
+      }
+    }
+
+    /* MAIN */
+    .main {
+      flex:1;
+      padding:18px 22px 26px;
+      position:relative;
+      max-width: 1100px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .section-title {
+      font-size:1.1rem;
+      font-weight:700;
+      margin-bottom:4px;
+    }
+    .section-subtitle {
+      font-size:.8rem;
+      color:var(--text-softer);
+      margin-bottom:10px;
+    }
+
+    /* HERO */
+    .hero {
+      position:relative;
+      margin-bottom:18px;
+      border-radius:var(--radius-lg);
+      padding:20px 20px 16px;
+      border:1px solid rgba(15,23,42,.9);
+      background:
+        radial-gradient(circle at top left, rgba(139,92,246,.38), transparent 62%),
+        radial-gradient(circle at center right, rgba(34,197,94,.25), transparent 60%),
+        #020617;
+      box-shadow:var(--shadow-soft);
+      overflow:hidden;
+    }
+
+    .hero-content {
+      position:relative;
+      display:flex;
+      justify-content:space-between;
+      gap:16px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    .hero-left { max-width:520px; }
+
+    .eyebrow {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:3px 10px;
+      border-radius:9999px;
+      background:rgba(15,23,42,.9);
+      border:1px solid rgba(148,163,184,.3);
+      font-size:.72rem;
+      color:var(--text-soft);
+      margin-bottom:8px;
+    }
+
+    .eyebrow-dot {
+      width:7px;
+      height:7px;
+      border-radius:9999px;
+      background:#22c55e;
+      box-shadow:0 0 12px rgba(34,197,94,1);
+    }
+
+    .hero-title {
+      font-size:1.9rem;
+      font-weight:800;
+      letter-spacing:.02em;
+      margin:0 0 6px;
+    }
+
+    .hero-highlight { color:#c4b5fd; }
+
+    .hero-subtitle {
+      font-size:.9rem;
+      color:var(--text-soft);
+      max-width:460px;
+      line-height:1.45;
+    }
+
+    .hero-right {
+      min-width:220px;
+      max-width:260px;
+      border-radius:var(--radius-md);
+      border:1px solid rgba(148,163,184,.5);
+      padding:10px 13px;
+      background: radial-gradient(circle at top left, rgba(15,23,42,.9), #020617);
+      box-shadow:0 12px 30px rgba(15,23,42,1);
+      font-size:.78rem;
+    }
+
+    .hero-right-row {
+      display:flex;
+      justify-content:space-between;
+      margin-top:4px;
+    }
+
+    .hero-right-label { color:var(--text-softer); }
+    .hero-right-value { font-weight:600; color:#bbf7d0; }
+
+    /* CONTROLS */
+    .controls {
+      margin:14px 0 10px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+      font-size:.85rem;
+    }
+
+    .control-group {
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .field-label {
+      font-size:.8rem;
+      color:var(--text-soft);
+    }
+
+    select {
+      border-radius:9999px;
+      border:1px solid #111827;
+      background:#020617;
+      color:var(--text);
+      padding:5px 12px;
+      font-size:.85rem;
+      min-width:140px;
+    }
+
+    .btn {
+      border-radius:9999px;
+      padding:7px 16px;
+      border:none;
+      cursor:pointer;
+      font-size:.84rem;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      transition:.18s;
+    }
+
+    .btn-primary {
+      background:linear-gradient(135deg, #6366f1, #22c55e);
+      color:#f9fafb;
+      box-shadow:0 0 20px rgba(129,140,248,.9);
+    }
+
+    .btn-primary:hover {
+      transform:translateY(-1px);
+      box-shadow:0 0 28px rgba(94,234,212,.9);
+    }
+
+    .status-line {
+      font-size:.78rem;
+      color:var(--text-softer);
+      margin-top:4px;
+    }
+    .status-line.error { color:#fecaca; }
+
+    /* ACCURACY + MINI METRICS */
+    .accuracy-and-metrics {
+      display:grid;
+      grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+      gap:16px;
+      margin-top:14px;
+      margin-bottom:18px;
+    }
+    @media (max-width: 900px) {
+      .accuracy-and-metrics {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .accuracy-card,
+    .summary-card {
+      border-radius:var(--radius-md);
+      background:radial-gradient(circle at top left, rgba(15,23,42,.96), #020617);
+      border:1px solid rgba(15,23,42,1);
+      padding:12px 14px;
+      box-shadow:var(--shadow-card);
+      font-size:.82rem;
+    }
+
+    .accuracy-header {
+      margin-bottom:10px;
+    }
+
+    .accuracy-ring {
+      --acc-angle: 0deg;
+      width:160px;
+      height:160px;
+      border-radius:9999px;
+      padding:12px;
+      background: conic-gradient(#22c55e 0deg var(--acc-angle), #111827 var(--acc-angle) 360deg);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      box-shadow:0 0 40px rgba(34,197,94,.7);
+      margin:0 auto;
+    }
+
+    .accuracy-inner {
+      width:110px;
+      height:110px;
+      border-radius:9999px;
+      background:radial-gradient(circle at top, #020617, #020617 60%);
+      border:1px solid rgba(15,23,42,.9);
+      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 18px 40px rgba(15,23,42,1);
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+    }
+
+    .accuracy-value { font-size:1.7rem; font-weight:800; }
+    .accuracy-label { font-size:.78rem; color:var(--text-softer); margin-top:2px; }
+    .accuracy-baseline { font-size:.78rem; color:var(--text-soft); margin-top:4px; }
+
+    /* MINI METRICS */
+    .mini-metrics {
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:10px;
+    }
+    @media (max-width:600px){
+      .mini-metrics{ grid-template-columns:minmax(0,1fr); }
+    }
+
+    .mini-card {
+      border-radius:14px;
+      padding:9px 11px;
+      background:linear-gradient(180deg, rgba(15,23,42,.98), #020617);
+      border:1px solid rgba(15,23,42,1);
+      box-shadow:var(--shadow-card);
+      font-size:.78rem;
+      position:relative;
+      overflow:hidden;
+    }
+
+    .mini-label { color:var(--text-soft); margin-bottom:2px; }
+    .mini-value { font-size:1.1rem; font-weight:700; }
+    .mini-sub { font-size:.72rem; color:var(--text-softer); margin-top:2px; }
+
+    .mini-pill {
+      position:absolute;
+      top:7px;
+      right:9px;
+      font-size:.7rem;
+      padding:2px 7px;
+      border-radius:9999px;
+      border:1px solid rgba(148,163,184,.45);
+      background:rgba(15,23,42,.98);
+      color:var(--text-soft);
+    }
+    .mini-pill.green { border-color:rgba(34,197,94,.8); color:#bbf7d0; }
+    .mini-pill.purple { border-color:rgba(129,140,248,.8); color:#c4b5fd; }
+
+    /* PANELS */
+    .panel {
+      border-radius:var(--radius-md);
+      background:radial-gradient(circle at top left, rgba(15,23,42,.96), #020617);
+      border:1px solid rgba(15,23,42,1);
+      padding:11px 13px;
+      box-shadow:var(--shadow-card);
+      font-size:.82rem;
+      margin-bottom:14px;
+    }
+
+    .panel-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      margin-bottom:6px;
+    }
+
+    .panel-title { font-size:.96rem; font-weight:600; }
+    .panel-subtitle { font-size:.78rem; color:var(--text-softer); }
+
+    ul.bullet-list {
+      margin:6px 0 2px;
+      padding-left:18px;
+      font-size:.8rem;
+      color:var(--text-soft);
+    }
+
+    ul.bullet-list li {
+      margin-bottom:3px;
+    }
+
+    table.metrics-table {
+      width:100%;
+      border-collapse:collapse;
+      margin-top:6px;
+      font-size:.78rem;
+    }
+
+    table.metrics-table th,
+    table.metrics-table td {
+      padding:4px 6px;
+      border-bottom:1px solid rgba(15,23,42,.9);
+      text-align:left;
+    }
+
+    table.metrics-table th {
+      color:var(--text-soft);
+      font-weight:500;
+    }
+
+    table.metrics-table tr:last-child td {
+      border-bottom:none;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size:.78rem;
+      padding:1px 4px;
+      border-radius:4px;
+      background:rgba(15,23,42,.9);
+      border:1px solid rgba(30,64,175,.8);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- GLOBAL MENU -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="brand">
+        <div class="brand-logo">W</div>
+        <div>
+          <div class="brand-name">WINMATIC</div>
+          <div class="brand-tagline">AI Match Edge Engine</div>
+        </div>
+      </a>
+    </div>
+    <div class="topbar-right">
+      <nav class="nav">
+        <a href="index.html" class="nav-item">Home</a>
+        <a href="predictor.html" class="nav-item">Predictions</a>
+        <a href="all-matches.html" class="nav-item">All matches (today)</a>
+        <a href="value.html" class="nav-item">Value Scanner</a>
+        <a href="value.html#bet-of-day" class="nav-item">Bet of the day</a>
+        <a href="#progress" class="nav-item">Progress</a>
+        <a href="#results" class="nav-item">Results</a>
+        <a href="#metrics" class="nav-item active">Metrics</a>
+        <a href="tutorial.html" class="nav-item">Tutorial</a>
+        <a href="pricing.html" class="nav-item">View pricing</a>
+        <a href="contact.html" class="nav-item">Contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-content">
+        <div class="hero-left">
+          <div class="eyebrow">
+            <span class="eyebrow-dot"></span>
+            <span>Backtested on seasons 2018–2025</span>
+          </div>
+          <h1 class="hero-title">
+            <span class="hero-highlight">Model results</span> & live metrics
+          </h1>
+          <p class="hero-subtitle">
+            Track how WinMatic performs against the closing odds: hit rates, log loss,
+            Brier score and calibration by outcome. All computed on a proper train/test split.
+          </p>
+        </div>
+        <aside class="hero-right">
+          <div class="hero-right-row">
+            <span class="hero-right-label">League</span>
+            <span class="hero-right-value" id="hero-league-label">Premier League</span>
+          </div>
+          <div class="hero-right-row">
+            <span class="hero-right-label">Samples (test)</span>
+            <span class="hero-right-value" id="hero-samples-test">–</span>
+          </div>
+          <div class="hero-right-row">
+            <span class="hero-right-label">Edge vs market</span>
+            <span class="hero-right-value" id="hero-edge-market">–</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- CONTROLS -->
+    <section class="controls">
+      <div class="control-group">
+        <label class="field-label" for="league-select">League</label>
+        <select id="league-select">
+          <option value="39">Premier League (ENG)</option>
+          <option value="140">La Liga (ESP)</option>
+          <option value="135">Serie A (ITA)</option>
+          <option value="78">Bundesliga (GER)</option>
+          <option value="61">Ligue 1 (FRA)</option>
+          <option value="94">Primeira Liga (POR)</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <button id="btn-load-metrics" class="btn btn-primary">Load metrics</button>
+      </div>
+    </section>
+
+    <div id="status-line" class="status-line">
+      Click “Load metrics” to fetch the latest summary from <code>/model-info</code>.
+    </div>
+
+
+    <!-- ACCURACY + MINI METRICS -->
+    <section class="accuracy-and-metrics" id="progress">
+      <article class="accuracy-card">
+        <div class="accuracy-header">
+          <div class="section-title">Out-of-sample accuracy</div>
+          <div class="section-subtitle">
+            How often the model’s predicted side (1X2) actually wins on the test set.
+          </div>
+        </div>
+        <div class="accuracy-ring" id="accuracy-ring">
+          <div class="accuracy-inner">
+            <div class="accuracy-value" id="metric-hit-rate">–%</div>
+            <div class="accuracy-label">Model hit rate</div>
+            <div class="accuracy-baseline" id="metric-baseline-label">
+              Baseline: –%
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="summary-card">
+        <div class="section-title">Progress snapshot</div>
+        <div class="section-subtitle">
+          Comparison vs a simple betting baseline and the market 1X2 probabilities.
+        </div>
+
+        <div class="mini-metrics">
+          <div class="mini-card">
+            <div class="mini-pill green">Edge vs market</div>
+            <div class="mini-label">Hit rate lift</div>
+            <div class="mini-value" id="metric-edge-market">– p.p.</div>
+            <div class="mini-sub">
+              Extra percentage points over market or naive strategy.
+            </div>
+          </div>
+
+          <div class="mini-card">
+            <div class="mini-pill">Samples</div>
+            <div class="mini-label">Train / Test</div>
+            <div class="mini-value">
+              <span id="metric-samples-train">–</span> /
+              <span id="metric-samples-test">–</span>
+            </div>
+            <div class="mini-sub">Total: <span id="metric-samples-total">–</span> matches</div>
+          </div>
+
+          <div class="mini-card">
+            <div class="mini-pill purple">Log loss</div>
+            <div class="mini-label">Log loss (1X2)</div>
+            <div class="mini-value" id="metric-logloss">–</div>
+            <div class="mini-sub">
+              Lower is better. Measures how much probability mass the model wastes.
+            </div>
+          </div>
+
+          <div class="mini-card">
+            <div class="mini-pill purple">Brier score</div>
+            <div class="mini-label">Brier (1X2)</div>
+            <div class="mini-value" id="metric-brier">–</div>
+            <div class="mini-sub">
+              Squared error of 1X2 probabilities. Lower is better.
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <!-- RESULTS PANEL -->
+    <section class="panel" id="results">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Results vs baseline</div>
+          <div class="panel-subtitle">
+            Quick comparison between WinMatic and a simple “bet on favourite / market” strategy.
+          </div>
+        </div>
+      </div>
+
+      <ul class="bullet-list" id="results-bullets">
+        <li>Load metrics to see a summary of how much the model outperforms baseline.</li>
+      </ul>
+    </section>
+
+    <!-- METRICS PANEL -->
+    <section class="panel" id="metrics">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Technical metrics</div>
+          <div class="panel-subtitle">
+            Raw numbers from the training run behind <code>/metrics/model-info</code>.
+          </div>
+        </div>
+      </div>
+
+      <table class="metrics-table">
+        <tbody>
+          <tr>
+            <th>Samples (train / test)</th>
+            <td>
+              <span id="tbl-samples-train">–</span> /
+              <span id="tbl-samples-test">–</span> (total
+              <span id="tbl-samples-total">–</span>)
+            </td>
+          </tr>
+          <tr>
+            <th>Hit rate – model</th>
+            <td><span id="tbl-hit-model">–</span>% (1X2)</td>
+          </tr>
+          <tr>
+            <th>Hit rate – expected from probs</th>
+            <td><span id="tbl-hit-expected">–</span>%</td>
+          </tr>
+          <tr>
+            <th>Hit rate – baseline / market</th>
+            <td><span id="tbl-hit-baseline">–</span>%</td>
+          </tr>
+          <tr>
+            <th>Edge vs baseline</th>
+            <td><span id="tbl-edge-baseline">–</span> p.p.</td>
+          </tr>
+          <tr>
+            <th>Edge vs market</th>
+            <td><span id="tbl-edge-market">–</span> p.p.</td>
+          </tr>
+          <tr>
+            <th>Log loss (1X2)</th>
+            <td id="tbl-logloss">–</td>
+          </tr>
+          <tr>
+            <th>Brier score (1X2)</th>
+            <td id="tbl-brier">–</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel-matches">
+  <div class="panel-header">
+    <div>
+      <h2 class="panel-title">Bankroll performance (PnL)</h2>
+      <p class="panel-subtitle">
+        Flat 1-unit stakes on all value bets (edge ≥ 5%). Odds are estimated from your logged edge.
+      </p>
+    </div>
+    <button id="refreshPnlBtn" class="btn btn-secondary">Refresh PnL</button>
+  </div>
+
+  <div class="mini-metrics">
+    <div class="mini-card">
+      <div class="mini-label">Total bets</div>
+      <div class="mini-value" id="pnlTotalBets">--</div>
+      <div class="mini-sub">With settled results</div>
+    </div>
+
+    <div class="mini-card">
+      <div class="mini-label">Total profit</div>
+      <div class="mini-value" id="pnlTotalProfit">--</div>
+      <div class="mini-sub">Units from flat staking</div>
+    </div>
+
+    <div class="mini-card">
+      <div class="mini-label">ROI per bet</div>
+      <div class="mini-value" id="pnlRoiPerBet">--</div>
+      <div class="mini-sub">Avg return per placed bet</div>
+    </div>
+  </div>
+
+  <div class="matches-list" id="pnlList">
+    <div class="empty">PnL history will appear here once bets are settled.</div>
+  </div>
+</section>
+
+
+  </main>
+
+  <script>
+  const LEAGUES = {
+    39:  "Premier League",
+    140: "La Liga",
+    135: "Serie A",
+    78:  "Bundesliga",
+    61:  "Ligue 1",
+    94:  "Primeira Liga"
+  };
+
+  function pct(x) {
+    if (typeof x !== "number" || !isFinite(x)) return null;
+    return x * 100;
+  }
+
+  function formatPct(x, digits = 1) {
+    const v = pct(x);
+    if (v === null) return "–";
+    return v.toFixed(digits);
+  }
+
+  function formatNumber(x, digits = 5) {
+    if (typeof x !== "number" || !isFinite(x)) return "–";
+    return x.toFixed(digits);
+  }
+
+  async function loadMetrics() {
+    const leagueSelect = document.getElementById("league-select");
+    const statusLine = document.getElementById("status-line");
+    const leagueId = parseInt(leagueSelect.value, 10) || 39;
+
+    statusLine.textContent = "Loading /model-info…";
+    statusLine.classList.remove("error");
+
+    try {
+      // 👇 changed from /metrics/model-info to /model-info
+      const resp = await fetch(`/model-info?league=${leagueId}`);
+      if (!resp.ok) {
+        statusLine.textContent = `HTTP ${resp.status} while calling /model-info.`;
+        statusLine.classList.add("error");
+        return;
+      }
+      const data = await resp.json();
+      if (!data.ok) {
+        statusLine.textContent = data.message || "Backend returned ok=false.";
+        statusLine.classList.add("error");
+        return;
+      }
+
+      const info = data.info || data;
+      const metrics = info.metrics || {};
+      const calib = metrics.calibration || {};
+
+      const hitExpected = metrics.hit_rate_expected;
+      const hitActual   = metrics.hit_rate_actual;
+      const hitBaseline = metrics.baseline_hit_rate ?? metrics.market_hit_rate;
+
+      const edgeVsBaseline = metrics.edge_vs_baseline;
+      const edgeVsMarket   = metrics.edge_vs_market;
+
+      const logloss = metrics.logloss_1x2;
+      const brier   = metrics.brier_1x2;
+
+      const samplesTotal = metrics.samples_total;
+      const samplesTrain = metrics.samples_train;
+      const samplesTest  = metrics.samples_test;
+
+      // HERO
+      document.getElementById("hero-league-label").textContent =
+        LEAGUES[leagueId] || `League ${leagueId}`;
+      document.getElementById("hero-samples-test").textContent =
+        samplesTest != null ? samplesTest : "–";
+      document.getElementById("hero-edge-market").textContent =
+        edgeVsMarket != null ? `${formatPct(edgeVsMarket, 1)} p.p.` : "–";
+
+      // ACCURACY RING
+      const ring = document.getElementById("accuracy-ring");
+      const hitPct = pct(hitActual);
+      if (hitPct != null) {
+        document.getElementById("metric-hit-rate").textContent =
+          `${hitPct.toFixed(1)}%`;
+        const angle = Math.max(0, Math.min(360, hitActual * 360));
+        ring.style.setProperty("--acc-angle", `${angle.toFixed(0)}deg`);
+      } else {
+        document.getElementById("metric-hit-rate").textContent = "–%";
+        ring.style.setProperty("--acc-angle", "0deg");
+      }
+
+      const basePct = pct(hitBaseline);
+      document.getElementById("metric-baseline-label").textContent =
+        basePct != null
+          ? `Baseline / market: ${basePct.toFixed(1)}%`
+          : "Baseline: –%";
+
+      // MINI METRICS
+      document.getElementById("metric-edge-market").textContent =
+        edgeVsMarket != null ? `${formatPct(edgeVsMarket, 1)} p.p.` : "– p.p.";
+
+      document.getElementById("metric-samples-train").textContent =
+        samplesTrain ?? "–";
+      document.getElementById("metric-samples-test").textContent =
+        samplesTest ?? "–";
+      document.getElementById("metric-samples-total").textContent =
+        samplesTotal ?? "–";
+
+      document.getElementById("metric-logloss").textContent =
+        formatNumber(logloss, 5);
+      document.getElementById("metric-brier").textContent =
+        formatNumber(brier, 5);
+
+      // RESULTS BULLETS
+      const bullets = document.getElementById("results-bullets");
+      bullets.innerHTML = "";
+
+      const li1 = document.createElement("li");
+      li1.textContent =
+        `Model hit rate: ${formatPct(hitActual, 1)}% vs baseline ${formatPct(hitBaseline, 1)}%.`;
+      bullets.appendChild(li1);
+
+      const li2 = document.createElement("li");
+      li2.textContent =
+        `Edge vs market: ${formatPct(edgeVsMarket, 1)} percentage points on the test set.`;
+      bullets.appendChild(li2);
+
+      const li3 = document.createElement("li");
+      li3.textContent =
+        `Train / test split: ${samplesTrain ?? "–"} training fixtures and ${samplesTest ?? "–"} held-out fixtures.`;
+      bullets.appendChild(li3);
+
+      if (hitExpected != null) {
+        const li4 = document.createElement("li");
+        li4.textContent =
+          `Expected hit rate from probabilities: ${formatPct(hitExpected, 1)}% (sanity check of calibration).`;
+        bullets.appendChild(li4);
+      }
+
+      // METRICS TABLE
+      document.getElementById("tbl-samples-train").textContent =
+        samplesTrain ?? "–";
+      document.getElementById("tbl-samples-test").textContent =
+        samplesTest ?? "–";
+      document.getElementById("tbl-samples-total").textContent =
+        samplesTotal ?? "–";
+
+      document.getElementById("tbl-hit-model").textContent =
+        formatPct(hitActual, 2);
+      document.getElementById("tbl-hit-expected").textContent =
+        formatPct(hitExpected, 2);
+      document.getElementById("tbl-hit-baseline").textContent =
+        formatPct(hitBaseline, 2);
+
+      document.getElementById("tbl-edge-baseline").textContent =
+        edgeVsBaseline != null ? `${formatPct(edgeVsBaseline, 2)} p.p.` : "–";
+      document.getElementById("tbl-edge-market").textContent =
+        edgeVsMarket   != null ? `${formatPct(edgeVsMarket, 2)} p.p.`   : "–";
+
+      document.getElementById("tbl-logloss").textContent =
+        formatNumber(logloss, 5);
+      document.getElementById("tbl-brier").textContent =
+        formatNumber(brier, 5);
+
+      statusLine.textContent =
+        "Metrics loaded from /model-info – all numbers shown are based on the latest training run.";
+    } catch (err) {
+      console.error("Error loading metrics:", err);
+      statusLine.textContent = "Network or parsing error while calling /model-info.";
+      statusLine.classList.add("error");
+    }
+  }
+
+  function initMetricsPage() {
+    const btn = document.getElementById("btn-load-metrics");
+    if (btn) btn.addEventListener("click", loadMetrics);
+
+    // Auto-load Premier League on page open
+    loadMetrics();
+  }
+
+  document.addEventListener("DOMContentLoaded", initMetricsPage);
+</script>
+
+<script>
+  async function loadPnl() {
+    const leagueSelect = document.getElementById("league-select");
+    const leagueId = parseInt(leagueSelect?.value, 10) || 39;
+
+    const totalBetsEl   = document.getElementById("pnlTotalBets");
+    const totalProfitEl = document.getElementById("pnlTotalProfit");
+    const roiPerBetEl   = document.getElementById("pnlRoiPerBet");
+    const listEl        = document.getElementById("pnlList");
+    const refreshBtn    = document.getElementById("refreshPnlBtn");
+
+    if (!totalBetsEl || !totalProfitEl || !roiPerBetEl || !listEl) {
+      console.warn("PnL elements not found");
+      return;
+    }
+
+    // Loading state
+    totalBetsEl.textContent   = "…";
+    totalProfitEl.textContent = "…";
+    roiPerBetEl.textContent   = "…";
+    listEl.innerHTML = '<div class="empty">Loading PnL…</div>';
+
+    if (refreshBtn) {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "Loading…";
+    }
+
+    try {
+      const res = await fetch(`/metrics/pnl-history?league=${leagueId}&min_edge=0.0`);
+      if (!res.ok) {
+        throw new Error("HTTP " + res.status);
+      }
+
+      const data = await res.json();
+      if (!data.ok) {
+        throw new Error(data.error || "API error");
+      }
+
+      const nBets       = data.n_bets ?? 0;
+      const totalProfit = data.total_profit ?? 0;
+      const roiFlat     = data.roi_flat ?? 0;
+
+      totalBetsEl.textContent   = nBets.toString();
+      totalProfitEl.textContent = totalProfit.toFixed(2);
+      roiPerBetEl.textContent   = roiFlat.toFixed(3);
+
+      const points = data.points || [];
+      if (!points.length) {
+        listEl.innerHTML = '<div class="empty">No settled value bets yet.</div>';
+        return;
+      }
+
+      // Newest bets first
+      listEl.innerHTML = "";
+      points.slice().reverse().forEach((pt) => {
+        const row = document.createElement("div");
+        row.className = "match-row";
+
+        const when = pt.kickoff_utc
+          ? new Date(pt.kickoff_utc).toLocaleString()
+          : "";
+
+        const edgePct = typeof pt.edge_value === "number"
+          ? (pt.edge_value * 100).toFixed(1) + "%"
+          : "--";
+
+        const outcome = pt.win ? "✅ Win" : "❌ Loss";
+
+        const profit = typeof pt.profit === "number" ? pt.profit : 0;
+        const profitText =
+          (profit >= 0 ? "+" : "") + profit.toFixed(1) + " u";
+
+        row.innerHTML = `
+          <div class="teams">
+            <div class="team-name">${pt.home_team} vs ${pt.away_team}</div>
+            <div class="muted small">${when}</div>
+          </div>
+          <div class="edge">
+            <div class="muted small">Bet side</div>
+            <div class="value">${pt.bet_side || "-"}</div>
+          </div>
+          <div class="edge">
+            <div class="muted small">Edge</div>
+            <div class="value">${edgePct}</div>
+          </div>
+          <div class="edge">
+            <div class="muted small">Result</div>
+            <div class="value">${outcome}</div>
+          </div>
+          <div class="edge">
+            <div class="muted small">PnL</div>
+            <div class="value">${profitText}</div>
+          </div>
+        `;
+        listEl.appendChild(row);
+      });
+    } catch (err) {
+      console.error("Error loading PnL", err);
+      listEl.innerHTML =
+        '<div class="empty">Failed to load PnL.</div>';
+    } finally {
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = "Refresh PnL";
+      }
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    // Load once on page load
+    loadPnl();
+
+    // Refresh PnL button
+    const refreshBtn = document.getElementById("refreshPnlBtn");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", () => loadPnl());
+    }
+
+    // When you press "Load metrics", also reload PnL for that league
+    const metricsBtn = document.getElementById("btn-load-metrics");
+    if (metricsBtn) {
+      metricsBtn.addEventListener("click", () => loadPnl());
+    }
+  });
+</script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="/static/assets/metrics.js"></script>
+
+</body>
+</html>

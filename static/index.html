@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WinMatic – AI Football Edge Engine</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet" href="assets/style.css" />
+  <script src="assets/landing.js" defer></script>
+  <script src="js/status.js" defer></script>
+<head>
+  <meta charset="UTF-8" />
+  <title>WinMatic – AI Football Predictions</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --border-subtle: #111827;
+      --accent-purple: #8b5cf6;
+      --accent-green: #22c55e;
+      --accent-blue: #38bdf8;
+      --text: #e5e7eb;
+      --text-soft: #9ca3af;
+      --text-softer: #6b7280;
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --shadow-soft: 0 24px 70px rgba(0, 0, 0, 0.85);
+      --shadow-card: 0 18px 50px rgba(15, 23, 42, 0.98);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, #2a145a 0, #05051b 40%, #020617 100%);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      transition: background 0.5s ease;
+    }
+
+    /* TOP BAR (new) */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 22px;
+      background: rgba(2, 6, 23, 0.96);
+      border-bottom: 1px solid rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand {
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+
+    .brand-logo {
+      width:36px;
+      height:36px;
+      border-radius:9999px;
+      background: radial-gradient(circle at 20% 10%, #a855f7, #6366f1 40%, #22c55e 95%);
+      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 0 40px rgba(129,140,248,.9);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:800;
+      font-size:1.1rem;
+      color:#f9fafb;
+    }
+
+    .brand-name {
+      font-weight:800;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      font-size:.9rem;
+    }
+
+    .brand-tagline {
+      font-size:.75rem;
+      color:var(--text-soft);
+    }
+
+    .nav {
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:0;
+    }
+
+    .nav-item {
+      text-decoration: none;
+      border-radius:9999px;
+      padding:6px 11px;
+      font-size:.82rem;
+      color:var(--text-soft);
+      display:flex;
+      align-items:center;
+      gap:8px;
+      cursor:pointer;
+      border:1px solid transparent;
+      transition:.18s;
+      position: relative;
+    }
+
+    .nav-item::before {
+      content:"●";
+      font-size:.5rem;
+      opacity:.7;
+    }
+
+    .nav-item:hover {
+      background:#061126;
+      color:var(--text);
+      border-color:#111827;
+      transform: translateY(-1px);
+    }
+
+    .nav-item.active {
+      background:rgba(139,92,246,.18);
+      border-color:rgba(139,92,246,.8);
+      color:#ddd6fe;
+      box-shadow:0 0 18px rgba(139,92,246,.8);
+    }
+
+    @media (max-width: 860px) {
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .nav {
+        width: 100%;
+      }
+    }
+
+    /* MAIN */
+    .main {
+      flex:1;
+      padding:18px 22px 26px;
+      position:relative;
+      max-width: 1100px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* HERO */
+    .hero {
+      position:relative;
+      margin-bottom:24px;
+      border-radius:var(--radius-lg);
+      padding:24px 24px 20px;
+      border:1px solid rgba(15,23,42,.9);
+      background:
+        radial-gradient(circle at top left, rgba(139,92,246,.38), transparent 62%),
+        radial-gradient(circle at center right, rgba(34,197,94,.25), transparent 60%),
+        #020617;
+      box-shadow:var(--shadow-soft);
+      overflow:hidden;
+    }
+
+    .hero-content {
+      position:relative;
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      align-items:center;
+    }
+
+    .hero-left { max-width:520px; }
+
+    .eyebrow {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:3px 10px;
+      border-radius:9999px;
+      background:rgba(15,23,42,.9);
+      border:1px solid rgba(148,163,184,.3);
+      font-size:.72rem;
+      color:var(--text-soft);
+      margin-bottom:8px;
+    }
+
+    .eyebrow-dot {
+      width:7px;
+      height:7px;
+      border-radius:9999px;
+      background:#22c55e;
+      box-shadow:0 0 12px rgba(34,197,94,1);
+    }
+
+    .hero-title {
+      font-size:2rem;
+      font-weight:800;
+      letter-spacing:.02em;
+      margin:0 0 8px;
+    }
+
+    .hero-highlight { color:#c4b5fd; }
+
+    .hero-subtitle {
+      font-size:.94rem;
+      color:var(--text-soft);
+      max-width:460px;
+      line-height:1.45;
+    }
+
+    .hero-buttons {
+      margin-top:12px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+    }
+
+    .btn {
+      border-radius:9999px;
+      padding:7px 15px;
+      border:none;
+      cursor:pointer;
+      font-size:.88rem;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      transition:.18s;
+    }
+
+    .btn-primary {
+      background:linear-gradient(135deg, #6366f1, #22c55e);
+      color:#f9fafb;
+      box-shadow:0 0 26px rgba(129,140,248,.9);
+    }
+
+    .btn-primary:hover {
+      transform:translateY(-1px);
+      box-shadow:0 0 34px rgba(94,234,212,.9);
+    }
+
+    .btn-secondary {
+      background:rgba(15,23,42,.95);
+      color:var(--text-soft);
+      border:1px solid rgba(148,163,184,.4);
+    }
+
+    .btn-secondary:hover {
+      background:rgba(15,23,42,1);
+      color:var(--text);
+    }
+
+    .hero-right {
+      min-width:200px;
+      max-width:240px;
+      border-radius:var(--radius-md);
+      border:1px solid rgba(148,163,184,.5);
+      padding:10px 13px;
+      background: radial-gradient(circle at top left, rgba(15,23,42,.9), #020617);
+      box-shadow:0 12px 30px rgba(15,23,42,1);
+      font-size:.78rem;
+    }
+
+    .hero-right-title { font-weight:600; margin-bottom:6px; }
+
+    .hero-right-row {
+      display:flex;
+      justify-content:space-between;
+      margin-top:4px;
+    }
+
+    .hero-right-label { color:var(--text-softer); }
+    .hero-right-value { font-weight:600; color:#bbf7d0; }
+
+    /* ACCURACY + CONTROLS */
+    .accuracy-header {
+      margin:14px 0;
+      display:flex;
+      gap:20px;
+      align-items:center;
+      justify-content:space-between;
+      flex-wrap:wrap;
+    }
+
+    .accuracy-ring {
+      --acc-angle: 280deg;
+      width:140px;
+      height:140px;
+      border-radius:9999px;
+      padding:12px;
+      background: conic-gradient(#22c55e 0deg var(--acc-angle), #111827 var(--acc-angle) 360deg);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      box-shadow:0 0 40px rgba(34,197,94,.7);
+    }
+
+    .accuracy-inner {
+      width:96px;
+      height:96px;
+      border-radius:9999px;
+      background:radial-gradient(circle at top, #020617, #020617 60%);
+      border:1px solid rgba(15,23,42,.9);
+      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 18px 40px rgba(15,23,42,1);
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+    }
+
+    .accuracy-value { font-size:1.4rem; font-weight:800; }
+    .accuracy-label { font-size:.78rem; color:var(--text-softer); margin-top:2px; }
+
+    .accuracy-controls { flex:1; min-width:260px; }
+    .accuracy-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:8px; }
+    .accuracy-row-title { font-size:.9rem; font-weight:600; }
+
+    .field-label { font-size:.78rem; color:var(--text-soft); margin-bottom:3px; }
+    .select-group { display:flex; flex-direction:column; min-width:160px; }
+
+    .select-with-logo {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      background:#020617;
+      border-radius:9999px;
+      padding:4px 10px;
+      border:1px solid #111827;
+    }
+
+    .select-with-logo img {
+      width:20px;
+      height:20px;
+      border-radius:9999px;
+      object-fit:contain;
+      background:#020617;
+    }
+
+    .select-with-logo select {
+      flex:1;
+      border:none;
+      outline:none;
+      background:transparent;
+      color:var(--text);
+      font-size:.85rem;
+      appearance:none;
+    }
+
+    .date-input {
+      border-radius:9999px;
+      border:1px solid #111827;
+      background:#020617;
+      color:var(--text);
+      padding:4px 10px;
+      font-size:.85rem;
+    }
+
+    .btn-load { margin-top:4px; padding-inline:22px; }
+
+    .status {
+      font-size:.78rem;
+      color:var(--text-softer);
+      margin-top:4px;
+    }
+    .status.error { color:#fecaca; }
+
+    /* MINI METRICS */
+    .mini-metrics {
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:12px;
+      margin-bottom:16px;
+    }
+    @media (max-width:900px){
+      .mini-metrics{ grid-template-columns: minmax(0,1fr); }
+    }
+
+    .mini-card {
+      border-radius:18px;
+      padding:10px 13px;
+      background:linear-gradient(180deg, rgba(15,23,42,.98), #020617);
+      border:1px solid rgba(15,23,42,1);
+      box-shadow:var(--shadow-card);
+      font-size:.8rem;
+      position:relative;
+      overflow:hidden;
+    }
+
+    .mini-label { color:var(--text-soft); margin-bottom:3px; }
+    .mini-value { font-size:1.2rem; font-weight:700; }
+    .mini-sub { font-size:.75rem; color:var(--text-softer); margin-top:2px; }
+
+    .mini-pill {
+      position:absolute;
+      top:7px;
+      right:9px;
+      font-size:.7rem;
+      padding:2px 7px;
+      border-radius:9999px;
+      border:1px solid rgba(148,163,184,.45);
+      background:rgba(15,23,42,.98);
+      color:var(--text-soft);
+    }
+    .mini-pill.green { border-color:rgba(34,197,94,.8); color:#bbf7d0; }
+
+    /* MATCHES PANEL */
+    .panel-matches {
+      border-radius:var(--radius-md);
+      background:radial-gradient(circle at top left, rgba(15,23,42,.96), #020617);
+      border:1px solid rgba(15,23,42,1);
+      padding:11px 13px;
+      box-shadow:var(--shadow-card);
+      margin-bottom:12px;
+    }
+
+    .panel-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      margin-bottom:6px;
+    }
+
+    .panel-title { font-size:.96rem; font-weight:600; }
+    .panel-subtitle { font-size:.78rem; color:var(--text-softer); }
+
+    .filters-row {
+      display:flex;
+      flex-wrap:wrap;
+      gap:1rem;
+      align-items:center;
+      justify-content:space-between;
+      margin:6px 0 10px;
+      font-size:.9rem;
+    }
+
+    .filter { display:flex; align-items:center; gap:.5rem; }
+    .filter input[type="range"] { width:160px; }
+
+    .matches-list {
+      margin-top:6px;
+      max-height:560px;
+      overflow-y:auto;
+      padding-right:4px;
+    }
+
+    @keyframes fadeSlideUp {
+      0%{opacity:0; transform:translateY(14px);}
+      100%{opacity:1; transform:translateY(0);}
+    }
+
+    .match-card {
+      position: relative;
+      overflow: visible;
+      border-radius: 18px;
+      background: radial-gradient(circle at top, #020617, #020617 50%, #020617 100%);
+      border: 1px solid #111827;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      font-size: 0.84rem;
+      cursor: pointer;
+      transition: border-color .18s, box-shadow .18s, transform .18s, background .22s;
+      animation: fadeSlideUp .5s ease-out both;
+      animation-delay: calc(var(--card-index, 0) * 55ms);
+    }
+
+    /* AI edge ribbon */
+    .match-card.value-bet,
+    .match-card.value-bet-strong {
+      position: relative;
+      overflow: visible;
+    }
+
+    .match-card.value-bet::before,
+    .match-card.value-bet-strong::before {
+      position: absolute;
+      top: 0.6rem;
+      left: 0.9rem;
+      z-index: 50;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #111;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+
+    .match-card.value-bet::before {
+      content: "AI edge";
+      background: linear-gradient(135deg,#22c55e,#16a34a);
+      border: 1px solid #16a34a;
+      color: #eafff2;
+    }
+
+    .match-card.value-bet-strong::before {
+      content: "Strong AI edge";
+      background: linear-gradient(135deg,#facc15,#eab308);
+      border: 1px solid #fbbf24;
+      color: #111;
+      text-shadow: 0 0 3px rgba(255,255,255,0.4);
+    }
+
+    .match-card:hover {
+      border-color: rgba(129,140,248,.85);
+      box-shadow:0 18px 50px rgba(15,23,42,1);
+      transform:translateY(-2px);
+    }
+
+    .match-card.expanded {
+      background:
+        radial-gradient(circle at top left, rgba(34,197,94,.24), transparent 55%),
+        radial-gradient(circle at bottom right, rgba(129,140,248,.26), transparent 55%),
+        #020617;
+      border-color:#16a34a;
+      box-shadow:0 0 0 1px #14532d, 0 22px 70px rgba(0,0,0,.95), 0 0 40px rgba(34,197,94,.75);
+    }
+
+    /* skeleton */
+    .match-card.skeleton {
+      position:relative;
+      overflow:hidden;
+      pointer-events:none;
+      height:90px;
+    }
+    .match-card.skeleton::before {
+      content:"";
+      position:absolute;
+      inset:0;
+      background:linear-gradient(90deg, rgba(15,23,42,.95) 0%, rgba(31,41,55,.9) 40%, rgba(15,23,42,.95) 80%);
+      animation: shimmer 1.2s infinite;
+      opacity:.7;
+    }
+    @keyframes shimmer {
+      0%{ transform:translateX(-100%);}
+      100%{ transform:translateX(100%);}
+    }
+
+    /* compact header row */
+    .match-header { display:flex; align-items:center; gap:12px; }
+    .match-team { display:flex; align-items:center; gap:8px; min-width:0; }
+    .match-team-home { text-align:left; }
+    .match-team-away { margin-left:auto; text-align:right; justify-content:flex-end; }
+
+    .team-logo-orb-sm {
+      width:30px;
+      height:30px;
+      border-radius:9999px;
+      background: radial-gradient(circle at 30% 20%, #22c55e, #16a34a 60%, #064e3b 100%);
+      position:relative;
+      box-shadow:0 0 18px rgba(34,197,94,.9);
+      overflow:hidden;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .team-logo-orb-sm.away {
+      background: radial-gradient(circle at 30% 20%, #6366f1, #4f46e5 60%, #1e3a8a 100%);
+      box-shadow:0 0 18px rgba(129,140,248,.9);
+    }
+    .team-logo-orb-sm::after {
+      content:"";
+      position:absolute;
+      inset:2px;
+      border-radius:inherit;
+      border:1px solid rgba(248,250,252,.4);
+      box-shadow: inset 0 0 10px rgba(15,23,42,.9);
+      pointer-events:none;
+    }
+
+    .team-logo-orb-sm img,
+    .team-logo-orb-lg img {
+      border-radius: 9999px;
+      background-color: #020617;
+      overflow: hidden;
+    }
+
+    .team-logo-orb-sm img {
+      width:80%;
+      height:80%;
+      object-fit:contain;
+      position:relative;
+      z-index:1;
+    }
+    .team-logo-initial-sm {
+      position:relative;
+      z-index:1;
+      font-size:.8rem;
+      font-weight:700;
+      color:#f9fafb;
+    }
+
+    .team-name {
+      font-weight:600;
+      font-size:.9rem;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .match-center { text-align:center; min-width:0; }
+    .headline { font-weight:600; font-size:.9rem; }
+    .headline span {
+      padding:2px 9px;
+      border-radius:9999px;
+      background:rgba(15,23,42,.95);
+      border:1px solid rgba(148,163,184,.4);
+    }
+    .kickoff { font-size:.76rem; color:var(--text-softer); margin-top:2px; }
+
+    .match-value-pill {
+      margin-top:5px;
+      font-size:.76rem;
+      color:#bbf7d0;
+      display:inline-flex;
+      align-items:center;
+      gap:5px;
+      border-radius:9999px;
+      padding:2px 9px;
+      border:1px solid rgba(34,197,94,.8);
+      background:rgba(22,163,74,.12);
+    }
+
+    .match-body {
+      margin-top:6px;
+      max-height:0;
+      overflow:hidden;
+      opacity:0;
+      transition:max-height .25s, opacity .25s, margin-top .25s;
+    }
+    .match-card.expanded .match-body {
+      max-height:520px;
+      opacity:1;
+      margin-top:12px;
+    }
+
+    /* HERO inside match card */
+    @keyframes orbPulse {
+      0%{ box-shadow:0 0 32px rgba(34,197,94,.9); transform:scale(1);}
+      50%{ box-shadow:0 0 52px rgba(34,197,94,1); transform:scale(1.04);}
+      100%{ box-shadow:0 0 32px rgba(34,197,94,.9); transform:scale(1);}
+    }
+    @keyframes orbPulseAway {
+      0%{ box-shadow:0 0 32px rgba(129,140,248,.9); transform:scale(1);}
+      50%{ box-shadow:0 0 52px rgba(129,140,248,1); transform:scale(1.04);}
+      100%{ box-shadow:0 0 32px rgba(129,140,248,.9); transform:scale(1);}
+    }
+
+    .team-logo-orb-lg {
+      width:110px;
+      height:110px;
+      border-radius:9999px;
+      background: radial-gradient(circle at 30% 20%, #22c55e, #16a34a 60%, #064e3b 100%);
+      position:relative;
+      overflow:hidden;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      animation:orbPulse 3.6s ease-in-out infinite;
+    }
+    .team-logo-orb-lg.away {
+      background: radial-gradient(circle at 30% 20%, #6366f1, #4f46e5 60%, #1e3a8a 100%);
+      animation:orbPulseAway 3.6s ease-in-out infinite;
+    }
+    .team-logo-orb-lg::after {
+      content:"";
+      position:absolute;
+      inset:6px;
+      border-radius:inherit;
+      border:1px solid rgba(248,250,252,.5);
+      box-shadow: inset 0 0 14px rgba(15,23,42,.9);
+      pointer-events:none;
+    }
+    .team-logo-orb-lg img {
+      width:78%;
+      height:78%;
+      object-fit:contain;
+      position:relative;
+      z-index:1;
+    }
+    .team-logo-initial-lg {
+      position:relative;
+      z-index:1;
+      font-size:1.1rem;
+      font-weight:800;
+      color:#f9fafb;
+    }
+
+    .hero-row {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:10px;
+    }
+    .hero-side { flex:0 0 auto; text-align:center; }
+    .hero-center { flex:1 1 auto; text-align:center; }
+    .hero-side-label {
+      font-size:.7rem;
+      color:var(--text-softer);
+      letter-spacing:.16em;
+      text-transform:uppercase;
+      margin-top:6px;
+    }
+    .hero-side-percent {
+      font-size:1.7rem;
+      font-weight:800;
+      margin-top:4px;
+    }
+
+    .hero-center-teams { font-size:1.3rem; font-weight:700; margin-top:6px; }
+    .hero-center-scoreline { font-size:.96rem; margin-top:4px; color:var(--text-soft); }
+
+    .hero-chip {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      margin-top:8px;
+      font-size:.72rem;
+      padding:4px 10px;
+      border-radius:9999px;
+      border:1px solid rgba(34,197,94,.85);
+      background:rgba(22,163,74,.18);
+      color:#bbf7d0;
+    }
+
+    .hero-stats-row {
+      margin-top:10px;
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:center;
+      gap:12px;
+      font-size:.78rem;
+    }
+    .hero-stat { display:inline-flex; align-items:center; gap:5px; color:var(--text-soft); }
+    .hero-stat strong { color:var(--text); }
+
+    .hero-reasoning {
+      margin-top: 8px;
+      font-size: .78rem;
+      color: var(--text-softer);
+      line-height: 1.4;
+    }
+
+    .scorers-label {
+      color:var(--text-soft);
+      margin:8px 0 6px;
+      font-size:.82rem;
+      font-weight:600;
+    }
+
+    .scorers-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px; }
+    .scorer-chip {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 12px;
+      border-radius:9999px;
+      border:1px solid #111827;
+      background: radial-gradient(circle at top, #020617, #020617 60%, #020617);
+      font-size:.82rem;
+    }
+    .scorer-photo {
+      width:26px;
+      height:26px;
+      border-radius:9999px;
+      object-fit:cover;
+      border:1px solid #1f2937;
+    }
+    .scorer-name { font-weight:600; }
+    .scorer-xg { color:var(--text-softer); font-size:.8rem; }
+
+    .empty { font-size:.8rem; color:var(--text-softer); margin-top:4px; }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+  <div class="topbar-left">
+    <a href="index.html" class="brand">
+      <div class="brand-logo">W</div>
+      <div>
+        <div class="brand-name">WINMATIC</div>
+        <div class="brand-tagline">AI Match Edge Engine</div>
+      </div>
+    </a>
+  </div>
+
+  <div class="topbar-right">
+    <nav class="nav">
+      <!-- Mark ONE as .active per page -->
+      <a class="nav-item active" href="index.html">Home</a>
+
+      <a class="nav-item" href="predictor.html">Predictions</a>
+      <a class="nav-item" href="predictor.html#today">All matches (today)</a>
+
+      <a class="nav-item" href="bets.html">Bet of the day</a>
+      <a class="nav-item" href="value.html">Value Scanner</a>
+
+      <a class="nav-item" href="results.html">Results</a>
+      <a class="nav-item" href="metrics.html#progress">Progress</a>
+      <a class="nav-item" href="metrics.html#metrics">Metrics</a>
+
+      <a class="nav-item" href="tutorial.html">Tutorial</a>
+      <a class="nav-item" href="pricing.html">View pricing</a>
+      <a class="nav-item" href="contact.html">Contact</a>
+    </nav>
+  </div>
+</header>
+
+
+  <main class="wm-landing-main">
+    <!-- HERO -->
+    <section class="wm-hero wm-reveal">
+      <div class="wm-hero-left">
+        <div class="wm-hero-pill">
+          <span>Premier League · AI model</span>
+        </div>
+
+        <h1 class="wm-hero-title">
+          Beat the odds with
+          <span>calibrated football predictions.</span>
+        </h1>
+
+        <p class="wm-hero-sub">
+          WinMatic ingests thousands of Premier League matches, learns team strength,
+          and compares its probabilities to the market to surface value bets automatically.
+          Every prediction is logged, tracked, and auditable.
+        </p>
+
+        <div class="wm-hero-ctas">
+          <a href="predictor.html" class="wm-btn-primary">Open predictor →</a>
+          <a href="value.html" class="wm-btn-secondary">Scan value bets</a>
+        </div>
+
+        <div class="wm-hero-metrics-row">
+          <div class="wm-hero-metric">
+            <div class="wm-hero-metric-label">Backtest hit rate</div>
+            <div class="wm-hero-metric-value" id="metric-hit-model">–</div>
+            <div class="wm-hero-metric-sub">on <span id="metric-samples">–</span> test matches</div>
+          </div>
+          <div class="wm-hero-metric">
+            <div class="wm-hero-metric-label">Market hit rate</div>
+            <div class="wm-hero-metric-value" id="metric-hit-market">–</div>
+            <div class="wm-hero-metric-sub">same fixtures, same odds</div>
+          </div>
+          <div class="wm-hero-metric">
+            <div class="wm-hero-metric-label">Edge vs market</div>
+            <div class="wm-hero-metric-value" id="metric-edge">–</div>
+            <div class="wm-hero-metric-sub">historical, not a guarantee</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wm-hero-right">
+        <article class="wm-hero-card">
+          <header class="wm-hero-card-header">
+            <div class="wm-hero-league">Premier League · Upcoming</div>
+            <div class="wm-hero-badge">Model snapshot</div>
+          </header>
+
+          <div class="wm-ring-wrapper">
+            <div class="wm-ring-outer">
+              <div class="wm-ring-inner">
+                <div class="wm-ring-label">Accuracy</div>
+                <div class="wm-ring-value" id="metric-hit-ring">–</div>
+                <div class="wm-ring-sub">Held-out set</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="wm-hero-card-grid">
+            <div class="wm-hero-card-row">
+              <span class="wm-hero-card-label">Trained samples</span>
+              <span class="wm-hero-card-value" id="metric-samples-train">–</span>
+            </div>
+            <div class="wm-hero-card-row">
+              <span class="wm-hero-card-label">Log loss</span>
+              <span class="wm-hero-card-value" id="metric-logloss">–</span>
+            </div>
+            <div class="wm-hero-card-row">
+              <span class="wm-hero-card-label">Brier score</span>
+              <span class="wm-hero-card-value" id="metric-brier">–</span>
+            </div>
+            <div class="wm-hero-card-row">
+              <span class="wm-hero-card-label">Calibrated to odds</span>
+              <span class="wm-hero-card-value">Yes</span>
+            </div>
+          </div>
+
+          <footer class="wm-hero-card-footer">
+            <div class="wm-hero-footer-text">
+              Bournemouth vs Chelsea · Away win 66.6% · Model edge +22.7% vs closing odds
+            </div>
+          </footer>
+        </article>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="wm-section wm-reveal">
+      <div class="wm-section-title">Feature-rich match modelling</div>
+      <div class="wm-section-subtitle">
+        Team indices, attack/defence strength, xG-style proxies, form, rest days and bookmaker
+        implied probabilities are all fed into the model to estimate home/draw/away goal distributions.
+      </div>
+
+      <div class="wm-feature-grid">
+        <article class="wm-feature-card">
+          <h3>Calibrated 1X2 probabilities</h3>
+          <p>Every fixture gets fair home / draw / away probabilities, tuned on past seasons instead of blindly trusting odds.</p>
+        </article>
+        <article class="wm-feature-card">
+          <h3>Edge vs closing prices</h3>
+          <p>WinMatic compares its probabilities to live market odds and flags spots where model value is significantly higher.</p>
+        </article>
+        <article class="wm-feature-card">
+          <h3>Full audit trail</h3>
+          <p>Predictions, edges and results are stored so you can track hit rates, ROI and model drift over time.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- CONTACT -->
+    <section id="contact" class="wm-section wm-reveal" style="margin-top: 32px;">
+      <div class="wm-section-title">Contact</div>
+      <div class="wm-section-subtitle">
+        WinMatic is currently a personal project. Extend this section later with real contact details or a form.
+      </div>
+    </section>
+  </main>
+</body>
+</html>

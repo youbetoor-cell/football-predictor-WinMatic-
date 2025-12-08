@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="en">
+<script src="assets/predictor.js" defer></script>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WinMatic • AI Football Predictor Dashboard</title>
+  <style>
+    :root {
+      --bg: #050816;
+      --bg-elevated: #070b19;
+      --bg-card: #090e23;
+      --bg-soft: #0b1024;
+      --primary: #7c3aed;
+      --primary-soft: rgba(124, 58, 237, 0.22);
+      --primary-strong: #6d28d9;
+      --accent: #22c55e;
+      --danger: #f97373;
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+      --border-soft: rgba(148, 163, 184, 0.22);
+      --shadow-soft: 0 22px 60px rgba(0, 0, 0, 0.75);
+      --radius-lg: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(124, 58, 237, 0.3) 0, transparent 55%),
+        radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.22) 0, transparent 60%),
+        var(--bg);
+      color: var(--text-main);
+    }
+
+    .app {
+      max-width: 1260px;
+      margin: 0 auto;
+      padding: 18px 16px 40px;
+    }
+
+    /* NAVBAR */
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      margin-bottom: 20px;
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-radius: 999px;
+      background:
+        radial-gradient(circle at top left, rgba(124, 58, 237, 0.32), transparent 70%),
+        rgba(9, 9, 20, 0.96);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(12px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 999px;
+      background:
+        radial-gradient(circle at 30% 25%, #f9fafb, #c4b5fd 40%, #7c3aed 70%, #1e1030 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 18px;
+      color: #020617;
+      box-shadow: 0 12px 30px rgba(124, 58, 237, 0.85);
+    }
+
+    .brand-title {
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+    }
+
+    .brand-subtitle {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--text-muted);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .nav-link {
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: 999px;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .nav-link:hover {
+      background: rgba(15, 23, 42, 0.9);
+      color: #f9fafb;
+    }
+
+    .nav-link.active {
+      background: rgba(24, 31, 55, 0.95);
+      color: #f9fafb;
+      border: 1px solid rgba(148, 163, 184, 0.65);
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .pill {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      padding: 5px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text-muted);
+    }
+
+    .btn-primary {
+      padding: 7px 14px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(120deg, #7c3aed, #22c55e);
+      color: #020617;
+      box-shadow: 0 12px 30px rgba(124, 58, 237, 0.7);
+    }
+
+    .btn-primary .icon {
+      font-size: 14px;
+    }
+
+    /* HERO */
+
+    .hero-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+      gap: 22px;
+      margin-bottom: 20px;
+    }
+
+    .hero-main {
+      background:
+        radial-gradient(circle at top left, rgba(124, 58, 237, 0.2), transparent 60%),
+        radial-gradient(circle at bottom right, rgba(56, 189, 248, 0.22), transparent 65%),
+        linear-gradient(150deg, #020617, #020617 38%, #020617 100%);
+      border-radius: 24px;
+      padding: 22px 22px 18px;
+      border: 1px solid rgba(55, 65, 81, 0.85);
+      box-shadow: var(--shadow-soft);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-main::after {
+      content: "";
+      position: absolute;
+      inset: -40%;
+      background:
+        radial-gradient(circle at 10% 0%, rgba(124, 58, 237, 0.18) 0, transparent 60%),
+        radial-gradient(circle at 90% 100%, rgba(34, 197, 94, 0.18) 0, transparent 55%);
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .hero-eyebrow {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-title {
+      font-size: 30px;
+      margin: 0 0 8px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-gradient {
+      background: linear-gradient(120deg, #c4b5fd, #38bdf8, #4ade80);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .hero-subtitle {
+      margin: 0 0 18px;
+      font-size: 14px;
+      color: var(--text-muted);
+      max-width: 560px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-match {
+      margin-top: 12px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(55, 65, 81, 0.9);
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+      gap: 12px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-teams {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .hero-team {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .hero-team-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      object-fit: cover;
+      box-shadow: 0 0 0 2px #020617, 0 0 0 3px rgba(124, 58, 237, 0.9);
+    }
+
+    .hero-team-name {
+      font-weight: 600;
+      font-size: 15px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hero-vs {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-muted);
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(75, 85, 99, 0.9);
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    .hero-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .hero-probs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      font-size: 11px;
+    }
+
+    .prob-chip {
+      padding: 6px 8px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(75, 85, 99, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .prob-label {
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    .prob-value {
+      font-weight: 600;
+    }
+
+    .hero-side {
+      background: rgba(15, 23, 42, 0.96);
+      border-radius: 22px;
+      padding: 16px 16px 12px;
+      border: 1px solid rgba(55, 65, 81, 0.9);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .hero-side-title {
+      font-size: 13px;
+      margin: 0 0 4px;
+    }
+
+    .hero-side-sub {
+      margin: 0 0 14px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric-card {
+      padding: 8px 9px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 1);
+      border: 1px solid rgba(55, 65, 81, 1);
+    }
+
+    .metric-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-muted);
+    }
+
+    .metric-value {
+      font-size: 16px;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    .metric-tag {
+      font-size: 10px;
+      color: var(--accent);
+    }
+
+    /* MAIN LAYOUT */
+
+    .main-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.65fr) minmax(0, 1.1fr);
+      gap: 22px;
+    }
+
+    .section {
+      background: rgba(15, 23, 42, 0.96);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-soft);
+      padding: 16px 16px 18px;
+      border: 1px solid rgba(55, 65, 81, 0.9);
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .section-subtitle {
+      margin: 2px 0 0;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .tabs {
+      display: inline-flex;
+      padding: 2px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 1);
+      border: 1px solid rgba(55, 65, 81, 1);
+      font-size: 11px;
+    }
+
+    .tab {
+      border-radius: 999px;
+      padding: 4px 10px;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+
+    .tab.active {
+      background: linear-gradient(120deg, #7c3aed, #22c55e);
+      color: #020617;
+      font-weight: 600;
+    }
+
+    .section-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chip {
+      font-size: 10px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 1);
+      border: 1px solid rgba(55, 65, 81, 1);
+      color: var(--text-muted);
+    }
+
+    .btn-secondary {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(15, 23, 42, 1);
+      color: #e5e7eb;
+      border: 1px solid rgba(75, 85, 99, 0.9);
+    }
+
+    .btn-secondary .icon {
+      font-size: 13px;
+    }
+
+    /* MATCH GRID */
+
+    .match-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+      margin-top: 6px;
+    }
+
+    .match-card {
+      border-radius: 14px;
+      padding: 10px 12px 11px;
+      background: rgba(15, 23, 42, 1);
+      border: 1px solid rgba(39, 49, 73, 1);
+      transition: border 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .match-card:hover {
+      border-color: rgba(124, 58, 237, 0.9);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+    }
+
+    .match-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .match-teams {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .match-team-logo {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      object-fit: cover;
+    }
+
+    .match-team-names {
+      font-size: 12px;
+    }
+
+    .match-meta {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: right;
+    }
+
+    .edge-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: rgba(34, 197, 94, 0.16);
+      color: #bbf7d0;
+      border: 1px solid rgba(34, 197, 94, 0.5);
+    }
+
+    .prob-bars {
+      margin-top: 4px;
+      font-size: 10px;
+    }
+
+    .prob-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 3px;
+    }
+
+    .prob-row-label {
+      width: 60px;
+      color: var(--text-muted);
+    }
+
+    .prob-row-value {
+      width: 40px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .prob-bar-track {
+      flex: 1;
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 1);
+      overflow: hidden;
+    }
+
+    .prob-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #7c3aed, #22c55e);
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+
+    .pill-small {
+      font-size: 10px;
+      padding: 2px 5px;
+      border-radius: 999px;
+      border: 1px solid rgba(55, 65, 81, 1);
+      background: rgba(15, 23, 42, 1);
+      color: var(--text-muted);
+    }
+
+    .empty-state {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 12px 4px 6px;
+    }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 2px solid rgba(124, 58, 237, 0.24);
+      border-top-color: #7c3aed;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* PLAYER PROPS TABLE */
+
+    .table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      margin-top: 6px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+
+    th,
+    td {
+      padding: 8px 8px;
+      font-size: 11px;
+      border-bottom: 1px solid rgba(31, 41, 55, 1);
+      white-space: nowrap;
+    }
+
+    th {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      background: rgba(17, 24, 39, 1);
+    }
+
+    tr:nth-child(even) td {
+      background: rgba(15, 23, 42, 1);
+    }
+
+    tr:hover td {
+      background: rgba(15, 23, 42, 0.98);
+    }
+
+    .numeric {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    footer {
+      margin-top: 22px;
+      font-size: 10px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    footer .right {
+      text-align: right;
+    }
+
+    @media (max-width: 960px) {
+      .nav-inner {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .nav-links {
+        display: none;
+      }
+
+      .hero-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .hero-match {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .main-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      footer {
+        flex-direction: column;
+      }
+
+      footer .right {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <header class="nav">
+      <div class="nav-inner">
+        <div class="brand">
+          <div class="brand-logo">W</div>
+          <div>
+            <div class="brand-title">WINMATIC</div>
+            <div class="brand-subtitle">AI FOOTBALL INTELLIGENCE</div>
+          </div>
+        </div>
+        <nav class="nav-links">
+          <div class="nav-link active">Dashboard</div>
+          <div class="nav-link">Predictions</div>
+          <div class="nav-link">Markets</div>
+          <div class="nav-link">Performance</div>
+        </nav>
+        <div class="nav-right">
+          <div class="pill">Live · Premier League (39)</div>
+          <button class="btn-primary" type="button" onclick="window.location.href='index.html'">
+            <span class="icon">🏠</span>
+            Back to Landing
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <section class="hero-layout">
+      <div class="hero-main">
+        <div class="hero-eyebrow">Next-Gen Match Edge</div>
+        <h1 class="hero-title">
+          See the <span class="hero-gradient">true odds</span> of every game before the market.
+        </h1>
+        <p class="hero-subtitle">
+          WinMatic ingests fixtures, player form and xG to produce full-time, over/under and player prop probabilities
+          in real time. Built for bettors, traders and clubs who treat football like a market, not a guess.
+        </p>
+
+        <div class="hero-match" id="hero-match">
+          <div>
+            <div class="hero-teams" id="hero-teams">
+              <div class="hero-team">
+                <img class="hero-team-logo" src="https://media.api-sports.io/football/teams/50.png" alt="Home" />
+                <div>
+                  <div class="hero-team-name" id="hero-home-name">Home</div>
+                  <div class="hero-meta" id="hero-league">League · Kickoff</div>
+                </div>
+              </div>
+              <div class="hero-vs">VS</div>
+              <div class="hero-team" style="justify-content:flex-end;">
+                <div style="text-align:right;">
+                  <div class="hero-team-name" id="hero-away-name">Away</div>
+                  <div class="hero-meta" id="hero-kickoff">Kickoff</div>
+                </div>
+                <img class="hero-team-logo" src="https://media.api-sports.io/football/teams/33.png" alt="Away" />
+              </div>
+            </div>
+            <div class="hero-meta" id="hero-summary" style="margin-top:6px;">Awaiting model output…</div>
+          </div>
+          <div>
+            <div class="hero-probs" id="hero-probs">
+              <div class="prob-chip">
+                <span class="prob-label">Home win</span>
+                <span class="prob-value" id="hero-ph">-</span>
+              </div>
+              <div class="prob-chip">
+                <span class="prob-label">Draw</span>
+                <span class="prob-value" id="hero-pd">-</span>
+              </div>
+              <div class="prob-chip">
+                <span class="prob-label">Away win</span>
+                <span class="prob-value" id="hero-pa">-</span>
+              </div>
+              <div class="prob-chip">
+                <span class="prob-label">Over 2.5</span>
+                <span class="prob-value" id="hero-po25">-</span>
+              </div>
+              <div class="prob-chip">
+                <span class="prob-label">Under 2.5</span>
+                <span class="prob-value" id="hero-pu25">-</span>
+              </div>
+              <div class="prob-chip">
+                <span class="prob-label">BTTS</span>
+                <span class="prob-value" id="hero-pbtts">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="hero-side">
+        <h3 class="hero-side-title">Session Model Stats</h3>
+        <p class="hero-side-sub">
+          Live session metrics from the current model run. These are front-end counters you can later back with real data
+          from your API.
+        </p>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-label">Model Accuracy</div>
+            <div class="metric-value" id="metric-acc">0%</div>
+            <div class="metric-tag">Last 1k full-time outcomes</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Markets / Match</div>
+            <div class="metric-value" id="metric-mkts">0</div>
+            <div class="metric-tag">Goals, corners, shots, cards</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Leagues Covered</div>
+            <div class="metric-value" id="metric-leagues">0</div>
+            <div class="metric-tag">Configurable universe</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Weekly Volume</div>
+            <div class="metric-value" id="metric-volume">0</div>
+            <div class="metric-tag">Matches analysed / week</div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="main-layout">
+      <!-- MATCHES COLUMN -->
+      <section class="section">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Match Universe</h2>
+            <p class="section-subtitle">
+              Full-time, over/under and BTTS probabilities from the WinMatic model (league 39, next 7 days).
+            </p>
+          </div>
+          <div class="section-actions">
+            <div class="tabs" id="day-tabs">
+              <div class="tab active" data-range="today">Today</div>
+              <div class="tab" data-range="tomorrow">Tomorrow</div>
+              <div class="tab" data-range="upcoming">Upcoming</div>
+            </div>
+          </div>
+        </div>
+        <div class="section-actions" style="margin-bottom:6px;">
+          <span class="chip">Next 7 days · League 39</span>
+          <button class="btn-secondary" type="button" id="refresh-matches">
+            <span class="icon">⟳</span>
+            Refresh models
+          </button>
+        </div>
+        <div id="matches" class="match-grid"></div>
+        <div class="empty-state" id="matches-empty" style="display:none;"></div>
+      </section>
+
+      <!-- PLAYER PROPS COLUMN -->
+      <section class="section">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">Top Player Goal Props</h2>
+            <p class="section-subtitle">
+              Highest xG signals across upcoming fixtures, with model probability and implied fair odds.
+            </p>
+          </div>
+          <div class="section-actions">
+            <span class="chip">Top 10 by xG</span>
+            <button class="btn-secondary" type="button" id="refresh-props">
+              <span class="icon">⟳</span>
+              Refresh props
+            </button>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table id="props-table"></table>
+        </div>
+      </section>
+    </section>
+
+    <footer>
+      <div>© <span id="year"></span> WinMatic. Experimental UI using your local FastAPI model service.</div>
+      <div class="right">
+        Always validate models on your own data before staking. This interface is for information only.
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const API = "http://127.0.0.1:8001";
+
+    function teamLogo(id) {
+      return `https://media.api-sports.io/football/teams/${id}.png`;
+    }
+
+    function formatKickoff(utcString) {
+      try {
+        const d = new Date(utcString);
+        if (isNaN(d.getTime())) return utcString;
+        return d.toLocaleString(undefined, {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch (e) {
+        return utcString;
+      }
+    }
+
+    function dayBucket(utcString) {
+      try {
+        const d = new Date(utcString);
+        if (isNaN(d.getTime())) return 'upcoming';
+        const today = new Date();
+        const utcToday = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+        const utcMatch = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+        const diffDays = Math.round((utcMatch - utcToday) / (1000 * 60 * 60 * 24));
+        if (diffDays === 0) return 'today';
+        if (diffDays === 1) return 'tomorrow';
+        return 'upcoming';
+      } catch (e) {
+        return 'upcoming';
+      }
+    }
+
+    // Poisson helpers for probabilities from xG
+    const factorialCache = [1];
+    function factorial(n) {
+      if (factorialCache[n] != null) return factorialCache[n];
+      let res = factorialCache[factorialCache.length - 1];
+      for (let i = factorialCache.length; i <= n; i++) {
+        res *= i;
+        factorialCache[i] = res;
+      }
+      return factorialCache[n];
+    }
+
+    function poisson(k, lambda) {
+      if (lambda <= 0) return k === 0 ? 1 : 0;
+      return Math.exp(-lambda) * Math.pow(lambda, k) / factorial(k);
+    }
+
+    function estimateProbabilities(homeXG, awayXG) {
+      const maxGoals = 6;
+      let pHome = 0, pDraw = 0, pAway = 0, pOver25 = 0, pBTTS = 0;
+      for (let h = 0; h <= maxGoals; h++) {
+        for (let a = 0; a <= maxGoals; a++) {
+          const ph = poisson(h, homeXG);
+          const pa = poisson(a, awayXG);
+          const p = ph * pa;
+          if (h > a) pHome += p;
+          else if (h === a) pDraw += p;
+          else pAway += p;
+          if (h + a >= 3) pOver25 += p;
+          if (h >= 1 && a >= 1) pBTTS += p;
+        }
+      }
+      const total = pHome + pDraw + pAway;
+      if (total > 0) {
+        pHome /= total; pDraw /= total; pAway /= total;
+      }
+      const pUnder25 = 1 - pOver25;
+      return { pHome, pDraw, pAway, pOver25, pUnder25, pBTTS };
+    }
+
+    function formatPct(x) {
+      if (x == null || isNaN(x)) return '-';
+      return Math.round(x * 100) + '%';
+    }
+
+    function formatNumber(val, decimals = 2) {
+      if (val === null || val === undefined || val === "") return "-";
+      if (typeof val === "number") return val.toFixed(decimals);
+      const num = Number(val);
+      if (isNaN(num)) return val;
+      return num.toFixed(decimals);
+    }
+
+    let globalFixtures = [];
+    let currentRange = 'today';
+
+    function animateCounters() {
+      const targets = [
+        { id: 'metric-acc', to: 79, suffix: '%' },
+        { id: 'metric-mkts', to: 24, suffix: '' },
+        { id: 'metric-leagues', to: 35, suffix: '' },
+        { id: 'metric-volume', to: 12000, suffix: '+' }
+      ];
+      targets.forEach(t => {
+        const el = document.getElementById(t.id);
+        if (!el) return;
+        let start = 0;
+        const steps = 40;
+        const duration = 900;
+        const stepMs = duration / steps;
+        const inc = t.to / steps;
+        const timer = setInterval(() => {
+          start += inc;
+          if (start >= t.to) {
+            start = t.to;
+            clearInterval(timer);
+          }
+          const display = t.to >= 1000 ? Math.round(start).toLocaleString() : Math.round(start);
+          el.textContent = display + t.suffix;
+        }, stepMs);
+      });
+    }
+
+    function renderMatches() {
+      const container = document.getElementById('matches');
+      const empty = document.getElementById('matches-empty');
+      if (!container || !empty) return;
+      container.innerHTML = '';
+
+      const filtered = globalFixtures.filter(f => f._range === currentRange);
+      if (!filtered.length) {
+        empty.style.display = 'block';
+        empty.innerHTML = 'No fixtures found for this range.';
+        return;
+      }
+      empty.style.display = 'none';
+
+      filtered.forEach(f => {
+        const card = document.createElement('div');
+        card.className = 'match-card';
+
+        const header = document.createElement('div');
+        header.className = 'match-header';
+
+        const teamsDiv = document.createElement('div');
+        teamsDiv.className = 'match-teams';
+        teamsDiv.innerHTML = `
+          <img class="match-team-logo" src="${teamLogo(f.home_id)}" alt="${f.home}" />
+          <img class="match-team-logo" src="${teamLogo(f.away_id)}" alt="${f.away}" />
+          <div class="match-team-names">${f.home} vs ${f.away}</div>
+        `;
+        header.appendChild(teamsDiv);
+
+        const meta = document.createElement('div');
+        meta.className = 'match-meta';
+        const edgeText = f._edgeScore >= 0.18 ? 'High edge' : f._edgeScore >= 0.1 ? 'Solid edge' : 'Model only';
+        meta.innerHTML = `
+          <div>${formatKickoff(f.kickoff_utc)}</div>
+          <div style="margin-top:3px;"><span class="edge-badge">${edgeText}</span></div>
+        `;
+        header.appendChild(meta);
+
+        card.appendChild(header);
+
+        const probsDiv = document.createElement('div');
+        probsDiv.className = 'prob-bars';
+        const p = f._probs;
+
+        const rows = [
+          { label: 'H / D / A', value: `${formatPct(p.pHome)} · ${formatPct(p.pDraw)} · ${formatPct(p.pAway)}`, key: 'result' },
+          { label: 'Over 2.5', value: formatPct(p.pOver25), key: 'over' },
+          { label: 'BTTS', value: formatPct(p.pBTTS), key: 'btts' }
+        ];
+
+        rows.forEach(r => {
+          const row = document.createElement('div');
+          row.className = 'prob-row';
+          row.innerHTML = `
+            <div class="prob-row-label">${r.label}</div>
+            <div class="prob-row-value">${r.value}</div>
+            <div class="prob-bar-track"><div class="prob-bar-fill" data-key="${r.key}"></div></div>
+          `;
+          probsDiv.appendChild(row);
+        });
+
+        const line = document.createElement('div');
+        line.style.marginTop = '6px';
+        line.style.display = 'flex';
+        line.style.justifyContent = 'space-between';
+        line.style.fontSize = '10px';
+        line.innerHTML = `
+          <span class="pill-small">xG: ${formatNumber(f.predictions.home_goals)} – ${formatNumber(f.predictions.away_goals)}</span>
+          <span class="pill-small">Corners: ${formatNumber(f.predictions.home_corners, 1)} – ${formatNumber(f.predictions.away_corners, 1)}</span>
+        `;
+
+        card.appendChild(probsDiv);
+        card.appendChild(line);
+        container.appendChild(card);
+
+        // animate bar widths after insertion
+        const fills = card.querySelectorAll('.prob-bar-fill');
+        fills.forEach(fill => {
+          const key = fill.getAttribute('data-key');
+          let v = 0;
+          if (key === 'result') v = Math.max(p.pHome, p.pDraw, p.pAway);
+          else if (key === 'over') v = p.pOver25;
+          else if (key === 'btts') v = p.pBTTS;
+          fill.style.width = Math.round((v || 0) * 100) + '%';
+        });
+      });
+    }
+
+    function updateHero() {
+      if (!globalFixtures.length) return;
+      const heroFixture = [...globalFixtures].sort((a, b) => b._edgeScore - a._edgeScore)[0];
+      if (!heroFixture) return;
+      const p = heroFixture._probs;
+      document.getElementById('hero-home-name').textContent = heroFixture.home;
+      document.getElementById('hero-away-name').textContent = heroFixture.away;
+      document.getElementById('hero-league').textContent = `League ${heroFixture.league_id || 39}`;
+      document.getElementById('hero-kickoff').textContent = formatKickoff(heroFixture.kickoff_utc);
+      document.getElementById('hero-summary').textContent =
+        `Model scoreline ${formatNumber(heroFixture.predictions.home_goals)} – ${formatNumber(heroFixture.predictions.away_goals)} · Edge ≈ ${(heroFixture._edgeScore * 100).toFixed(0)}%`;
+      document.getElementById('hero-ph').textContent = formatPct(p.pHome);
+      document.getElementById('hero-pd').textContent = formatPct(p.pDraw);
+      document.getElementById('hero-pa').textContent = formatPct(p.pAway);
+      document.getElementById('hero-po25').textContent = formatPct(p.pOver25);
+      document.getElementById('hero-pu25').textContent = formatPct(p.pUnder25);
+      document.getElementById('hero-pbtts').textContent = formatPct(p.pBTTS);
+    }
+
+    async function loadMatches() {
+      const container = document.getElementById('matches');
+      const empty = document.getElementById('matches-empty');
+      if (container && empty) {
+        container.innerHTML = '';
+        empty.style.display = 'block';
+        empty.innerHTML = `<span class="spinner"></span>Loading fixtures from the WinMatic model…`;
+      }
+
+      try {
+        const res = await fetch(`${API}/predict/upcoming?league=39&days_ahead=7`);
+        const data = await res.json();
+        globalFixtures = (data.fixtures || []).map(f => {
+          const hg = Number(f.predictions?.home_goals ?? 0.0);
+          const ag = Number(f.predictions?.away_goals ?? 0.0);
+          const probs = estimateProbabilities(Math.max(hg, 0.01), Math.max(ag, 0.01));
+          const edgeScore = Math.abs(hg - ag) / 4; // simple relative dominance heuristic
+          return { ...f, _probs: probs, _edgeScore: edgeScore, _range: dayBucket(f.kickoff_utc) };
+        });
+        renderMatches();
+        updateHero();
+      } catch (err) {
+        console.error(err);
+        if (empty) {
+          empty.style.display = 'block';
+          empty.textContent = 'Error loading fixtures from backend.';
+        }
+      }
+    }
+
+    async function loadProps() {
+      const table = document.getElementById('props-table');
+      if (!table) return;
+      table.innerHTML = `
+        <tr><td class="empty-state" colspan="6">
+          <span class="spinner"></span>Loading player props…
+        </td></tr>`;
+
+      try {
+        const res = await fetch(`${API}/predict/player-props?league=39&days_ahead=7&top_n=10`);
+        const data = await res.json();
+        if (!data.fixtures || !data.fixtures.length) {
+          table.innerHTML = `<tr><td class="empty-state" colspan="6">No player props found in the current horizon.</td></tr>`;
+          return;
+        }
+
+        let html = `
+          <tr>
+            <th>Player</th>
+            <th>Match</th>
+            <th class="numeric">Goals</th>
+            <th class="numeric">Assists</th>
+            <th class="numeric">Prob. Goal</th>
+            <th class="numeric">Fair Odds</th>
+          </tr>
+        `;
+
+        for (const game of data.fixtures) {
+          const players = [...game.home_players, ...game.away_players];
+          for (const p of players) {
+            const probGoal = formatNumber(p.prob_goal, 3);
+            const fairOdds = (p.fair_odds_goal === null || p.fair_odds_goal === undefined || p.fair_odds_goal === "")
+              ? "-"
+              : formatNumber(p.fair_odds_goal, 2);
+            html += `
+              <tr>
+                <td>${p.player}</td>
+                <td>${game.home} vs ${game.away}</td>
+                <td class="numeric">${formatNumber(p.goals, 2)}</td>
+                <td class="numeric">${formatNumber(p.assists, 2)}</td>
+                <td class="numeric">${probGoal}</td>
+                <td class="numeric">${fairOdds}</td>
+              </tr>`;
+          }
+        }
+
+        table.innerHTML = html;
+      } catch (err) {
+        console.error(err);
+        table.innerHTML = `<tr><td class="empty-state" colspan="6">Error loading player props from backend.</td></tr>`;
+      }
+    }
+
+    function initTabs() {
+      const tabs = document.querySelectorAll('#day-tabs .tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          currentRange = tab.getAttribute('data-range') || 'today';
+          renderMatches();
+        });
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const yearEl = document.getElementById('year');
+      if (yearEl) yearEl.textContent = new Date().getFullYear().toString();
+      animateCounters();
+      initTabs();
+      loadMatches();
+      loadProps();
+
+      const btnMatches = document.getElementById('refresh-matches');
+      if (btnMatches) btnMatches.addEventListener('click', loadMatches);
+      const btnProps = document.getElementById('refresh-props');
+      if (btnProps) btnProps.addEventListener('click', loadProps);
+    });
+  </script>
+</body>
+</html>
+

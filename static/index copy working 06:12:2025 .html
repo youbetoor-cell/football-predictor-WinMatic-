@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WinMatic – AI Football Edge Engine</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --nav-bg: rgba(2, 6, 23, 0.96);
+      --accent-green: #22c55e;
+      --accent-blue: #38bdf8;
+      --accent-purple: #8b5cf6;
+      --text: #e5e7eb;
+      --text-soft: #9ca3af;
+      --text-softer: #6b7280;
+      --radius-xl: 28px;
+    }
+
+    * { box-sizing:border-box; margin:0; padding:0; }
+
+    body {
+      min-height:100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(circle at top left, #1e1b4b 0, #020617 45%, #020617 100%);
+      overflow-x:hidden;
+    }
+
+    /* Floating background orbs */
+    .orb {
+      position:fixed;
+      border-radius:999px;
+      filter:blur(32px);
+      opacity:0.55;
+      pointer-events:none;
+      z-index:-1;
+      animation: float 18s ease-in-out infinite;
+    }
+    .orb.green { width:260px; height:260px; background:#166534; top:10%; left:-8%; }
+    .orb.purple { width:280px; height:280px; background:#4c1d95; top:55%; right:-12%; animation-delay:-6s; }
+    .orb.blue { width:200px; height:200px; background:#0f766e; top:-6%; right:20%; animation-delay:-3s; }
+
+    @keyframes float {
+      0% { transform:translate3d(0,0,0) scale(1); opacity:0.4; }
+      40% { transform:translate3d(40px,20px,0) scale(1.05); opacity:0.6; }
+      70% { transform:translate3d(-20px,10px,0) scale(0.98); opacity:0.5; }
+      100% { transform:translate3d(0,0,0) scale(1); opacity:0.4; }
+    }
+
+    /* TOP NAV */
+    .topbar {
+      position:sticky;
+      top:0;
+      z-index:20;
+      backdrop-filter:blur(18px);
+      background:linear-gradient(to bottom, var(--nav-bg), rgba(2,6,23,0.7));
+      border-bottom:1px solid rgba(15,23,42,0.9);
+    }
+    .topbar-inner {
+      max-width:1100px;
+      margin:0 auto;
+      padding:10px 20px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:24px;
+    }
+
+    .brand {
+      display:flex; align-items:center; gap:10px;
+    }
+    .brand-logo {
+      width:34px; height:34px; border-radius:9999px;
+      background: radial-gradient(circle at 20% 10%, #a855f7, #6366f1 45%, #22c55e 95%);
+      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 0 30px rgba(34,197,94,.8);
+      display:flex; align-items:center; justify-content:center;
+      font-weight:800; font-size:1.05rem; color:#f9fafb;
+    }
+    .brand-text-main {
+      font-size:.85rem;
+      letter-spacing:.18em;
+      text-transform:uppercase;
+      font-weight:800;
+    }
+    .brand-text-sub {
+      font-size:.7rem;
+      color:var(--text-softer);
+    }
+
+    .nav {
+      display:flex;
+      align-items:center;
+      gap:18px;
+      flex-wrap:wrap;
+      font-size:.86rem;
+    }
+
+    .nav a {
+      color:var(--text-soft);
+      text-decoration:none;
+      text-transform:uppercase;
+      letter-spacing:.12em;
+      padding-bottom:4px;
+      position:relative;
+      transition:color .15s ease, transform .12s ease;
+    }
+    .nav a:hover {
+      color:var(--text);
+      transform:translateY(-1px);
+    }
+    .nav a.active {
+      color:var(--accent-green);
+    }
+    .nav a.active::after {
+      content:"";
+      position:absolute;
+      left:0; right:0; bottom:-3px;
+      height:2px;
+      border-radius:999px;
+      background:linear-gradient(90deg, var(--accent-green), var(--accent-purple));
+    }
+
+    .nav-right {
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .pill {
+      padding:6px 14px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.45);
+      font-size:.8rem;
+      color:var(--text-soft);
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      background:rgba(15,23,42,.85);
+      transition:.15s;
+    }
+    .pill:hover {
+      border-color:rgba(148,163,184,.9);
+      color:var(--text);
+      transform:translateY(-1px);
+    }
+    .cta-primary {
+      padding:8px 20px;
+      border-radius:999px;
+      border:none;
+      background:linear-gradient(135deg,#22c55e,#16a34a);
+      color:#f9fafb;
+      font-weight:600;
+      font-size:.88rem;
+      cursor:pointer;
+      box-shadow:0 0 32px rgba(34,197,94,.8);
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      position:relative;
+      overflow:hidden;
+    }
+    .cta-primary span.shine {
+      position:absolute;
+      inset:0;
+      background:linear-gradient(120deg, transparent, rgba(255,255,255,.15), transparent);
+      transform:translateX(-100%);
+      pointer-events:none;
+      animation:shine 3.5s infinite;
+    }
+    @keyframes shine {
+      0% { transform:translateX(-120%); }
+      40% { transform:translateX(120%); }
+      100% { transform:translateX(120%); }
+    }
+    .cta-primary:hover {
+      transform:translateY(-1px) scale(1.01);
+      box-shadow:0 0 40px rgba(74,222,128,.95);
+    }
+
+    /* HERO LAYOUT */
+    .shell {
+      max-width:1100px;
+      margin:0 auto;
+      padding:36px 20px 40px;
+      display:flex;
+      gap:26px;
+      align-items:center;
+      justify-content:space-between;
+    }
+
+    .hero-left {
+      max-width:560px;
+    }
+    .eyebrow {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:4px 10px;
+      border-radius:9999px;
+      border:1px solid rgba(148,163,184,.3);
+      background:rgba(15,23,42,.9);
+      font-size:.72rem;
+      color:var(--text-soft);
+      margin-bottom:10px;
+    }
+    .eyebrow-dot {
+      width:7px; height:7px; border-radius:999px;
+      background:#22c55e; box-shadow:0 0 12px rgba(34,197,94,1);
+    }
+
+    .hero-title {
+      font-size:2.6rem;
+      line-height:1.05;
+      letter-spacing:.02em;
+      font-weight:800;
+      margin-bottom:12px;
+    }
+    .hero-title span {
+      background:linear-gradient(120deg,#22c55e,#38bdf8,#a855f7);
+      -webkit-background-clip:text;
+      color:transparent;
+    }
+
+    .hero-sub {
+      font-size:.98rem;
+      color:var(--text-soft);
+      line-height:1.55;
+      max-width:500px;
+      margin-bottom:18px;
+    }
+
+    .hero-badges {
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      font-size:.78rem;
+      margin-bottom:16px;
+    }
+    .hero-badge {
+      padding:5px 11px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.3);
+      background:rgba(15,23,42,.9);
+      color:var(--text-soft);
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+    }
+    .hero-badge-dot {
+      width:6px; height:6px; border-radius:999px;
+      background:#22c55e;
+    }
+
+    .hero-actions {
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+    }
+
+    .hero-right {
+      flex:0 0 340px;
+      max-width:360px;
+      position:relative;
+    }
+
+    .glass-card {
+      border-radius:var(--radius-xl);
+      padding:16px 16px 14px;
+      background:linear-gradient(145deg,rgba(15,23,42,.94),rgba(15,23,42,.96),rgba(6,78,59,.85));
+      border:1px solid rgba(148,163,184,.45);
+      box-shadow:0 26px 80px rgba(0,0,0,.9);
+      position:relative;
+      overflow:hidden;
+      transform:translateY(0);
+      transition:transform .4s ease, box-shadow .4s ease;
+    }
+    .glass-card::before {
+      content:"";
+      position:absolute;
+      inset:-25%;
+      background:radial-gradient(circle at 0% 0%,rgba(56,189,248,.18),transparent 60%);
+      opacity:.7;
+      pointer-events:none;
+    }
+    .glass-card:hover {
+      transform:translateY(-4px);
+      box-shadow:0 32px 100px rgba(15,23,42,.95);
+    }
+
+    .glass-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:8px;
+      font-size:.8rem;
+    }
+    .glass-pill {
+      font-size:.72rem;
+      padding:3px 9px;
+      border-radius:999px;
+      border:1px solid rgba(74,222,128,.8);
+      color:#bbf7d0;
+      background:rgba(22,163,74,.18);
+    }
+
+    .glass-metric-row {
+      display:flex;
+      justify-content:space-between;
+      margin:4px 0;
+      font-size:.78rem;
+    }
+    .glass-metric-label { color:var(--text-softer); }
+    .glass-metric-value { font-weight:600; }
+
+    .sparkline {
+      margin-top:10px;
+      height:64px;
+      border-radius:16px;
+      background:radial-gradient(circle at top,#0f172a,#020617);
+      border:1px solid rgba(15,23,42,1);
+      position:relative;
+      overflow:hidden;
+    }
+    .sparkline-line {
+      position:absolute;
+      left:-10%;
+      top:55%;
+      width:130%;
+      height:2px;
+      background:linear-gradient(90deg,#22c55e,#38bdf8,#a855f7);
+      transform-origin:left center;
+      transform:rotate(-6deg);
+      box-shadow:0 0 18px rgba(34,197,94,.9);
+    }
+    .sparkline-dot {
+      position:absolute;
+      width:10px; height:10px;
+      border-radius:999px;
+      background:#22c55e;
+      box-shadow:0 0 14px rgba(34,197,94,1);
+      right:14%; top:24%;
+      animation:pulseDot 2.4s infinite;
+    }
+    @keyframes pulseDot {
+      0% { transform:scale(1); opacity:1; }
+      50% { transform:scale(1.22); opacity:.7; }
+      100% { transform:scale(1); opacity:1; }
+    }
+
+    .glass-footer {
+      margin-top:12px;
+      font-size:.76rem;
+      color:var(--text-soft);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+    .glass-footer span strong { color:var(--accent-green); }
+
+    .bottom-row {
+      max-width:1100px;
+      margin:0 auto;
+      padding:0 20px 40px;
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:18px;
+    }
+    .feature-card {
+      border-radius:18px;
+      padding:12px 13px 14px;
+      background:linear-gradient(145deg,rgba(15,23,42,.96),rgba(15,23,42,.98));
+      border:1px solid rgba(15,23,42,1);
+      box-shadow:0 18px 60px rgba(15,23,42,1);
+      font-size:.83rem;
+    }
+    .feature-label {
+      font-size:.72rem;
+      text-transform:uppercase;
+      letter-spacing:.16em;
+      color:var(--text-softer);
+      margin-bottom:4px;
+    }
+    .feature-title {
+      font-weight:600;
+      margin-bottom:6px;
+    }
+    .feature-body {
+      color:var(--text-soft);
+      line-height:1.5;
+    }
+
+    @media (max-width: 900px) {
+      .shell { flex-direction:column; align-items:flex-start; gap:24px; padding-top:26px; }
+      .hero-right { width:100%; max-width:none; }
+      .bottom-row { grid-template-columns:minmax(0,1fr); }
+    }
+
+    @media (max-width: 640px) {
+      .nav { display:none; } /* keep it minimal on mobile */
+      .topbar-inner { justify-content:space-between; }
+    }
+  </style>
+</head>
+<body>
+  <!-- background glow orbs -->
+  <div class="orb green"></div>
+  <div class="orb purple"></div>
+  <div class="orb blue"></div>
+
+  <!-- TOP NAV -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-logo">W</div>
+        <div>
+          <div class="brand-text-main">WINMATIC</div>
+          <div class="brand-text-sub">AI FOOTBALL EDGE ENGINE</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <a href="index.html" class="active">Home</a>
+        <a href="predictor.html">Predictions</a>
+        <a href="matches.html">All Matches</a>
+        <a href="bet-of-day.html">Bet of the Day</a>
+        <a href="results.html">Results</a>
+        <a href="progress.html">Progress</a>
+        <a href="tutorial.html">Tutorial</a>
+      </nav>
+
+      <div class="nav-right">
+        <a class="pill" href="pricing.html">View pricing</a>
+        <a class="cta-primary" href="predictor.html">
+          <span class="shine"></span>
+          Launch Predictor →
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <main>
+    <section class="shell">
+      <div class="hero-left">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> Engine online · Model-calibrated probabilities</div>
+        <h1 class="hero-title">
+          AI that finds the<strong> silent edges </strong>
+          <br /><span>before the market does.</span>
+        </h1>
+        <p class="hero-sub">
+          WinMatic scans every fixture, models win/draw/loss, goals, cards and corners,
+          and surfaces only the cleanest value spots – with transparent probabilities
+          instead of vague “tips”.
+        </p>
+
+        <div class="hero-badges">
+          <div class="hero-badge"><span class="hero-badge-dot"></span> Trained on 250k+ matches</div>
+          <div class="hero-badge">Calibrated log-loss & Brier metrics</div>
+          <div class="hero-badge">Value scanner with AI edge labels</div>
+        </div>
+
+        <div class="hero-actions">
+          <a href="predictor.html" class="cta-primary">
+            <span class="shine"></span>
+            Launch live predictor →
+          </a>
+          <a href="tutorial.html" class="pill">See how it works</a>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="glass-card">
+          <div class="glass-header">
+            <span style="font-size:.8rem;">Today’s model snapshot</span>
+            <span class="glass-pill">Live · Premier League</span>
+          </div>
+
+          <div class="glass-metric-row">
+            <span class="glass-metric-label">1X2 accuracy (last 30 days)</span>
+            <span class="glass-metric-value">77.9%</span>
+          </div>
+          <div class="glass-metric-row">
+            <span class="glass-metric-label">Samples scanned</span>
+            <span class="glass-metric-value">42,183</span>
+          </div>
+          <div class="glass-metric-row">
+            <span class="glass-metric-label">Average edge on top picks</span>
+            <span class="glass-metric-value">+8.6%</span>
+          </div>
+
+          <div class="sparkline">
+            <div class="sparkline-line"></div>
+            <div class="sparkline-dot"></div>
+          </div>
+
+          <div class="glass-footer">
+            <span>Bankroll mode: <strong>Conservative</strong></span>
+            <span style="color:var(--text-softer);">Next update in 3 mins</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="bottom-row">
+      <article class="feature-card">
+        <div class="feature-label">Predictions</div>
+        <div class="feature-title">Full-match probability curves</div>
+        <p class="feature-body">
+          Every match gets calibrated win / draw / loss probabilities, projected scoreline
+          and expected team stats – not just a single “tip”. Drill into any game on the
+          <strong>Predictions</strong> page.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feature-label">Value Scanner</div>
+        <div class="feature-title">Edges vs. bookmaker odds</div>
+        <p class="feature-body">
+          Feed market odds into your model and let WinMatic highlight mispriced outcomes.
+          Edges are labelled directly on the match cards, with “AI edge” and
+          “Strong AI edge” ribbons.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feature-label">Tracking</div>
+        <div class="feature-title">Results, progress & tutorials</div>
+        <p class="feature-body">
+          Use the dedicated pages for <strong>Results</strong>, <strong>Progress</strong> and
+          <strong>Tutorial</strong> to track hit-rate, ROI and learn how to interpret every
+          metric – perfect for serious bettors and sharp clients.
+        </p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

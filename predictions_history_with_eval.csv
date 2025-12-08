@@ -1,0 +1,4 @@
+id,fixture_id,league,home_team,away_team,kickoff_utc,model_home_p,model_draw_p,model_away_p,predicted_side,edge_value,actual_result,payload,correct
+1,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,home,,False
+2,1379124,39,Liverpool,Brighton,2025-12-13T15:00:00+00:00,0.25,0.223,0.511,away,,home,,False
+3,1379122,39,Chelsea,Everton,2025-12-13T15:00:00+00:00,0.407,0.294,0.296,home,,home,,True

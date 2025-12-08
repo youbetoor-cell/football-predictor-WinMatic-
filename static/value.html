@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WinMatic – Bet of the Day & Value Scanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --border-subtle: #111827;
+      --accent-purple: #8b5cf6;
+      --accent-green: #22c55e;
+      --accent-blue: #38bdf8;
+      --text: #e5e7eb;
+      --text-soft: #9ca3af;
+      --text-softer: #6b7280;
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --shadow-soft: 0 24px 70px rgba(0, 0, 0, 0.85);
+      --shadow-card: 0 18px 50px rgba(15, 23, 42, 0.98);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, #2a145a 0, #05051b 40%, #020617 100%);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      transition: background 0.5s ease;
+    }
+
+    /* TOP BAR – same pattern as predictor.html */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 22px;
+      background: rgba(2, 6, 23, 0.96);
+      border-bottom: 1px solid rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-logo {
+      width:36px;
+      height:36px;
+      border-radius:9999px;
+      background: radial-gradient(circle at 20% 10%, #a855f7, #6366f1 40%, #22c55e 95%);
+      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 0 40px rgba(129,140,248,.9);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:800;
+      font-size:1.1rem;
+      color:#f9fafb;
+    }
+
+    .brand-name {
+      font-weight:800;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      font-size:.9rem;
+    }
+
+    .brand-tagline {
+      font-size:.75rem;
+      color:var(--text-soft);
+    }
+
+    .nav {
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:0;
+    }
+
+    .nav-item {
+      border-radius:9999px;
+      padding:6px 11px;
+      font-size:.82rem;
+      color:var(--text-soft);
+      display:flex;
+      align-items:center;
+      gap:8px;
+      cursor:pointer;
+      border:1px solid transparent;
+      transition:.18s;
+      position: relative;
+      text-decoration: none;
+    }
+
+    .nav-item::before {
+      content:"●";
+      font-size:.5rem;
+      opacity:.7;
+    }
+
+    .nav-item:hover {
+      background:#061126;
+      color:var(--text);
+      border-color:#111827;
+      transform: translateY(-1px);
+    }
+
+    .nav-item.active {
+      background:rgba(139,92,246,.18);
+      border-color:rgba(139,92,246,.8);
+      color:#ddd6fe;
+      box-shadow:0 0 18px rgba(139,92,246,.8);
+    }
+
+    @media (max-width: 860px) {
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .nav {
+        width: 100%;
+      }
+    }
+
+    /* MAIN */
+    .main {
+      flex:1;
+      padding:18px 22px 26px;
+      position:relative;
+      max-width: 1100px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* HERO */
+    .hero {
+      position:relative;
+      margin-bottom:18px;
+      border-radius:var(--radius-lg);
+      padding:20px 20px 16px;
+      border:1px solid rgba(15,23,42,.9);
+      background:
+        radial-gradient(circle at top left, rgba(139,92,246,.38), transparent 62%),
+        radial-gradient(circle at center right, rgba(34,197,94,.25), transparent 60%),
+        #020617;
+      box-shadow:var(--shadow-soft);
+      overflow:hidden;
+    }
+
+    .hero-content {
+      position:relative;
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      align-items:center;
+    }
+
+    .hero-left { max-width:520px; }
+
+    .eyebrow {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:3px 10px;
+      border-radius:9999px;
+      background:rgba(15,23,42,.9);
+      border:1px solid rgba(148,163,184,.3);
+      font-size:.72rem;
+      color:var(--text-soft);
+      margin-bottom:8px;
+    }
+
+    .eyebrow-dot {
+      width:7px;
+      height:7px;
+      border-radius:9999px;
+      background:#22c55e;
+      box-shadow:0 0 12px rgba(34,197,94,1);
+    }
+
+    .hero-title {
+      font-size:1.9rem;
+      font-weight:800;
+      letter-spacing:.02em;
+      margin:0 0 6px;
+    }
+
+    .hero-highlight { color:#c4b5fd; }
+
+    .hero-subtitle {
+      font-size:.9rem;
+      color:var(--text-soft);
+      max-width:460px;
+      line-height:1.45;
+    }
+
+    .hero-right {
+      min-width:230px;
+      max-width:260px;
+      border-radius:var(--radius-md);
+      border:1px solid rgba(148,163,184,.5);
+      padding:10px 13px;
+      background: radial-gradient(circle at top left, rgba(15,23,42,.9), #020617);
+      box-shadow:0 12px 30px rgba(15,23,42,1);
+      font-size:.78rem;
+    }
+
+    .hero-right-row {
+      display:flex;
+      justify-content:space-between;
+      margin-top:4px;
+    }
+
+    .hero-right-label { color:var(--text-softer); }
+    .hero-right-value { font-weight:600; color:#bbf7d0; }
+
+    /* CONTROLS */
+    .controls {
+      margin:14px 0 10px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+      font-size:.85rem;
+    }
+
+    .control-group {
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .field-label {
+      font-size:.8rem;
+      color:var(--text-soft);
+    }
+
+    select, input[type="number"] {
+      border-radius:9999px;
+      border:1px solid #111827;
+      background:#020617;
+      color:var(--text);
+      padding:5px 12px;
+      font-size:.85rem;
+      min-width:140px;
+    }
+
+    .btn {
+      border-radius:9999px;
+      padding:7px 16px;
+      border:none;
+      cursor:pointer;
+      font-size:.84rem;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      transition:.18s;
+    }
+
+    .btn-primary {
+      background:linear-gradient(135deg, #6366f1, #22c55e);
+      color:#f9fafb;
+      box-shadow:0 0 20px rgba(129,140,248,.9);
+    }
+
+    .btn-primary:hover {
+      transform:translateY(-1px);
+      box-shadow:0 0 28px rgba(94,234,212,.9);
+    }
+
+    .status-line {
+      font-size:.78rem;
+      color:var(--text-softer);
+      margin-top:4px;
+    }
+    .status-line.error { color:#fecaca; }
+
+    /* LAYOUT: bet-of-day + scanner */
+    .columns {
+      display:grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.2fr);
+      gap:14px;
+      margin-top:14px;
+    }
+    @media (max-width: 960px) {
+      .columns {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .panel {
+      border-radius:var(--radius-md);
+      background:radial-gradient(circle at top left, rgba(15,23,42,.96), #020617);
+      border:1px solid rgba(15,23,42,1);
+      padding:11px 13px;
+      box-shadow:var(--shadow-card);
+    }
+
+    .panel-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      margin-bottom:6px;
+    }
+
+    .panel-title { font-size:.96rem; font-weight:600; }
+    .panel-subtitle { font-size:.78rem; color:var(--text-softer); }
+
+    /* Bet of the Day card */
+    .bet-day-card {
+      margin-top:6px;
+      border-radius:18px;
+      padding:12px 13px;
+      background:
+        radial-gradient(circle at top left, rgba(34,197,94,.28), transparent 60%),
+        radial-gradient(circle at bottom right, rgba(129,140,248,.3), transparent 55%),
+        #020617;
+      border:1px solid #16a34a;
+      box-shadow:0 0 0 1px #14532d, 0 20px 60px rgba(0,0,0,.95), 0 0 32px rgba(34,197,94,.7);
+      font-size:.84rem;
+    }
+
+    .bet-badge {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:3px 9px;
+      border-radius:9999px;
+      border:1px solid rgba(250,204,21,.9);
+      background:rgba(250,204,21,.14);
+      color:#facc15;
+      font-size:.78rem;
+      font-weight:600;
+      text-transform:uppercase;
+      letter-spacing:.08em;
+    }
+
+    .bet-main-row {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      margin-top:8px;
+    }
+
+    .bet-teams {
+      font-size:1rem;
+      font-weight:700;
+    }
+
+    .bet-edge {
+      text-align:right;
+      font-size:.8rem;
+    }
+
+    .bet-edge-value {
+      font-size:1.4rem;
+      font-weight:800;
+      color:#bbf7d0;
+    }
+
+    .bet-meta {
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      margin-top:6px;
+      font-size:.78rem;
+      color:var(--text-softer);
+    }
+
+    .bet-probs {
+      margin-top:6px;
+      font-size:.8rem;
+    }
+
+    .bet-probs span {
+      display:inline-block;
+      margin-right:8px;
+    }
+
+    .empty {
+      font-size:.8rem;
+      color:var(--text-softer);
+      margin-top:6px;
+    }
+
+    /* Value scanner list */
+    .scanner-list {
+      margin-top:6px;
+      max-height:520px;
+      overflow-y:auto;
+      padding-right:3px;
+    }
+
+    @keyframes fadeSlideUp {
+      0%{opacity:0; transform:translateY(14px);}
+      100%{opacity:1; transform:translateY(0);}
+    }
+
+    .value-card {
+      border-radius:16px;
+      padding:9px 10px;
+      margin-bottom:7px;
+      background:radial-gradient(circle at top, #020617, #020617 60%, #020617);
+      border:1px solid #111827;
+      font-size:.8rem;
+      display:grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) minmax(0, 0.8fr);
+      gap:8px;
+      align-items:center;
+      animation:fadeSlideUp .5s ease-out both;
+      animation-delay: calc(var(--card-index, 0) * 40ms);
+    }
+
+    @media (max-width: 860px) {
+      .value-card {
+        grid-template-columns: minmax(0,1.4fr) minmax(0,1fr);
+        grid-template-rows:auto auto;
+      }
+    }
+
+    .value-teams {
+      font-weight:600;
+    }
+
+    .value-kickoff {
+      font-size:.76rem;
+      color:var(--text-softer);
+      margin-top:2px;
+    }
+
+    .value-market {
+      font-size:.78rem;
+      color:var(--text-soft);
+    }
+
+    .value-edge-pill {
+      justify-self:flex-end;
+      font-size:.76rem;
+      display:inline-flex;
+      align-items:center;
+      gap:5px;
+      padding:3px 9px;
+      border-radius:9999px;
+      border:1px solid rgba(34,197,94,.8);
+      background:rgba(22,163,74,.16);
+      color:#bbf7d0;
+    }
+
+    .value-edge-pill.strong {
+      border-color:rgba(250,204,21,.9);
+      background:rgba(250,204,21,.2);
+      color:#facc15;
+    }
+
+    .value-probs {
+      font-size:.76rem;
+      color:var(--text-softer);
+    }
+
+    .pill-league {
+      font-size:.72rem;
+      padding:2px 7px;
+      border-radius:9999px;
+      border:1px solid rgba(148,163,184,.45);
+      background:rgba(15,23,42,.95);
+      color:var(--text-soft);
+      display:inline-flex;
+      align-items:center;
+      gap:5px;
+      margin-bottom:3px;
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- GLOBAL MENU (Value Scanner / Bet of the day active on this page) -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="brand">
+        <div class="brand-logo">W</div>
+        <div>
+          <div class="brand-name">WINMATIC</div>
+          <div class="brand-tagline">AI Match Edge Engine</div>
+        </div>
+      </a>
+    </div>
+    <div class="topbar-right">
+      <nav class="nav">
+        <a class="nav-item" href="index.html">Home</a>
+
+      <a class="nav-item" href="predictor.html">Predictions</a>
+      <a class="nav-item" href="predictor.html#today">All matches (today)</a>
+
+      <a class="nav-item" href="bets.html">Bet of the day</a>
+      <a class="nav-item active" href="value.html">Value Scanner</a>
+
+      <a class="nav-item" href="results.html">Results</a>
+      <a class="nav-item" href="progress.html">Progress</a>
+      <a class="nav-item" href="metrics.html#metrics">Metrics</a>
+
+      <a class="nav-item" href="tutorial.html">Tutorial</a>
+      <a class="nav-item" href="pricing.html">View pricing</a>
+      <a class="nav-item" href="contact.html">Contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-content">
+        <div class="hero-left">
+          <div class="eyebrow">
+            <span class="eyebrow-dot"></span>
+            <span>Live edge scan</span>
+          </div>
+          <h1 class="hero-title">
+            <span class="hero-highlight">Bet of the Day</span> & full value scanner
+          </h1>
+          <p class="hero-subtitle">
+            WinMatic scans upcoming fixtures, compares model probabilities to bookmaker odds
+            and surfaces only spots where your model believes the price is wrong.
+          </p>
+        </div>
+        <aside class="hero-right">
+          <div class="hero-right-row">
+            <span class="hero-right-label">Source</span>
+            <span class="hero-right-value">/value-bets endpoint</span>
+          </div>
+          <div class="hero-right-row">
+            <span class="hero-right-label">Edge threshold</span>
+            <span class="hero-right-value"><span id="hero-min-edge">5</span>% +</span>
+          </div>
+          <div class="hero-right-row">
+            <span class="hero-right-label">Window</span>
+            <span class="hero-right-value"><span id="hero-days">1</span> day ahead</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- CONTROLS -->
+    <section class="controls">
+      <div class="control-group">
+        <label class="field-label" for="league-select">League</label>
+        <select id="league-select">
+          <option value="39">Premier League (ENG)</option>
+          <option value="140">La Liga (ESP)</option>
+          <option value="135">Serie A (ITA)</option>
+          <option value="78">Bundesliga (GER)</option>
+          <option value="61">Ligue 1 (FRA)</option>
+          <option value="94">Primeira Liga (POR)</option>
+        </select>
+
+        <label class="field-label" for="days-ahead">Days ahead</label>
+        <input id="days-ahead" type="number" min="1" max="7" value="1" />
+
+        <label class="field-label" for="min-edge">Min edge (%)</label>
+        <input id="min-edge" type="number" min="1" max="30" step="1" value="5" />
+      </div>
+
+      <div class="control-group">
+        <button id="btn-refresh" class="btn btn-primary">Scan for value</button>
+      </div>
+    </section>
+
+    <div id="status-line" class="status-line">Click “Scan for value” to fetch bets.</div>
+
+    <!-- BET OF THE DAY + SCANNER -->
+    <section class="columns">
+      <!-- Bet of the Day -->
+      <section class="panel" id="bet-of-day">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Bet of the Day</div>
+            <div class="panel-subtitle">Highest model edge in the selected league & window.</div>
+          </div>
+        </div>
+        <div id="bet-day-container">
+          <div class="empty">
+            No bet yet. Run a scan to see the strongest edge.
+          </div>
+        </div>
+      </section>
+
+      <!-- Value Scanner -->
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Value Scanner</div>
+            <div class="panel-subtitle">
+              All bets above your edge threshold, sorted by kickoff.
+            </div>
+          </div>
+        </div>
+        <div id="scanner-list" class="scanner-list">
+          <div class="empty">No results yet.</div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    // Small helper: league metadata for labels
+    const LEAGUES = {
+      39:  { short: "ENG", name: "Premier League" },
+      140: { short: "ESP", name: "La Liga" },
+      135: { short: "ITA", name: "Serie A" },
+      78:  { short: "GER", name: "Bundesliga" },
+      61:  { short: "FRA", name: "Ligue 1" },
+      94:  { short: "POR", name: "Primeira Liga" }
+    };
+
+    function toPercent(p) {
+      if (typeof p !== "number" || !isFinite(p)) return 0;
+      return Math.round(p * 100);
+    }
+
+    function formatKickoff(kickoffUtc) {
+      if (!kickoffUtc) return { date: "", time: "" };
+      const d = new Date(kickoffUtc);
+      const date = d.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
+      const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      return { date, time };
+    }
+
+    function extractEdge(fx) {
+      // Support both best_edge (new) and edge_value (older)
+      const raw =
+        fx.best_edge ??
+        fx.edge_value ??
+        fx.edge ??
+        (fx.model_edge ?? null);
+      return typeof raw === "number" ? raw : 0;
+    }
+
+    function extractProbs(fx) {
+      const p = fx.model_probs || {};
+      const home = toPercent(
+        p.home ?? fx.model_home_p ?? fx.home_win_p ?? fx.prob_home_win
+      );
+      const draw = toPercent(
+        p.draw ?? fx.model_draw_p ?? fx.draw_p ?? fx.prob_draw
+      );
+      const away = toPercent(
+        p.away ?? fx.model_away_p ?? fx.away_win_p ?? fx.prob_away_win
+      );
+      return { home, draw, away };
+    }
+
+    function extractTeams(fx) {
+      const home =
+        fx.home_name || fx.home_team || fx.home || (fx.teams && fx.teams.home && fx.teams.home.name) || "Home";
+      const away =
+        fx.away_name || fx.away_team || fx.away || (fx.teams && fx.teams.away && fx.teams.away.name) || "Away";
+      return { home, away };
+    }
+
+    function extractLeagueMeta(fx) {
+      const id = fx.league_id || fx.league || null;
+      if (id && LEAGUES[id]) return LEAGUES[id];
+      return { short: "LG", name: "League" };
+    }
+
+    function createBetOfDayCard(fx) {
+      const { home, away } = extractTeams(fx);
+      const probs = extractProbs(fx);
+      const edge = extractEdge(fx);
+      const side = fx.best_side || fx.predicted_side || "unknown";
+      const kickoff = fx.kickoff_utc || fx.match_date || fx.date;
+      const { date, time } = formatKickoff(kickoff);
+      const leagueMeta = extractLeagueMeta(fx);
+
+      const favLabel =
+        side === "home"
+          ? `Home win – ${home}`
+          : side === "away"
+          ? `Away win – ${away}`
+          : side === "draw"
+          ? "Draw"
+          : "Model pick";
+
+      const container = document.createElement("div");
+      container.className = "bet-day-card";
+      container.innerHTML = `
+        <div class="bet-badge">
+          <span>⭐ Bet of the Day</span>
+        </div>
+        <div class="bet-main-row">
+          <div>
+            <div class="bet-teams">${home} vs ${away}</div>
+            <div class="value-kickoff">${leagueMeta.short} · ${leagueMeta.name} · ${date || ""} ${time || ""}</div>
+          </div>
+          <div class="bet-edge">
+            <div>Model edge</div>
+            <div class="bet-edge-value">${(edge * 100).toFixed(1)}%</div>
+          </div>
+        </div>
+        <div class="bet-meta">
+          <div>Suggested market: <strong>${favLabel}</strong></div>
+          <div>Fixture ID: <code>${fx.fixture_id ?? "–"}</code></div>
+        </div>
+        <div class="bet-probs">
+          <span>H: ${probs.home}%</span>
+          <span>D: ${probs.draw}%</span>
+          <span>A: ${probs.away}%</span>
+        </div>
+      `;
+      return container;
+    }
+
+    function createScannerCard(fx, index) {
+      const { home, away } = extractTeams(fx);
+      const probs = extractProbs(fx);
+      const edge = extractEdge(fx);
+      const side = fx.best_side || fx.predicted_side || "unknown";
+      const kickoff = fx.kickoff_utc || fx.match_date || fx.date;
+      const { date, time } = formatKickoff(kickoff);
+      const leagueMeta = extractLeagueMeta(fx);
+
+      const edgePercent = (edge * 100).toFixed(1);
+      const strong = edge >= 0.12; // 12%+ = "strong" edge
+
+      let marketText = "Model pick: ";
+      if (side === "home") marketText += `Home win (${home})`;
+      else if (side === "away") marketText += `Away win (${away})`;
+      else if (side === "draw") marketText += "Draw";
+      else marketText += "N/A";
+
+      const card = document.createElement("article");
+      card.className = "value-card";
+      card.style.setProperty("--card-index", String(index));
+
+      card.innerHTML = `
+        <div>
+          <div class="pill-league">${leagueMeta.short} · ${leagueMeta.name}</div>
+          <div class="value-teams">${home} vs ${away}</div>
+          <div class="value-kickoff">${date || ""} ${time || ""}</div>
+        </div>
+        <div>
+          <div class="value-market">${marketText}</div>
+          <div class="value-probs">
+            H: ${probs.home}% · D: ${probs.draw}% · A: ${probs.away}%
+          </div>
+        </div>
+        <div>
+          <div class="value-edge-pill ${strong ? "strong" : ""}">
+            <span>${strong ? "Strong edge" : "Edge"}</span>
+            <strong>${edgePercent}%</strong>
+          </div>
+        </div>
+      `;
+      return card;
+    }
+
+    async function fetchValueBets() {
+      const leagueSelect = document.getElementById("league-select");
+      const daysInput = document.getElementById("days-ahead");
+      const minEdgeInput = document.getElementById("min-edge");
+      const statusLine = document.getElementById("status-line");
+      const betDayContainer = document.getElementById("bet-day-container");
+      const scannerList = document.getElementById("scanner-list");
+      const heroMinEdge = document.getElementById("hero-min-edge");
+      const heroDays = document.getElementById("hero-days");
+
+      const league = parseInt(leagueSelect.value, 10);
+      const daysAhead = Math.max(1, Math.min(7, parseInt(daysInput.value || "1", 10)));
+      const minEdgePercent = Math.max(1, Math.min(30, parseInt(minEdgeInput.value || "5", 10)));
+      const minEdge = minEdgePercent / 100;
+
+      heroMinEdge.textContent = String(minEdgePercent);
+      heroDays.textContent = String(daysAhead);
+
+      statusLine.textContent = "Scanning for value bets…";
+      statusLine.classList.remove("error");
+      betDayContainer.innerHTML = "";
+      scannerList.innerHTML = "";
+
+      const url = `/value-bets?league=${league}&days_ahead=${daysAhead}&min_edge=${minEdge}&limit=40`;
+
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) {
+          statusLine.textContent = `Error: /value-bets returned HTTP ${resp.status}`;
+          statusLine.classList.add("error");
+          betDayContainer.innerHTML = '<div class="empty">Could not load Bet of the Day.</div>';
+          scannerList.innerHTML = '<div class="empty">Could not load value bets.</div>';
+          return;
+        }
+
+        const data = await resp.json();
+        if (!data.ok) {
+          statusLine.textContent = data.message || "Backend reported an error.";
+          statusLine.classList.add("error");
+          betDayContainer.innerHTML = '<div class="empty">No bet of the day (backend error).</div>';
+          scannerList.innerHTML = '<div class="empty">No value bets (backend error).</div>';
+          return;
+        }
+
+        const fixtures = data.fixtures || [];
+        if (!fixtures.length) {
+          statusLine.textContent = "No value bets found for this league / window.";
+          betDayContainer.innerHTML =
+            '<div class="empty">No edges above your threshold. Try lowering edge % or widening days ahead.</div>';
+          scannerList.innerHTML = '<div class="empty">No value bets to display.</div>';
+          return;
+        }
+
+        // Sort by edge desc for Bet of the Day, but keep original for time ordering
+        const sortedByEdge = [...fixtures].sort((a, b) => extractEdge(b) - extractEdge(a));
+        const top = sortedByEdge[0];
+
+        // Bet of the Day card
+        betDayContainer.innerHTML = "";
+        betDayContainer.appendChild(createBetOfDayCard(top));
+
+        // Scanner list: sort by kickoff time
+        const withTime = fixtures.map((fx, idx) => {
+          const rawDate = fx.kickoff_utc || fx.match_date || fx.date || (fx.fixture && fx.fixture.date);
+          const ts = rawDate ? new Date(rawDate).getTime() : Date.now() + idx;
+          return { fx, ts };
+        });
+        withTime.sort((a, b) => a.ts - b.ts);
+
+        scannerList.innerHTML = "";
+        withTime.forEach((item, index) => {
+          const card = createScannerCard(item.fx, index);
+          scannerList.appendChild(card);
+        });
+
+        statusLine.textContent = `Showing ${fixtures.length} value bets. Bet of the Day has the highest model edge.`;
+      } catch (err) {
+        console.error("Error fetching /value-bets:", err);
+        statusLine.textContent = "Network error while calling /value-bets.";
+        statusLine.classList.add("error");
+        betDayContainer.innerHTML = '<div class="empty">Could not load Bet of the Day (network error).</div>';
+        scannerList.innerHTML = '<div class="empty">Could not load value bets (network error).</div>';
+      }
+    }
+
+    function initValuePage() {
+      const btn = document.getElementById("btn-refresh");
+      if (btn) {
+        btn.addEventListener("click", fetchValueBets);
+      }
+
+      // Optional: auto-scan once on load
+      fetchValueBets();
+    }
+
+    document.addEventListener("DOMContentLoaded", initValuePage);
+  </script>
+</body>
+</html>

@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WinMatic – AI Football Predictions</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --bg-elevated: #020617;
+      --bg-soft: #020617;
+      --border-subtle: #1f2937;
+      --accent: #ef4444;
+      --accent-soft: rgba(239, 68, 68, 0.25);
+      --accent-blue: #3b82f6;
+      --accent-green: #22c55e;
+      --text: #e5e7eb;
+      --text-soft: #9ca3af;
+      --text-softer: #6b7280;
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --shadow-soft: 0 18px 45px rgba(0, 0, 0, 0.6);
+      --shadow-card: 0 10px 30px rgba(15, 23, 42, 0.8);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #0b1120 0, #020617 40%, #020617 100%);
+      color: var(--text);
+      display: flex;
+    }
+
+    /* Sidebar */
+
+    .sidebar {
+      width: 240px;
+      background: linear-gradient(180deg, #020617 0, #020617 40%, #020617 100%);
+      border-right: 1px solid #111827;
+      padding: 18px 18px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 9999px;
+      background: radial-gradient(circle at 30% 20%, #f97316, #ef4444 40%, #3b82f6 100%);
+      box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8), 0 0 40px rgba(239, 68, 68, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.1rem;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.1;
+    }
+
+    .brand-name {
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-size: 0.9rem;
+    }
+
+    .brand-tagline {
+      font-size: 0.75rem;
+      color: var(--text-soft);
+    }
+
+    .nav {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nav-item {
+      border-radius: 9999px;
+      padding: 8px 10px;
+      font-size: 0.86rem;
+      color: var(--text-soft);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.18s ease-out;
+    }
+
+    .nav-item::before {
+      content: "●";
+      font-size: 0.5rem;
+      opacity: 0.7;
+    }
+
+    .nav-item:hover {
+      background: #020617;
+      color: var(--text);
+      border-color: #111827;
+    }
+
+    .nav-item.active {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fecaca;
+      box-shadow: 0 0 24px rgba(239, 68, 68, 0.35);
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      font-size: 0.75rem;
+      color: var(--text-softer);
+    }
+
+    .sidebar-footer a {
+      color: #93c5fd;
+      text-decoration: none;
+    }
+
+    .sidebar-footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* Main layout */
+
+    .main {
+      flex: 1;
+      padding: 18px 20px 18px;
+      overflow-y: auto;
+    }
+
+    .hero {
+      position: relative;
+      margin-bottom: 18px;
+      border-radius: var(--radius-lg);
+      padding: 18px 18px 18px;
+      border: 1px solid var(--border-subtle);
+      background: radial-gradient(circle at top left, rgba(239, 68, 68, 0.12), transparent 55%),
+                  radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.16), transparent 55%),
+                  #020617;
+      box-shadow: var(--shadow-soft);
+      overflow: hidden;
+    }
+
+    .hero-glow {
+      position: absolute;
+      width: 260px;
+      height: 260px;
+      background: radial-gradient(circle, rgba(239, 68, 68, 0.22), transparent 60%);
+      top: -120px;
+      right: -70px;
+      filter: blur(2px);
+      opacity: 0.7;
+      pointer-events: none;
+      animation: floatGlow 8s ease-in-out infinite alternate;
+    }
+
+    @keyframes floatGlow {
+      0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.5; }
+      100% { transform: translate3d(-18px, 20px, 0) scale(1.1); opacity: 0.9; }
+    }
+
+    .hero-content {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .hero-left {
+      max-width: 520px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border-radius: 9999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      font-size: 0.72rem;
+      color: var(--text-soft);
+      margin-bottom: 8px;
+    }
+
+    .eyebrow-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 9999px;
+      background: #22c55e;
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
+    }
+
+    .hero-title {
+      font-size: 1.75rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      margin: 0 0 6px;
+    }
+
+    .hero-highlight {
+      color: #fecaca;
+    }
+
+    .hero-subtitle {
+      font-size: 0.92rem;
+      color: var(--text-soft);
+      max-width: 440px;
+      line-height: 1.4;
+    }
+
+    .hero-buttons {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .btn {
+      border-radius: 9999px;
+      padding: 7px 14px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.86rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.18s ease-out;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #f97316);
+      color: #f9fafb;
+      box-shadow: 0 0 25px rgba(239, 68, 68, 0.5);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 36px rgba(239, 68, 68, 0.75);
+    }
+
+    .btn-secondary {
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text-soft);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(15, 23, 42, 1);
+      color: var(--text);
+    }
+
+    .hero-right {
+      min-width: 180px;
+      max-width: 260px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      padding: 10px 12px;
+      background: rgba(15, 23, 42, 0.94);
+      box-shadow: 0 12px 26px rgba(15, 23, 42, 0.9);
+      font-size: 0.78rem;
+    }
+
+    .hero-right-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .hero-right-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+    }
+
+    .hero-right-label {
+      color: var(--text-softer);
+    }
+
+    .hero-right-value {
+      font-weight: 600;
+      color: #d1fae5;
+    }
+
+    /* Tabs + content */
+
+    .top-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .top-controls-left {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .pill-group {
+      background: rgba(15, 23, 42, 0.7);
+      border-radius: 9999px;
+      padding: 3px;
+      display: inline-flex;
+      gap: 3px;
+      border: 1px solid #111827;
+    }
+
+    .pill {
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      color: var(--text-soft);
+      cursor: pointer;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      transition: all 0.18s ease-out;
+    }
+
+    .pill.active {
+      background: rgba(15, 23, 42, 0.95);
+      border-color: var(--accent);
+      color: #fecaca;
+      box-shadow: 0 0 16px rgba(248, 113, 113, 0.7);
+    }
+
+    .small-input {
+      background: #020617;
+      border-radius: 9999px;
+      border: 1px solid #111827;
+      padding: 4px 9px;
+      font-size: 0.8rem;
+      color: var(--text);
+      width: 80px;
+    }
+
+    .small-label {
+      font-size: 0.78rem;
+      color: var(--text-soft);
+      margin-right: 4px;
+    }
+
+    .status {
+      font-size: 0.78rem;
+      color: var(--text-softer);
+    }
+
+    .status.error {
+      color: #fecaca;
+    }
+
+    .cards-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    @media (max-width: 1100px) {
+      .cards-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      body {
+        flex-direction: column;
+      }
+      .sidebar {
+        position: relative;
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+      }
+      .nav {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .nav-item {
+        padding: 6px 10px;
+      }
+      .sidebar-footer {
+        display: none;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .cards-row {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .hero-content {
+        flex-direction: column;
+      }
+      .hero-right {
+        width: 100%;
+      }
+    }
+
+    .metric-card {
+      border-radius: var(--radius-md);
+      background: radial-gradient(circle at top left, rgba(248, 113, 113, 0.05), transparent 40%), #020617;
+      border: 1px solid var(--border-subtle);
+      padding: 10px 12px;
+      box-shadow: var(--shadow-card);
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.18s ease-out, box-shadow 0.18s ease-out, border-color 0.18s ease-out;
+    }
+
+    .metric-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top left, rgba(248, 250, 252, 0.08), transparent 60%);
+      opacity: 0;
+      transition: opacity 0.18s ease-out;
+      pointer-events: none;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(248, 113, 113, 0.6);
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.95);
+    }
+
+    .metric-card:hover::after {
+      opacity: 1;
+    }
+
+    .metric-label {
+      font-size: 0.8rem;
+      color: var(--text-soft);
+      margin-bottom: 3px;
+    }
+
+    .metric-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .metric-sub {
+      font-size: 0.75rem;
+      color: var(--text-softer);
+      margin-top: 2px;
+    }
+
+    .metric-pill {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      font-size: 0.7rem;
+      padding: 2px 7px;
+      border-radius: 9999px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      color: var(--text-soft);
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    .metric-pill.green {
+      border-color: rgba(34, 197, 94, 0.6);
+      color: #bbf7d0;
+    }
+
+    .metric-pill.red {
+      border-color: rgba(239, 68, 68, 0.7);
+      color: #fecaca;
+    }
+
+    .content-sections {
+      display: grid;
+      grid-template-columns: minmax(0, 2.1fr) minmax(0, 1.4fr);
+      gap: 14px;
+    }
+
+    @media (max-width: 1100px) {
+      .content-sections {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .panel {
+      border-radius: var(--radius-md);
+      background: rgba(15, 23, 42, 0.96);
+      border: 1px solid var(--border-subtle);
+      padding: 10px 12px;
+      box-shadow: var(--shadow-card);
+      min-height: 120px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .panel-title {
+      font-size: 0.96rem;
+      font-weight: 600;
+    }
+
+    .panel-subtitle {
+      font-size: 0.76rem;
+      color: var(--text-softer);
+    }
+
+    .panel-body {
+      max-height: 420px;
+      overflow-y: auto;
+      padding-right: 4px;
+      margin-top: 4px;
+    }
+
+    .match-card {
+      border-radius: 12px;
+      background: #020617;
+      border: 1px solid #111827;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      font-size: 0.84rem;
+      transition: transform 0.14s ease-out, border-color 0.14s ease-out, box-shadow 0.14s ease-out;
+    }
+
+    .match-card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(148, 163, 184, 0.6);
+      box-shadow: 0 16px 35px rgba(15, 23, 42, 0.9);
+    }
+
+    .match-card.highlight {
+      border-color: rgba(34, 197, 94, 0.75);
+      box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.55), 0 18px 45px rgba(15, 23, 42, 1);
+    }
+
+    .match-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .match-teams {
+      font-weight: 600;
+    }
+
+    .match-meta {
+      font-size: 0.75rem;
+      color: var(--text-softer);
+    }
+
+    .match-line {
+      margin-top: 3px;
+    }
+
+    .match-secondary {
+      font-size: 0.78rem;
+      color: var(--text-soft);
+    }
+
+    .match-reasoning {
+      font-size: 0.78rem;
+      margin-top: 5px;
+      color: var(--text);
+    }
+
+    .badge {
+      display: inline-block;
+      border-radius: 9999px;
+      padding: 1px 7px;
+      font-size: 0.72rem;
+      border: 1px solid #374151;
+      color: var(--text-soft);
+      margin-right: 4px;
+      margin-top: 3px;
+    }
+
+    .badge.green {
+      border-color: rgba(34, 197, 94, 0.7);
+      color: #bbf7d0;
+    }
+
+    .badge.blue {
+      border-color: rgba(59, 130, 246, 0.7);
+      color: #bfdbfe;
+    }
+
+    .badge.gray {
+      border-color: #4b5563;
+      color: #e5e7eb;
+    }
+
+    .empty {
+      font-size: 0.8rem;
+      color: var(--text-softer);
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">W</div>
+      <div class="brand-text">
+        <div class="brand-name">WINMATIC</div>
+        <div class="brand-tagline">AI Match Edge Engine</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-item active" data-section="dashboard">Dashboard</div>
+      <div class="nav-item" data-section="predictions">Predictions</div>
+      <div class="nav-item" data-section="value">Value Scanner</div>
+      <div class="nav-item" data-section="results">Results (coming soon)</div>
+      <div class="nav-item" data-section="contact">Contact</div>
+    </nav>
+
+    <div class="sidebar-footer">
+      Backend running locally. Frontend talks to:
+      <br /> <code>/predict/upcoming</code>, <code>/value/upcoming</code>, <code>/model-info</code>.
+      <br /><br />
+      You can change defaults inside <code>static/predictor.html</code>.
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- HERO -->
+    <section class="hero" id="section-dashboard">
+      <div class="hero-glow"></div>
+      <div class="hero-content">
+        <div class="hero-left">
+          <div class="eyebrow">
+            <span class="eyebrow-dot"></span>
+            Live engine online · Model-backed probabilities
+          </div>
+          <h1 class="hero-title">
+            Premium <span class="hero-highlight">AI Football</span> predictions with live reasoning.
+          </h1>
+          <p class="hero-subtitle">
+            WinMatic ingests historical fixtures, team strength, form and congestion to produce calibrated
+            scorelines, win probabilities and value signals that you can actually understand.
+          </p>
+          <div class="hero-buttons">
+            <button class="btn btn-primary" id="ctaPredictions">
+              View upcoming predictions →
+            </button>
+            <button class="btn btn-secondary" id="ctaValue">
+              Scan for value edges
+            </button>
+          </div>
+        </div>
+        <div class="hero-right">
+          <div class="hero-right-title">Model snapshot</div>
+          <div class="hero-right-row">
+            <span class="hero-right-label">League</span>
+            <span class="hero-right-value" id="metricLeague">—</span>
+          </div>
+          <div class="hero-right-row">
+            <span class="hero-right-label">Samples</span>
+            <span class="hero-right-value" id="metricSamples">—</span>
+          </div>
+          <div class="hero-right-row">
+            <span class="hero-right-label">Log loss</span>
+            <span class="hero-right-value" id="metricLogloss">—</span>
+          </div>
+          <div class="hero-right-row">
+            <span class="hero-right-label">Brier score</span>
+            <span class="hero-right-value" id="metricBrier">—</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TOP CONTROLS / METRICS -->
+    <section>
+      <div class="top-controls">
+        <div class="top-controls-left">
+          <div class="pill-group" id="timeframeTabs">
+            <div class="pill active" data-range="all">All time</div>
+            <div class="pill" data-range="30">Last 30 days*</div>
+            <div class="pill" data-range="7">Last 7 days*</div>
+          </div>
+          <div>
+            <span class="small-label">League</span>
+            <input class="small-input" id="leagueInput" type="number" value="39" />
+          </div>
+          <div>
+            <span class="small-label">Days ahead</span>
+            <input class="small-input" id="daysInput" type="number" value="7" min="1" max="14" />
+          </div>
+        </div>
+        <div id="status" class="status"></div>
+      </div>
+
+      <div class="cards-row">
+        <div class="metric-card">
+          <div class="metric-pill green">Live</div>
+          <div class="metric-label">Upcoming matches scanned</div>
+          <div class="metric-value" id="metricUpcoming">0</div>
+          <div class="metric-sub">Number of fixtures in the next window.</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-pill green">AI Edge</div>
+          <div class="metric-label">Value spots found</div>
+          <div class="metric-value" id="metricValueCount">0</div>
+          <div class="metric-sub">Matches where model disagrees with the market.</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-pill">Model</div>
+          <div class="metric-label">Log loss (1X2)</div>
+          <div class="metric-value" id="metricLoglossCard">—</div>
+          <div class="metric-sub">Lower is better (perfect = 0.0).</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-pill red">Calibration</div>
+          <div class="metric-label">Brier score</div>
+          <div class="metric-value" id="metricBrierCard">—</div>
+          <div class="metric-sub">Multi-class Brier score on holdout set.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MAIN CONTENT SECTIONS -->
+    <section class="content-sections" id="mainSections">
+      <div class="panel" id="panelPredictions">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Upcoming predictions</div>
+            <div class="panel-subtitle">Win probabilities, expected goals & explanations.</div>
+          </div>
+        </div>
+        <div class="panel-body" id="predictionsList"></div>
+      </div>
+
+      <div class="panel" id="panelValue">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Top value matches</div>
+            <div class="panel-subtitle">Where WinMatic sees an edge vs bookmaker odds.</div>
+          </div>
+        </div>
+        <div class="panel-body" id="valueList"></div>
+      </div>
+    </section>
+
+    <!-- Placeholder sections for nav (results & contact) -->
+    <section id="section-results" style="display:none; margin-top:12px;">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Results & tracking</div>
+        </div>
+        <div class="panel-body">
+          <p class="empty">
+            This area will show hit rates and performance curves once a dedicated results endpoint is implemented.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="section-contact" style="display:none; margin-top:12px;">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Contact</div>
+        </div>
+        <div class="panel-body">
+          <p class="empty">
+            Plug your own contact / subscription details here (email, Discord, Telegram, etc).
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // ---------- Helpers ----------
+    const $ = (id) => document.getElementById(id);
+
+    function setStatus(msg, isError = false) {
+      const el = $("status");
+      el.textContent = msg || "";
+      el.classList.toggle("error", !!isError);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function fmtProb(p) {
+      return (p || 0).toFixed(2);
+    }
+
+    function fmtNum(n) {
+      if (n == null || isNaN(n)) return "—";
+      if (n >= 1000000) return (n / 1_000_000).toFixed(1) + "M";
+      if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+      return String(n);
+    }
+
+    const leagueInput = $("leagueInput");
+    const daysInput = $("daysInput");
+    const predictionsList = $("predictionsList");
+    const valueList = $("valueList");
+
+    let currentLeague = 39;
+    let currentDays = 7;
+
+    // ---------- API calls ----------
+
+    async function fetchModelInfo() {
+      try {
+        const res = await fetch(`/model-info?league=${encodeURIComponent(currentLeague)}`);
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    }
+
+    async function fetchPredictions() {
+      const url = `/predict/upcoming?league=${encodeURIComponent(currentLeague)}&days_ahead=${encodeURIComponent(currentDays)}`;
+      const res = await fetch(url);
+      return res.json();
+    }
+
+    async function fetchValue() {
+      const url = `/value/upcoming?league=${encodeURIComponent(currentLeague)}&days_ahead=${encodeURIComponent(currentDays)}`;
+      const res = await fetch(url);
+      return res.json();
+    }
+
+    // ---------- Rendering ----------
+
+    function renderPredictions(fixtures) {
+      if (!fixtures?.length) {
+        predictionsList.innerHTML = '<div class="empty">No fixtures available in this window.</div>';
+        $("metricUpcoming").textContent = "0";
+        return;
+      }
+
+      $("metricUpcoming").textContent = fmtNum(fixtures.length);
+
+      predictionsList.innerHTML = fixtures.map(fx => {
+        const preds = fx.predictions || {};
+        const home = escapeHtml(fx.home_name || "Home");
+        const away = escapeHtml(fx.away_name || "Away");
+        const kickoff = escapeHtml(fx.kickoff_utc || "");
+        const reasoning = escapeHtml(fx.reasoning || "");
+
+        const ph = preds.home_win_p || 0;
+        const pd = preds.draw_p || 0;
+        const pa = preds.away_win_p || 0;
+        const xh = preds.home_goals || 0;
+        const xa = preds.away_goals || 0;
+
+        return `
+          <article class="match-card">
+            <div class="match-row">
+              <div class="match-teams">${home} <span class="match-secondary">vs</span> ${away}</div>
+              <div class="match-meta">${kickoff}</div>
+            </div>
+            <div class="match-line match-secondary">
+              <strong>Probabilities:</strong>
+              Home ${fmtProb(ph)} · Draw ${fmtProb(pd)} · Away ${fmtProb(pa)}
+            </div>
+            <div class="match-line match-secondary">
+              <strong>Expected goals:</strong> ${xh.toFixed(2)} : ${xa.toFixed(2)}
+            </div>
+            <div class="match-reasoning">
+              <strong>Reasoning:</strong> ${reasoning}
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderValue(fixtures) {
+      if (!fixtures?.length) {
+        valueList.innerHTML = '<div class="empty">No value edges above the current threshold.</div>';
+        $("metricValueCount").textContent = "0";
+        return;
+      }
+
+      $("metricValueCount").textContent = fmtNum(fixtures.length);
+
+      valueList.innerHTML = fixtures.map(fx => {
+        const home = escapeHtml(fx.home_name || "Home");
+        const away = escapeHtml(fx.away_name || "Away");
+        const kickoff = escapeHtml(fx.kickoff_utc || "");
+        const reasoning = escapeHtml(fx.reasoning || "");
+
+        const model = fx.model_probs || {};
+        const odds = fx.bookmaker_odds || {};
+        const bestSide = fx.best_side || "";
+        const bestEdge = fx.best_edge || 0;
+
+        return `
+          <article class="match-card highlight">
+            <div class="match-row">
+              <div class="match-teams">${home} <span class="match-secondary">vs</span> ${away}</div>
+              <div class="match-meta">${kickoff}</div>
+            </div>
+            <div class="match-line match-secondary">
+              <strong>Model:</strong>
+              H ${fmtProb(model.home)} · D ${fmtProb(model.draw)} · A ${fmtProb(model.away)}
+            </div>
+            <div class="match-line match-secondary">
+              <strong>Odds:</strong>
+              H ${odds.home ?? "-"} · D ${odds.draw ?? "-"} · A ${odds.away ?? "-"}
+            </div>
+            <div class="match-line">
+              <span class="badge green">Best: ${escapeHtml(bestSide || "?")} · edge ${(bestEdge * 100).toFixed(1)}%</span>
+              <span class="badge blue">AI vs market</span>
+            </div>
+            <div class="match-reasoning">
+              <strong>Reasoning:</strong> ${reasoning}
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderModelMetrics(info) {
+      if (!info?.info) return;
+      const meta = info.info;
+      const metrics = meta.metrics || {};
+      const leagueId = meta.league || currentLeague;
+
+      $("metricLeague").textContent = leagueId;
+      $("metricSamples").textContent = fmtNum(metrics.samples_total || 0);
+
+      const logloss = metrics.logloss_1x2;
+      const brier = metrics.brier_1x2;
+
+      const loglossStr = (logloss == null) ? "—" : logloss.toFixed(3);
+      const brierStr = (brier == null) ? "—" : brier.toFixed(3);
+
+      $("metricLogloss").textContent = loglossStr;
+      $("metricBrier").textContent = brierStr;
+      $("metricLoglossCard").textContent = loglossStr;
+      $("metricBrierCard").textContent = brierStr;
+    }
+
+    // ---------- Main refresh ----------
+
+    async function refreshAll() {
+      currentLeague = Number(leagueInput.value) || 39;
+      currentDays = Number(daysInput.value) || 7;
+
+      setStatus("Loading model info, predictions & value edges…");
+      predictionsList.innerHTML = "";
+      valueList.innerHTML = "";
+
+      const [modelInfo, predsData, valueData] = await Promise.allSettled([
+        fetchModelInfo(),
+        fetchPredictions(),
+        fetchValue(),
+      ]);
+
+      if (modelInfo.status === "fulfilled" && modelInfo.value) {
+        renderModelMetrics(modelInfo.value);
+      }
+
+      if (predsData.status === "fulfilled") {
+        const d = predsData.value;
+        if (d.ok) {
+          renderPredictions(d.fixtures || []);
+        } else {
+          predictionsList.innerHTML = `<div class="empty">${escapeHtml(d.detail || "No predictions.")}</div>`;
+        }
+      } else {
+        predictionsList.innerHTML = '<div class="empty">Error loading predictions.</div>';
+      }
+
+      if (valueData.status === "fulfilled") {
+        const d = valueData.value;
+        if (d.ok) {
+          renderValue(d.fixtures || []);
+        } else {
+          valueList.innerHTML = `<div class="empty">${escapeHtml(d.detail || "No value fixtures.")}</div>`;
+        }
+      } else {
+        valueList.innerHTML = '<div class="empty">Error loading value fixtures.</div>';
+      }
+
+      setStatus("");
+    }
+
+    // ---------- Navigation & CTA wiring ----------
+
+    function activateNav(section) {
+      document.querySelectorAll(".nav-item").forEach(el => {
+        el.classList.toggle("active", el.dataset.section === section);
+      });
+
+      // Sections:
+      // dashboard uses main hero + main panels
+      const dashboardVisible = section === "dashboard" || section === "predictions" || section === "value";
+
+      $("section-dashboard").style.display = dashboardVisible ? "" : "none";
+      $("mainSections").style.display = dashboardVisible ? "" : "none";
+
+      $("section-results").style.display = (section === "results") ? "" : "none";
+      $("section-contact").style.display = (section === "contact") ? "" : "none";
+
+      if (section === "predictions") {
+        window.scrollTo({ top: 220, behavior: "smooth" });
+      } else if (section === "value") {
+        window.scrollTo({ top: 420, behavior: "smooth" });
+      } else {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }
+
+    document.querySelectorAll(".nav-item").forEach(el => {
+      el.addEventListener("click", () => {
+        const section = el.dataset.section;
+        activateNav(section);
+      });
+    });
+
+    $("ctaPredictions").addEventListener("click", () => {
+      activateNav("predictions");
+    });
+
+    $("ctaValue").addEventListener("click", () => {
+      activateNav("value");
+    });
+
+    leagueInput.addEventListener("change", refreshAll);
+    daysInput.addEventListener("change", refreshAll);
+
+    document.querySelectorAll("#timeframeTabs .pill").forEach(pill => {
+      pill.addEventListener("click", () => {
+        document.querySelectorAll("#timeframeTabs .pill").forEach(x => x.classList.remove("active"));
+        pill.classList.add("active");
+        // time ranges are visual only for now – real split would need backend support
+      });
+    });
+
+    // Initial load
+    refreshAll();
+  </script>
+</body>
+</html>

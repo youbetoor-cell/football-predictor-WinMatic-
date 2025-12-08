@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WinMatic – Value Scanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet" />
+
+  <!-- PAGE THEME -->
+  <style>
+    :root {
+      --bg: #020617;
+      --bg-elevated: #020617;
+      --card-bg: #020617;
+      --card-border: rgba(148, 163, 184, 0.25);
+      --accent: #22c55e;
+      --accent-soft: rgba(34, 197, 94, 0.15);
+      --accent-strong: #22c55e;
+      --accent2: #38bdf8;
+      --accent3: #6366f1;
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+      --text-soft: #6b7280;
+      --danger: #f97373;
+      --danger-soft: rgba(248, 113, 113, 0.12);
+      --shadow-soft: 0 18px 45px rgba(15, 23, 42, 0.9);
+      --radius-lg: 18px;
+      --radius-xl: 24px;
+      --transition-fast: 160ms ease-out;
+      --transition-med: 220ms ease;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(94, 234, 212, 0.08), transparent 55%),
+        radial-gradient(circle at top right, rgba(56, 189, 248, 0.09), transparent 60%),
+        radial-gradient(circle at bottom, rgba(37, 99, 235, 0.18), transparent 65%),
+        #020617;
+      color: var(--text-main);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+
+    /* ===== GLOBAL WINMATIC TOP NAV ===== */
+
+    .wm-nav-shell{
+      position:fixed;
+      top:0;left:0;right:0;
+      height:64px;
+      z-index:1000;
+      backdrop-filter:blur(18px);
+      background:linear-gradient(90deg,rgba(3,7,18,.94),rgba(15,23,42,.96),rgba(3,7,18,.94));
+      border-bottom:1px solid rgba(15,23,42,.85);
+    }
+    html[data-theme="light"] .wm-nav-shell{
+      background:linear-gradient(90deg,rgba(4,24,32,.96),rgba(7,32,42,.96),rgba(4,24,32,.96));
+      border-bottom-color:rgba(252,211,77,.55);
+    }
+    .wm-nav{
+      max-width:1200px;
+      margin:0 auto;
+      height:64px;
+      padding:0 20px;
+      display:flex;
+      align-items:center;
+      gap:16px;
+    }
+    .wm-left{display:flex;align-items:center;gap:10px}
+    .wm-logo{
+      width:34px;height:34px;border-radius:12px;
+      background:radial-gradient(circle at 30% 20%,#22c55e,#22c55e 38%,#020617 100%);
+      box-shadow:0 0 18px rgba(34,197,94,.9);
+      display:flex;align-items:center;justify-content:center;
+      font-weight:800;font-size:1rem;color:#020617;
+    }
+    html[data-theme="light"] .wm-logo{
+      background:radial-gradient(circle at 30% 20%,#ffe580,#ffb703 40%,#020617 100%);
+    }
+    .wm-brand{display:flex;flex-direction:column;line-height:1.05}
+    .wm-brand .t1{
+      letter-spacing:.14em;font-size:.85rem;font-weight:800;
+      text-transform:uppercase;color:#f9fafb;
+    }
+    .wm-brand .t2{
+      font-size:.7rem;color:#9ca3af;
+    }
+    .wm-center{
+      flex:1;display:flex;justify-content:center;gap:16px;font-size:.84rem;
+    }
+    .wm-link{
+      position:relative;color:#9ca3af;padding:4px 0;white-space:nowrap;
+      text-decoration:none;transition:color .15s ease-out;
+    }
+    .wm-link:hover{color:#e5e7eb}
+    .wm-link::after{
+      content:"";position:absolute;left:0;bottom:-4px;height:2px;width:0;border-radius:999px;
+      background-image:linear-gradient(120deg,#22c55e,#38bdf8,#a855f7);
+      transition:width .18s ease-out;
+    }
+    .wm-link.wm-active{color:#22c55e;font-weight:600}
+    .wm-link.wm-active::after{width:100%}
+    .wm-right{display:flex;align-items:center;gap:10px}
+    .wm-btn{
+      border-radius:999px;border:1px solid rgba(148,163,184,.6);
+      padding:7px 14px;background:rgba(15,23,42,.85);
+      color:#e5e7eb;font-size:.82rem;display:inline-flex;align-items:center;gap:6px;
+      cursor:pointer;
+    }
+    .wm-btn:hover{background:rgba(15,23,42,.95);}
+    .wm-primary{
+      border:0;background-image:linear-gradient(120deg,#22c55e,#16a34a);
+      color:#f9fafb;font-weight:600;box-shadow:0 0 22px rgba(34,197,94,.85);
+    }
+    .wm-toggle{
+      width:34px;height:34px;padding:0;border-radius:13px;
+      border:1px solid rgba(148,163,184,.7);
+      background:radial-gradient(circle at 28% 18%,#facc15,#0b1020 58%,#020617 100%);
+      display:flex;align-items:center;justify-content:center;
+      cursor:pointer;box-shadow:0 0 14px rgba(0,0,0,.7);
+    }
+    html[data-theme="light"] .wm-toggle{
+      background:radial-gradient(circle at 28% 18%,#020617,#020617 60%,#000 100%);
+      box-shadow:0 0 16px rgba(59,130,246,.7);
+    }
+    .wm-nav-spacer{height:64px}
+    @media (max-width:1080px){.wm-center{display:none}}
+
+    /* ===== LOCAL HEADER INSIDE PAGE ===== */
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-mark {
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      background: conic-gradient(
+        from 200deg,
+        #22c55e,
+        #0ea5e9,
+        #6366f1,
+        #22c55e
+      );
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.9),
+        0 18px 40px rgba(15, 23, 42, 0.85);
+    }
+
+    .brand-mark span {
+      font-size: 14px;
+      font-weight: 800;
+      color: #020617;
+    }
+
+    .brand-text { display:flex; flex-direction:column; }
+    .brand-title {
+      font-size: 17px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .brand-sub {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-soft);
+    }
+
+    header nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 3px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.98);
+      box-shadow:
+        0 0 0 1px rgba(15, 23, 42, 0.9),
+        0 18px 40px rgba(15, 23, 42, 0.85);
+    }
+
+    .nav-link {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      padding: 7px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background var(--transition-fast), color var(--transition-fast),
+        transform var(--transition-fast), box-shadow var(--transition-fast);
+      white-space: nowrap;
+    }
+
+    .nav-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.5);
+    }
+
+    .nav-link.active {
+      background: linear-gradient(
+        120deg,
+        rgba(34, 197, 94, 0.15),
+        rgba(56, 189, 248, 0.10)
+      );
+      color: #e5e7eb;
+      box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .nav-link.active .nav-dot {
+      background: var(--accent-strong);
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+    }
+
+    .pill {
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      background: rgba(15, 23, 42, 0.96);
+      color: var(--text-soft);
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--accent-strong);
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.24);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.1fr);
+      gap: 24px;
+    }
+    @media (max-width: 960px) {
+      main { grid-template-columns: minmax(0, 1fr); }
+    }
+
+    /* HERO + FILTERS */
+
+    .hero {
+      border-radius: var(--radius-xl);
+      padding: 22px 22px 18px;
+      background:
+        linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.98)),
+        radial-gradient(circle at top left, rgba(34, 197, 94, 0.22), transparent 60%);
+      box-shadow: var(--shadow-soft);
+      border: 1px solid rgba(148, 163, 184, 0.32);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-inner {
+      position: relative;
+      display:flex;
+      flex-direction:column;
+      gap:18px;
+      z-index:1;
+    }
+
+    .hero-top-row {
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .hero-title-block {
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+
+    .hero-kicker {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.22em;
+      color: var(--text-soft);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .hero-kicker span.line {
+      width: 26px;
+      height: 1px;
+      border-radius: 999px;
+      background: linear-gradient(
+        90deg,
+        rgba(148, 163, 184, 0.2),
+        rgba(148, 163, 184, 0.75)
+      );
+    }
+
+    .hero-title {
+      font-size: 24px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-weight: 700;
+      display:flex;
+      flex-wrap:wrap;
+      gap:5px 8px;
+      align-items:baseline;
+    }
+
+    .hero-title span.accent {
+      font-weight: 600;
+      color: #bbf7d0;
+      opacity: 0.95;
+    }
+
+    .hero-sub {
+      max-width: 440px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-muted);
+    }
+
+    .hero-metrics {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      flex-wrap:wrap;
+    }
+
+    .metric-pill {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:6px 12px;
+      border-radius:999px;
+      background:rgba(15, 23, 42, 0.96);
+      border:1px solid rgba(148, 163, 184, 0.4);
+      font-size:11px;
+      letter-spacing:0.14em;
+      text-transform:uppercase;
+      color:var(--text-soft);
+    }
+
+    .metric-pill strong {
+      color:var(--accent-strong);
+    }
+
+    .filters-card {
+      margin-top: 8px;
+      border-radius: var(--radius-lg);
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(30, 64, 175, 0.5);
+      padding: 14px 14px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-soft);
+    }
+
+    .filter-group select,
+    .filter-group input[type="number"] {
+      background: #020617;
+      border-radius: 999px;
+      border: 1px solid rgba(71, 85, 105, 0.9);
+      padding: 6px 10px;
+      color: var(--text-main);
+      font-size: 12px;
+      min-width: 120px;
+      outline: none;
+    }
+
+    .filter-group select:focus,
+    .filter-group input[type="number"]:focus {
+      border-color: var(--accent2);
+      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4);
+    }
+
+    .filter-group span.filter-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--text-soft);
+    }
+
+    .filter-inline {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      font-size:11px;
+      color:var(--text-soft);
+    }
+
+    .filter-inline button.primary {
+      border-radius: 999px;
+      border: none;
+      padding: 7px 14px;
+      background: radial-gradient(circle at 0 0, #22c55e, #16a34a);
+      color: #020617;
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      box-shadow:
+        0 0 0 1px rgba(190, 242, 100, 0.3),
+        0 0 25px rgba(22, 163, 74, 0.65);
+      transition: transform var(--transition-fast), box-shadow var(--transition-fast),
+        background var(--transition-fast);
+    }
+
+    .filter-inline button.primary:hover {
+      transform: translateY(-1px);
+      box-shadow:
+        0 0 0 1px rgba(190, 242, 100, 0.4),
+        0 14px 35px rgba(22, 163, 74, 0.85);
+    }
+
+    .filter-inline .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #bbf7d0;
+      box-shadow: 0 0 6px rgba(190, 242, 100, 0.9);
+    }
+
+    /* RIGHT SIDE PANEL */
+
+    .side-panel {
+      border-radius: var(--radius-xl);
+      background: rgba(15, 23, 42, 0.97);
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      box-shadow: var(--shadow-soft);
+      padding: 18px 18px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .side-header {
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      flex-wrap:wrap;
+    }
+
+    .side-title {
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--text-main);
+    }
+
+    .side-chip-row {
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:6px;
+    }
+
+    .side-chip {
+      font-size: 11px;
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      color: var(--text-soft);
+    }
+
+    .side-stat {
+      display:flex;
+      flex-direction:column;
+      align-items:flex-end;
+      font-size:11px;
+      color:var(--text-soft);
+      gap:2px;
+    }
+
+    .side-stat strong {
+      font-size:13px;
+      color:var(--text-main);
+    }
+
+    .results-shell {
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.96);
+      border: 1px solid rgba(51, 65, 85, 0.85);
+      padding: 12px 12px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .results-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .results-info {
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+
+    .results-info strong {
+      font-size:14px;
+    }
+
+    .badge {
+      display:inline-flex;
+      align-items:center;
+      padding:3px 8px;
+      border-radius:999px;
+      font-size:11px;
+      background:rgba(15, 23, 42, 0.95);
+      border:1px solid rgba(148, 163, 184, 0.5);
+      color:var(--text-soft);
+    }
+
+    .results-meta {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-size:11px;
+      color:var(--text-soft);
+      flex-wrap:wrap;
+    }
+
+    .results-meta .dot {
+      width:4px;height:4px;border-radius:999px;
+      background:rgba(148, 163, 184, 0.7);
+    }
+
+    .value-grid {
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      margin-top:6px;
+    }
+
+    .value-card {
+      border-radius:14px;
+      background:rgba(15, 23, 42, 0.98);
+      border:1px solid rgba(30, 64, 175, 0.9);
+      padding:10px 11px 10px;
+      display:grid;
+      grid-template-columns:minmax(0, 1.3fr) minmax(0, 1.7fr);
+      gap:10px;
+      font-size:12px;
+      transition:transform 140ms ease-out, box-shadow 140ms ease-out,
+        border-color 140ms ease-out, background 140ms ease-out;
+    }
+
+    .value-card.highlight {
+      border-color:rgba(34, 197, 94, 0.9);
+      box-shadow:0 14px 45px rgba(22, 163, 74, 0.75);
+      background:
+        radial-gradient(circle at 0 0, rgba(34, 197, 94, 0.08), transparent 55%),
+        rgba(15, 23, 42, 0.98);
+    }
+
+    .value-card:hover {
+      transform:translateY(-1px);
+      box-shadow:0 12px 30px rgba(15, 23, 42, 0.9);
+    }
+
+    .value-main { display:flex; flex-direction:column; gap:6px; }
+    .value-league {
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:0.18em;
+      color:var(--text-soft);
+    }
+
+    .value-fixture {
+      font-size:13px;
+      font-weight:500;
+    }
+    .value-fixture span.vs { color:var(--text-soft); margin:0 6px; }
+
+    .value-kickoff {
+      font-size:11px;
+      color:var(--text-soft);
+    }
+
+    .value-pick-pill {
+      margin-top:4px;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      font-size:11px;
+      padding:4px 8px;
+      border-radius:999px;
+      background:rgba(15, 23, 42, 0.96);
+      border:1px solid rgba(34, 197, 94, 0.35);
+      color:var(--accent-strong);
+    }
+
+    .value-pick-pill .spark {
+      width:10px;height:10px;border-radius:999px;
+      background:radial-gradient(circle at 30% 25%, #ecfccb, #22c55e);
+      box-shadow:0 0 10px rgba(74, 222, 128, 0.9);
+    }
+
+    .value-right {
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
+      gap:8px;
+      align-items:center;
+    }
+
+    .value-col {
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+
+    .label {
+      font-size:10px;
+      text-transform:uppercase;
+      letter-spacing:0.16em;
+      color:var(--text-soft);
+    }
+
+    .triple {
+      display:flex;
+      justify-content:space-between;
+      font-size:11px;
+      gap:4px;
+    }
+
+    .triple span.key { color:var(--text-soft); }
+    .triple span.val { font-variant-numeric:tabular-nums; }
+
+    .edge-pill {
+      align-self:flex-start;
+      margin-top:2px;
+      padding:4px 9px;
+      border-radius:999px;
+      font-size:11px;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      background:var(--accent-soft);
+      color:#bbf7d0;
+    }
+
+    .edge-pill .sparkline {
+      width:18px;height:10px;border-radius:999px;
+      background:linear-gradient(120deg,#22c55e,#38bdf8);
+    }
+
+    .edge-pill.edge-neg {
+      background:var(--danger-soft);
+      color:#fecaca;
+    }
+
+    .edge-pill.edge-neg .sparkline {
+      background:linear-gradient(120deg,#f97373,#fb923c);
+    }
+
+    .empty-state,
+    .error-state {
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.96);
+      border: 1px dashed rgba(75, 85, 99, 0.8);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--text-soft);
+    }
+
+    .error-state {
+      border-style: solid;
+      border-color: rgba(248, 113, 113, 0.9);
+      background: rgba(127, 29, 29, 0.5);
+    }
+
+    .error-state .detail {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+      opacity: 0.9;
+    }
+
+    footer {
+      margin-top: 20px;
+      display:flex;
+      justify-content:space-between;
+      font-size:11px;
+      color:var(--text-soft);
+      gap:10px;
+      flex-wrap:wrap;
+    }
+  </style>
+</head>
+<body>
+  <!-- WinMatic global nav -->
+  <nav class="wm-nav-shell">
+    <div class="wm-nav">
+      <div class="wm-left">
+        <div class="wm-logo">W</div>
+        <div class="wm-brand">
+          <span class="t1">WINMATIC</span>
+          <span class="t2">AI Match Edge Engine</span>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+      <nav class="nav">
+        <a class="nav-item" href="index.html">Home</a>
+
+      <a class="nav-item" href="predictor.html">Predictions</a>
+      <a class="nav-item" href="predictor.html#today">All matches (today)</a>
+
+      <a class="nav-item active" href="bets.html">Bet of the day</a>
+      <a class="nav-item" href="value.html">Value Scanner</a>
+
+      <a class="nav-item" href="results.html">Results</a>
+      <a class="nav-item" href="metrics.html#progress">Progress</a>
+      <a class="nav-item" href="metrics.html#metrics">Metrics</a>
+
+      <a class="nav-item" href="tutorial.html">Tutorial</a>
+      <a class="nav-item" href="pricing.html">View pricing</a>
+      <a class="nav-item" href="contact.html">Contact</a>
+
+      <div class="wm-right">
+        <button class="wm-btn" onclick="location.href='/static/pricing.html'">View pricing</button>
+        <button class="wm-btn wm-primary" onclick="location.href='/static/predictor.html'">Launch Predictor</button>
+        <button class="wm-btn wm-toggle" id="wmThemeToggle" aria-label="Toggle theme">🌙</button>
+      </div>
+    </div>
+  </nav>
+  <div class="wm-nav-spacer"></div>
+
+  <div class="page">
+    <header>
+      <div class="brand">
+        <div class="brand-mark"><span>W</span></div>
+        <div class="brand-text">
+          <div class="brand-title">WinMatic</div>
+          <div class="brand-sub">Model-Driven Football Edge</div>
+        </div>
+      </div>
+
+      <nav>
+        <button class="nav-link" onclick="window.location.href='/static/predictor.html'">
+          <span class="nav-dot"></span>
+          <span class="label">Predictor</span>
+        </button>
+        <button class="nav-link active">
+          <span class="nav-dot"></span>
+          <span class="label">Value Scanner</span>
+        </button>
+      </nav>
+
+      <div class="pill">
+        <span class="pill-dot"></span>
+        <span>Live Model • 1X2 + Edge</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- LEFT HERO -->
+      <section class="hero">
+        <div class="hero-inner">
+          <div class="hero-top-row">
+            <div class="hero-title-block">
+              <div class="hero-kicker">
+                <span class="line"></span>
+                <span>Smart Market Scanner</span>
+              </div>
+              <div class="hero-title">
+                <span class="main">AI Value</span>
+                <span class="accent">Scanner</span>
+              </div>
+              <p class="hero-sub">
+                Compare WinMatic’s calibrated 1X2 probabilities to live bookmaker odds.
+                We highlight only the fixtures where the model believes the market is mispriced.
+              </p>
+            </div>
+
+            <div class="hero-metrics">
+              <div class="metric-pill">
+                <span>Mode:</span>
+                <strong id="mode-label">Live + Odds</strong>
+              </div>
+              <div class="hero-stat-row">
+                <div class="hero-stat-chip">
+                  Min edge:
+                  <strong id="hero-min-edge">5%</strong>
+                </div>
+                <div class="hero-stat-chip">
+                  League:
+                  <strong id="hero-league-label">EPL</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="filters-card">
+            <div class="filter-group">
+              <span class="filter-label">League</span>
+              <select id="league">
+                <option value="39">Premier League</option>
+                <option value="140">La Liga</option>
+                <option value="135">Serie A</option>
+                <option value="78">Bundesliga</option>
+                <option value="61">Ligue 1</option>
+              </select>
+            </div>
+
+            <div class="filter-group">
+              <span class="filter-label">Days ahead</span>
+              <select id="days-ahead">
+                <option value="1">Next 24 hours</option>
+                <option value="2">Next 2 days</option>
+                <option value="3" selected>Next 3 days</option>
+                <option value="5">Next 5 days</option>
+                <option value="7">Next 7 days</option>
+              </select>
+            </div>
+
+            <div class="filter-group">
+              <span class="filter-label">Min edge</span>
+              <input
+                id="min-edge"
+                type="number"
+                step="0.01"
+                min="0.01"
+                max="0.50"
+                value="0.05"
+              />
+            </div>
+
+            <div class="filter-inline">
+              <span>Scan with latest model + capped odds calls.</span>
+              <button class="primary" onclick="loadValueBets()">
+                <span class="dot"></span>
+                <span>Run value scan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT SIDE PANEL -->
+      <aside class="side-panel">
+        <div class="side-header">
+          <div>
+            <div class="side-title">Edge Monitor</div>
+            <div class="side-chip-row">
+              <span class="side-chip" id="status-badge">
+                Waiting for first scan…
+              </span>
+              <span class="side-chip" id="quota-badge">
+                Odds quota: backend-capped per request
+              </span>
+            </div>
+          </div>
+          <div class="side-stat">
+            <span>Current scan</span>
+            <strong id="side-count-label">0 fixtures</strong>
+            <span id="side-meta-label">Min edge ≥ 5%</span>
+          </div>
+        </div>
+
+        <div class="results-shell">
+          <div class="results-header">
+            <div class="results-info">
+              <strong id="results-title">No scan yet</strong>
+              <span class="badge" id="results-subtitle">Run a scan to see value spots.</span>
+            </div>
+            <div class="results-meta">
+              <span id="results-source">Source: –</span>
+              <span class="dot"></span>
+              <span id="results-updated">Updated: –</span>
+            </div>
+          </div>
+
+          <div id="results-container" class="value-grid">
+            <div class="empty-state">
+              <strong>No data loaded yet.</strong>
+              <span>
+                Choose a league + edge threshold, then hit
+                <em>Run value scan</em>.
+              </span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <footer>
+      <span>WinMatic • Clean backend, calibrated model, quota-safe odds calls.</span>
+      <span id="footer-hint">Tip: Start with Premier League and 3-day horizon.</span>
+    </footer>
+  </div>
+
+  <!-- VALUE SCANNER LOGIC -->
+  <script>
+    const RESULTS_CONTAINER = document.getElementById("results-container");
+    const HERO_MIN_EDGE = document.getElementById("hero-min-edge");
+    const HERO_LEAGUE_LABEL = document.getElementById("hero-league-label");
+    const SIDE_COUNT_LABEL = document.getElementById("side-count-label");
+    const SIDE_META_LABEL = document.getElementById("side-meta-label");
+    const RESULTS_TITLE = document.getElementById("results-title");
+    const RESULTS_SUBTITLE = document.getElementById("results-subtitle");
+    const RESULTS_SOURCE = document.getElementById("results-source");
+    const RESULTS_UPDATED = document.getElementById("results-updated");
+    const STATUS_BADGE = document.getElementById("status-badge");
+    const QUOTA_BADGE = document.getElementById("quota-badge");
+    const MODE_LABEL = document.getElementById("mode-label");
+
+    function formatPct(x) {
+      if (x == null || isNaN(x)) return "–";
+      return (x * 100).toFixed(1) + "%";
+    }
+
+    function formatEdge(x) {
+      if (x == null || isNaN(x)) return "–";
+      return (x * 100).toFixed(1) + "%";
+    }
+
+    function leagueShortName(leagueId) {
+      switch (Number(leagueId)) {
+        case 39: return "EPL";
+        case 140: return "La Liga";
+        case 135: return "Serie A";
+        case 78: return "Bundesliga";
+        case 61: return "Ligue 1";
+        default: return "League " + leagueId;
+      }
+    }
+
+    function formatKickoff(iso) {
+      if (!iso) return "TBD";
+      try {
+        const d = new Date(iso);
+        const day = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+        const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+        return `${day} • ${time}`;
+      } catch {
+        return iso;
+      }
+    }
+
+    function updateBadgesFromSource(source) {
+      if (!source) {
+        MODE_LABEL.textContent = "Live + Odds";
+        STATUS_BADGE.textContent = "Awaiting data…";
+        return;
+      }
+      const s = String(source).toLowerCase();
+      if (s.includes("snapshot") || s.includes("cache")) {
+        MODE_LABEL.textContent = "Cache / Snapshot";
+        STATUS_BADGE.innerHTML = `<span>Served from snapshot/cache</span>`;
+      } else {
+        MODE_LABEL.textContent = "Live + Odds";
+        STATUS_BADGE.innerHTML = `<span>Live model + capped odds calls</span>`;
+      }
+      QUOTA_BADGE.textContent = "Odds quota: backend-capped per request";
+    }
+
+    function edgeClass(e) {
+      if (e == null || isNaN(e) || e === 0) return "";
+      return e > 0 ? "edge-pos" : "edge-neg";
+    }
+
+    function renderFixtures(fixtures) {
+      if (!fixtures || fixtures.length === 0) {
+        RESULTS_CONTAINER.innerHTML = `
+          <div class="empty-state">
+            <strong>No value spots with this edge filter.</strong>
+            <span>Try lowering the min edge, or widening the days ahead window.</span>
+          </div>
+        `;
+        return;
+      }
+
+      const cards = fixtures.map((fx, idx) => {
+        const leagueName = fx.league_name || leagueShortName(fx.league_id || "");
+        const kickoff = formatKickoff(fx.kickoff_utc);
+        const bestSide = fx.best_side || "";
+        const bestEdge = fx.best_edge;
+        const modelProbs = fx.model_probs || {};
+        const marketProbs = fx.market_probs || {};
+        const edges = fx.edges || {};
+        const odds = fx.bookmaker_odds || {};
+        const reason = fx.reasoning || "";
+
+        const isTop = idx === 0;
+
+        const sideLabel = bestSide === "home"
+          ? fx.home_name || "Home"
+          : bestSide === "away"
+          ? fx.away_name || "Away"
+          : bestSide === "draw"
+          ? "Draw"
+          : bestSide || "–";
+
+        function probTriplet(p) {
+          const pModel = modelProbs[p] != null ? modelProbs[p] : null;
+          const pMarket = marketProbs[p] != null ? marketProbs[p] : null;
+          const edge = edges[p] != null ? edges[p] : null;
+          const odd = odds[p] != null ? odds[p] : null;
+          return { pModel, pMarket, edge, odd };
+        }
+
+        const homeTrip = probTriplet("home");
+        const drawTrip = probTriplet("draw");
+        const awayTrip = probTriplet("away");
+
+        const shortReason =
+          reason && reason.length > 260 ? reason.slice(0, 257).trimEnd() + "…" : reason;
+
+        function edgePillClass(e) {
+          if (e == null || isNaN(e) || e === 0) return "";
+          return e > 0 ? "" : "edge-neg";
+        }
+
+        const bestEdgePct = bestEdge != null ? (bestEdge * 100).toFixed(1) : null;
+
+        return `
+          <article class="value-card ${isTop ? "highlight" : ""}">
+            <div class="value-main">
+              <div class="value-league">${leagueName}</div>
+              <div class="value-fixture">
+                <span>${fx.home_name || "Home"}</span>
+                <span class="vs">vs</span>
+                <span>${fx.away_name || "Away"}</span>
+              </div>
+              <div class="value-kickoff">${kickoff}</div>
+              <div class="value-pick-pill">
+                <div class="spark"></div>
+                <span>Model likes</span>
+                <strong>${sideLabel}</strong>
+                ${bestEdgePct ? `<span>+${bestEdgePct} pts edge</span>` : ""}
+              </div>
+              ${shortReason
+                ? `<div class="value-reason">${shortReason}</div>`
+                : ""
+              }
+            </div>
+
+            <div class="value-right">
+              <div class="value-col">
+                <div class="label">Model vs Market</div>
+                <div class="triple">
+                  <span class="key">Home</span>
+                  <span class="val">${formatPct(homeTrip.pModel)}</span>
+                  <span class="val">${formatPct(homeTrip.pMarket)}</span>
+                </div>
+                <div class="triple">
+                  <span class="key">Draw</span>
+                  <span class="val">${formatPct(drawTrip.pModel)}</span>
+                  <span class="val">${formatPct(drawTrip.pMarket)}</span>
+                </div>
+                <div class="triple">
+                  <span class="key">Away</span>
+                  <span class="val">${formatPct(awayTrip.pModel)}</span>
+                  <span class="val">${formatPct(awayTrip.pMarket)}</span>
+                </div>
+              </div>
+
+              <div class="value-col">
+                <div class="label">Odds & Edge</div>
+                <div class="triple">
+                  <span class="key">Home</span>
+                  <span class="val">${homeTrip.odd != null ? homeTrip.odd.toFixed(2) : "–"}</span>
+                  <span class="val ${edgeClass(homeTrip.edge)}">${formatEdge(homeTrip.edge)}</span>
+                </div>
+                <div class="triple">
+                  <span class="key">Draw</span>
+                  <span class="val">${drawTrip.odd != null ? drawTrip.odd.toFixed(2) : "–"}</span>
+                  <span class="val ${edgeClass(drawTrip.edge)}">${formatEdge(drawTrip.edge)}</span>
+                </div>
+                <div class="triple">
+                  <span class="key">Away</span>
+                  <span class="val">${awayTrip.odd != null ? awayTrip.odd.toFixed(2) : "–"}</span>
+                  <span class="val ${edgeClass(awayTrip.edge)}">${formatEdge(awayTrip.edge)}</span>
+                </div>
+                ${
+                  bestEdgePct
+                    ? `<div class="edge-pill ${edgePillClass(bestEdge)}">
+                        <div class="sparkline"></div>
+                        <span>Total edge: +${bestEdgePct} pts</span>
+                      </div>`
+                    : ""
+                }
+              </div>
+            </div>
+          </article>
+        `;
+      });
+
+      RESULTS_CONTAINER.innerHTML = cards.join("");
+    }
+
+    async function loadValueBets() {
+      const league = document.getElementById("league").value;
+      const daysAhead = document.getElementById("days-ahead").value;
+      const minEdgeInput = document.getElementById("min-edge").value;
+
+      let minEdge = parseFloat(minEdgeInput);
+      if (isNaN(minEdge) || minEdge <= 0) {
+        minEdge = 0.05;
+        document.getElementById("min-edge").value = "0.05";
+      }
+
+      HERO_MIN_EDGE.textContent = (minEdge * 100).toFixed(0) + "%";
+      HERO_LEAGUE_LABEL.textContent = leagueShortName(league);
+      SIDE_META_LABEL.textContent = `Min edge ≥ ${(minEdge * 100).toFixed(0)}%`;
+
+      const url = `/value/upcoming?league=${encodeURIComponent(
+        league
+      )}&days_ahead=${encodeURIComponent(
+        daysAhead
+      )}&min_edge=${encodeURIComponent(minEdge.toFixed(3))}`;
+
+      RESULTS_CONTAINER.innerHTML = `
+        <div class="empty-state">
+          <strong>Running value scan…</strong>
+          <span>This will hit /fixtures once and a capped number of /odds calls on the backend.</span>
+        </div>
+      `;
+
+      RESULTS_TITLE.textContent = "Scanning for value…";
+      RESULTS_SUBTITLE.textContent = "Model + odds comparison in progress.";
+      RESULTS_SOURCE.textContent = "Source: –";
+      STATUS_BADGE.textContent = "Live call in progress…";
+
+      try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        const now = new Date();
+        RESULTS_UPDATED.textContent =
+          "Updated: " +
+          now.toLocaleTimeString(undefined, {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+
+        if (!data.ok) {
+          RESULTS_CONTAINER.innerHTML = `
+            <div class="error-state">
+              <strong>Value endpoint returned an error.</strong>
+              <span class="detail">${data.detail || "Unknown error."}</span>
+            </div>
+          `;
+          RESULTS_TITLE.textContent = "Value scan failed";
+          RESULTS_SUBTITLE.textContent = data.detail || "Check backend logs.";
+          STATUS_BADGE.innerHTML = `<span>Backend error – see logs</span>`;
+          return;
+        }
+
+        const fixtures = data.fixtures || [];
+        const count = data.count || fixtures.length;
+        const source = data.source || "model+odds";
+
+        SIDE_COUNT_LABEL.textContent = `${count} fixture${count === 1 ? "" : "s"}`;
+        RESULTS_TITLE.textContent =
+          count === 0 ? "No edges with this filter" : `Found ${count} value spot${count === 1 ? "" : "s"}`;
+        RESULTS_SUBTITLE.textContent =
+          count === 0
+            ? "Try lowering the min edge or expanding the time window."
+            : "Sorted by biggest model edge first.";
+
+        RESULTS_SOURCE.textContent = `Source: ${source}`;
+        updateBadgesFromSource(source);
+
+        renderFixtures(fixtures);
+      } catch (err) {
+        console.error(err);
+        RESULTS_CONTAINER.innerHTML = `
+          <div class="error-state">
+            <strong>Network error while loading value bets.</strong>
+            <span class="detail">${String(err)}</span>
+          </div>
+        `;
+        RESULTS_TITLE.textContent = "Network error";
+        RESULTS_SUBTITLE.textContent = "Could not reach backend /value/upcoming.";
+        STATUS_BADGE.innerHTML = `<span>Network error – check server</span>`;
+      }
+    }
+
+    // Auto-run a first scan on load (EPL, 3 days, 5% edge)
+    window.addEventListener("DOMContentLoaded", () => {
+      loadValueBets();
+    });
+
+    // Theme toggle
+    (function () {
+      const KEY = "wm-theme";
+      const root = document.documentElement;
+      const btn = document.getElementById("wmThemeToggle");
+      if (!btn) return;
+
+      function applyTheme(t) {
+        root.setAttribute("data-theme", t);
+        btn.textContent = t === "light" ? "☀️" : "🌙";
+      }
+
+      const stored = localStorage.getItem(KEY) || "dark";
+      applyTheme(stored);
+
+      btn.addEventListener("click", function () {
+        const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        applyTheme(next);
+        localStorage.setItem(KEY, next);
+      });
+    })();
+  </script>
+</body>
+</html>

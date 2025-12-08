@@ -1,0 +1,211 @@
+{
+  "league_id": 188,
+  "seasons": [
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "team_index": {
+    "939": 0,
+    "940": 1,
+    "941": 2,
+    "942": 3,
+    "943": 4,
+    "944": 5,
+    "945": 6,
+    "946": 7,
+    "947": 8,
+    "948": 9,
+    "7573": 10,
+    "15550": 11,
+    "24608": 12
+  },
+  "attack_strength": {
+    "939": 1.0510493737546152,
+    "940": 0.7503536772115272,
+    "941": 1.1162083363052906,
+    "942": 0.83540720782735,
+    "943": 1.093311755047746,
+    "944": 0.9303780473489701,
+    "945": 1.2201547627222842,
+    "946": 0.950044575179111,
+    "947": 0.7806098738732824,
+    "948": 1.1677256441347654,
+    "7573": 0.9871084160897611,
+    "15550": 0.983040955689478,
+    "24608": 1.1346073748158174
+  },
+  "defense_strength": {
+    "939": 0.953358760885969,
+    "940": 1.324234692554863,
+    "941": 0.9014429139771044,
+    "942": 0.9986764750446202,
+    "943": 1.024366947701255,
+    "944": 0.7831703424134339,
+    "945": 0.7992393242013988,
+    "946": 1.1076542521837407,
+    "947": 1.1014662396017085,
+    "948": 1.1297304051790984,
+    "7573": 1.0268233378309466,
+    "15550": 1.1768899401298731,
+    "24608": 0.6729463682959878
+  },
+  "team_summary": {
+    "939": {
+      "team_id": 939,
+      "team_name": "Western Sydney Wanderers",
+      "matches": 107,
+      "gf": 177.0,
+      "ga": 157.0,
+      "attack_strength": 1.0510493737546152,
+      "defense_strength": 0.953358760885969,
+      "rating": 1.1024699377366196
+    },
+    "940": {
+      "team_id": 940,
+      "team_name": "Perth Glory",
+      "matches": 105,
+      "gf": 124.0,
+      "ga": 214.0,
+      "attack_strength": 0.7503536772115272,
+      "defense_strength": 1.324234692554863,
+      "rating": 0.5666319432878324
+    },
+    "941": {
+      "team_id": 941,
+      "team_name": "Central Coast Mariners",
+      "matches": 111,
+      "gf": 195.0,
+      "ga": 154.0,
+      "attack_strength": 1.1162083363052906,
+      "defense_strength": 0.9014429139771044,
+      "rating": 1.2382462815983053
+    },
+    "942": {
+      "team_id": 942,
+      "team_name": "Wellington Phoenix",
+      "matches": 108,
+      "gf": 142.0,
+      "ga": 166.0,
+      "attack_strength": 0.83540720782735,
+      "defense_strength": 0.9986764750446202,
+      "rating": 0.8365143554523246
+    },
+    "943": {
+      "team_id": 943,
+      "team_name": "Sydney",
+      "matches": 111,
+      "gf": 191.0,
+      "ga": 175.0,
+      "attack_strength": 1.093311755047746,
+      "defense_strength": 1.024366947701255,
+      "rating": 1.0673047949284264
+    },
+    "944": {
+      "team_id": 944,
+      "team_name": "Melbourne Victory",
+      "matches": 112,
+      "gf": 164.0,
+      "ga": 135.0,
+      "attack_strength": 0.9303780473489701,
+      "defense_strength": 0.7831703424134339,
+      "rating": 1.1879638400017778
+    },
+    "945": {
+      "team_id": 945,
+      "team_name": "Melbourne City",
+      "matches": 113,
+      "gf": 217.0,
+      "ga": 139.0,
+      "attack_strength": 1.2201547627222842,
+      "defense_strength": 0.7992393242013988,
+      "rating": 1.5266450558366418
+    },
+    "946": {
+      "team_id": 946,
+      "team_name": "Newcastle Jets",
+      "matches": 105,
+      "gf": 157.0,
+      "ga": 179.0,
+      "attack_strength": 0.950044575179111,
+      "defense_strength": 1.1076542521837407,
+      "rating": 0.8577085975213816
+    },
+    "947": {
+      "team_id": 947,
+      "team_name": "Brisbane Roar",
+      "matches": 105,
+      "gf": 129.0,
+      "ga": 178.0,
+      "attack_strength": 0.7806098738732824,
+      "defense_strength": 1.1014662396017085,
+      "rating": 0.708700680790318
+    },
+    "948": {
+      "team_id": 948,
+      "team_name": "Adelaide United",
+      "matches": 111,
+      "gf": 204.0,
+      "ga": 193.0,
+      "attack_strength": 1.1677256441347654,
+      "defense_strength": 1.1297304051790984,
+      "rating": 1.0336321292066522
+    },
+    "7573": {
+      "team_id": 7573,
+      "team_name": "Western United",
+      "matches": 112,
+      "gf": 174.0,
+      "ga": 177.0,
+      "attack_strength": 0.9871084160897611,
+      "defense_strength": 1.0268233378309466,
+      "rating": 0.9613225369175198
+    },
+    "15550": {
+      "team_id": 15550,
+      "team_name": "Macarthur",
+      "matches": 106,
+      "gf": 164.0,
+      "ga": 192.0,
+      "attack_strength": 0.983040955689478,
+      "defense_strength": 1.1768899401298731,
+      "rating": 0.8352870750012501
+    },
+    "24608": {
+      "team_id": 24608,
+      "team_name": "Auckland",
+      "matches": 28,
+      "gf": 50.0,
+      "ga": 29.0,
+      "attack_strength": 1.1346073748158174,
+      "defense_strength": 0.6729463682959878,
+      "rating": 1.6860294196829269
+    }
+  },
+  "feature_cols": [
+    "home_team_idx",
+    "away_team_idx",
+    "home_advantage",
+    "home_att_str",
+    "home_def_str",
+    "away_att_str",
+    "away_def_str",
+    "home_form_gf",
+    "home_form_ga",
+    "away_form_gf",
+    "away_form_ga"
+  ],
+  "target_cols": [
+    "home_goals",
+    "away_goals"
+  ],
+  "metrics": {
+    "samples_total": 667,
+    "samples_train": 533,
+    "samples_test": 134,
+    "logloss_1x2": 0.96315,
+    "brier_1x2": 0.57303
+  },
+  "trained_at": "2025-12-01T21:00:24.245460+00:00"
+}

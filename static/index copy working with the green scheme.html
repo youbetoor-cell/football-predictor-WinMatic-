@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WINMATIC · AI Match Edge Engine</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+  --bg: #020617;
+  --bg-soft: #030712;
+  --card: #020617;
+  --border: #1f2937;
+  --text: #e5e7eb;
+  --text-soft: #9ca3af;
+  --accent: #22c55e;
+  --accent-soft: rgba(34, 197, 94, 0.25);
+  --accent2: #6366f1;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top, #020617, #000);
+  color: var(--text);
+  display: block;
+}
+
+.shell {
+  width: 100%;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(99, 102, 241, 0.16), transparent 55%),
+    radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.18), transparent 55%),
+    linear-gradient(to bottom, #020617, #020617 30%, #020617);
+  padding: 60px 90px;
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+/* HEADER */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.brand-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top left, #22c55e, #15803d);
+  color: #ecfdf3;
+  font-weight: 800;
+  box-shadow: 0 0 30px rgba(34, 197, 94, 0.9);
+  font-size: 1.1rem;
+}
+.brand-name {
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  color: #e5e7eb;
+}
+.brand-tag {
+  font-size: 1rem;
+  color: var(--text-soft);
+}
+
+nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 1rem;
+  color: var(--text-soft);
+}
+nav a {
+  text-decoration: none;
+  color: inherit;
+  padding: 8px 14px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+nav a:hover {
+  border-color: rgba(148,163,184,0.5);
+  color: var(--text);
+}
+nav a.primary-link {
+  border-color: rgba(34,197,94,0.8);
+  color: #bbf7d0;
+  background: rgba(22,163,74,0.12);
+}
+
+/* HERO */
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 60px;
+  align-items: start;
+}
+
+.hero-eyebrow {
+  font-size: 1rem;
+  color: var(--text-soft);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.hero-eyebrow-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  background: #22c55e;
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.9);
+}
+
+h1 {
+  margin: 0 0 20px;
+  font-size: clamp(2.6rem, 4vw, 3.4rem);
+  letter-spacing: -0.03em;
+}
+.hero-highlight {
+  background: linear-gradient(to right, #22c55e, #a5b4fc);
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.hero-sub {
+  margin: 0 0 28px;
+  font-size: 1.2rem;
+  color: var(--text-soft);
+  max-width: 700px;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.btn {
+  border-radius: 9999px;
+  padding: 14px 22px;
+  font-size: 1.05rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+.btn-primary {
+  background: linear-gradient(to right, #22c55e, #16a34a);
+  color: #052e16;
+  border-color: rgba(34, 197, 94, 0.95);
+  box-shadow: 0 16px 40px rgba(22, 163, 74, 0.6);
+}
+.btn-primary:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+.btn-secondary {
+  border-color: rgba(148, 163, 184, 0.6);
+  background: rgba(15, 23, 42, 0.9);
+}
+.btn-secondary:hover {
+  border-color: rgba(148, 163, 184, 0.9);
+}
+.hero-footnote {
+  font-size: 0.95rem;
+  color: var(--text-soft);
+}
+
+/* FEATURES */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 28px;
+  font-size: 1rem;
+}
+.feature-item {
+  padding: 20px 22px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 41, 55, 1);
+  background: rgba(15, 23, 42, 0.92);
+}
+.feature-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+  font-size: 1.05rem;
+}
+.feature-body {
+  color: var(--text-soft);
+}
+
+/* PREVIEW CARD */
+.card-preview {
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(99,102,241,0.3), transparent 55%),
+    radial-gradient(circle at bottom right, rgba(34,197,94,0.26), transparent 55%),
+    #020617;
+  border: 1px solid rgba(31,41,55,1);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 22px 70px rgba(15, 23, 42, 1);
+}
+
+.preview-orb {
+  width: 90px;
+  height: 90px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 30% 20%, #22c55e, #16a34a 60%, #064e3b 100%);
+  position: relative;
+  box-shadow: 0 0 36px rgba(34, 197, 94, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.preview-orb::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: inherit;
+  border: 1px solid rgba(248,250,252,0.5);
+  box-shadow: inset 0 0 12px rgba(15,23,42,0.9);
+}
+.preview-orb span {
+  position: relative;
+  z-index: 1;
+  font-weight: 800;
+  font-size: 1.2rem;
+  color: #f9fafb;
+}
+
+/* NEW bottom section */
+.model-info {
+  margin-top: 50px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  padding-top: 32px;
+}
+.model-info h2 {
+  margin: 0 0 16px;
+  font-size: 1.4rem;
+  color: var(--accent);
+}
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.model-tile {
+  border: 1px solid rgba(31,41,55,1);
+  border-radius: 16px;
+  padding: 18px;
+  background: rgba(15,23,42,0.9);
+}
+.model-tile strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 6px;
+}
+.model-tile span {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+/* FOOTER */
+footer {
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 40px;
+}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <div class="brand-logo">W</div>
+        <div>
+          <div class="brand-name">WINMATIC</div>
+          <div class="brand-tag">AI Match Edge Engine</div>
+        </div>
+      </div>
+      <nav>
+        <a href="predictor.html" class="primary-link">Launch predictor</a>
+        <a href="metrics.html">Progress</a>
+        <a href="value.html">Value</a>
+      </nav>
+      <div id="api-status" style="
+        position: absolute;
+        top: 10px;
+        right: 20px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        color: #333;
+      ">
+        <span id="api-dot" style="
+         width: 10px;
+         height: 10px;
+         border-radius: 50%;
+         background-color: gray;
+         display: inline-block;
+      "></span>
+      <span id="api-text">API: checking...</span>
+    </div>
+
+    </header>
+
+    <main>
+      <section>
+        <div class="hero-eyebrow">
+          <span class="hero-eyebrow-dot"></span>
+          Live engine · Model-backed probabilities for 40+ competitions
+        </div>
+        <h1>
+          Turn raw football data into
+          <span class="hero-highlight">clear, actionable edges.</span>
+        </h1>
+        <p class="hero-sub">
+          WINMATIC projects match outcomes, scorelines, corners and cards,
+          then compares them to the market to surface value spots in real time —
+          with transparent explanations for every call.
+        </p>
+
+        <div class="hero-actions">
+          <button class="btn btn-primary" onclick="window.location.href='predictor.html'">
+            Launch predictor
+          </button>
+          <button class="btn btn-secondary" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">
+            See how it works
+          </button>
+        </div>
+
+        <div class="hero-footnote">
+          No sign-up, no ads. Just your local engine running on
+          <code>/predict/upcoming</code>, <code>/value-bets</code> and <code>/model-info</code>.
+        </div>
+
+        <div id="how" class="feature-grid">
+          <div class="feature-item">
+            <div class="feature-title">1. Ingest fixtures & odds</div>
+            <div class="feature-body">
+              Pulls upcoming fixtures and live 1X2 prices from your API sources.
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-title">2. Generate projections</div>
+            <div class="feature-body">
+              Custom models estimate probabilities, expected goals, corners and cards.
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-title">3. Compare vs market</div>
+            <div class="feature-body">
+              Calculates AI edge where your fair line disagrees with the bookmaker.
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-title">4. Surface value spots</div>
+            <div class="feature-body">
+              Highlighted “AI edge” cards show where the numbers justify attention.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="edge">
+        <div class="card-preview">
+          <div class="preview-header">
+            <span>Live snapshot · Premier League</span>
+            <span class="preview-pill">AI edge detected</span>
+          </div>
+          <div class="preview-main">
+            <div class="preview-orb">
+              <span>H</span>
+            </div>
+            <div class="preview-text-main">
+              <div class="preview-match">Bournemouth vs Everton</div>
+              <div class="preview-subline">
+                Model makes Bournemouth a clear favourite at home.
+              </div>
+              <div class="preview-row">
+                <span><strong>Home win:</strong> 59% (fair 1.69)</span>
+                <span><strong>Market:</strong> 2.05</span>
+                <span><strong>Edge:</strong> +10.6%</span>
+              </div>
+            </div>
+          </div>
+          <div class="preview-footer">
+            <div class="preview-links">
+              <div class="preview-link-pill">Explain this edge</div>
+              <div class="preview-link-pill" onclick="window.location.href='value.html'">Show all value spots</div>
+            </div>
+            <button class="btn btn-secondary" onclick="window.location.href='predictor.html'">
+              Open full dashboard →
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+        <section class="model-info">
+      <h2>What’s inside the model</h2>
+      <div class="model-grid">
+        <div class="model-tile">
+          <strong>Team strength</strong>
+          <span>Attack/defense ratings based on multi-season expected goals data.</span>
+        </div>
+        <div class="model-tile">
+          <strong>Recent form</strong>
+          <span>Rolling last-5 performance including goals for, goals against, and points.</span>
+        </div>
+        <div class="model-tile">
+          <strong>Odds features</strong>
+          <span>Market-implied probabilities to calibrate and sanity-check AI signals.</span>
+        </div>
+        <div class="model-tile">
+          <strong>Fixture context</strong>
+          <span>Rest days, home advantage, league strength normalization.</span>
+        </div>
+        <div class="model-tile">
+          <strong>Historical calibration</strong>
+          <span>Continuous cross-validation on holdout seasons to track drift.</span>
+        </div>
+        <div class="model-tile">
+          <strong>Meta metrics</strong>
+          <span>Aggregated hit-rate, edge, and expected vs actual performance curves.</span>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div>Backend endpoints: <code>/predict/upcoming</code>, <code>/value-bets</code>, <code>/model-info</code></div>
+      <div>Edit this landing page in <code>static/index.html</code></div>
+    </footer>
+  </div>
+  <script>
+  async function updateApiStatus() {
+    const dot = document.getElementById("api-dot");
+    const text = document.getElementById("api-text");
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/value-bets?league=39&days_ahead=1&min_edge=0.05");
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.meta && data.meta.cache_mode === "live") {
+        dot.style.backgroundColor = "#00c853"; // green
+        text.textContent = "API: live";
+      } else {
+        dot.style.backgroundColor = "#ffa000"; // amber
+        text.textContent = "API: cached";
+      }
+    } else {
+      dot.style.backgroundColor = "#ffa000";
+      text.textContent = "API: cached";
+    }
+  } catch (err) {
+    dot.style.backgroundColor = "#d32f2f"; // red
+    text.textContent = "API: offline";
+  }
+}
+
+// Run once immediately
+updateApiStatus();
+
+// Update every 60 seconds
+setInterval(updateApiStatus, 60000);
+</script>
+
+<script src="js/status.js"></script>
+
+</body>
+</html>
