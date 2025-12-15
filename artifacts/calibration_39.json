@@ -1,0 +1,16 @@
+{
+  "temperature": 1.48,
+  "draw_mult": 0.66,
+  "fitted_on": {
+    "league": 39,
+    "season": 2025,
+    "fixtures_scored": 159,
+    "n_used": 159,
+    "source_url": "http://127.0.0.1:8001/backtest/1x2?league=39&season=2025&last_n=159"
+  },
+  "metrics": {
+    "logloss": 1.015315,
+    "accuracy": 0.490566
+  },
+  "generated_utc": "2025-12-15T13:18:41.425291+00:00"
+}
