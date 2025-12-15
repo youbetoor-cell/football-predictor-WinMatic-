@@ -628,63 +628,98 @@ def current_season() -> int:
 # HISTORY DB
 # ============================================================
 
+def _conn_is_postgres(conn) -> bool:
+    """Detect whether the *actual* connection talks to Postgres.
+
+    We do this because a wrong env var / wrong flag can otherwise run SQLite DDL
+    (AUTOINCREMENT) against Postgres and crash the service.
+    """
+    try:
+        # Our pooled wrapper uses `._conn`
+        if hasattr(conn, "_conn"):
+            mod = getattr(conn._conn.__class__, "__module__", "")
+            return isinstance(mod, str) and mod.startswith("psycopg2")
+        # Raw psycopg2 connection
+        mod = getattr(conn.__class__, "__module__", "")
+        return isinstance(mod, str) and mod.startswith("psycopg2")
+    except Exception:
+        return False
+
+
 def init_history_db() -> None:
-    """Ensure predictions_history exists in whichever DB we are using."""
+    """Ensure predictions_history exists (SQLite locally, Postgres on Render when configured).
+
+    NOTE:
+    - SQLite supports `AUTOINCREMENT`.
+    - Postgres DOES NOT. Using it will crash with:
+      `psycopg2.errors.SyntaxError: ... near "AUTOINCREMENT"`
+    """
     os.makedirs(ART, exist_ok=True)
     conn = None
     try:
         conn = db_connect()
         cur = conn.cursor()
 
-        if USE_POSTGRES:
-            # Postgres schema (similar logical fields to SQLite version)
+        is_pg = _conn_is_postgres(conn)
+
+        if is_pg:
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS predictions_history (
                     id BIGSERIAL PRIMARY KEY,
-                    league INTEGER NOT NULL,
-                    fixture_id BIGINT NOT NULL,
-                    kickoff_utc TEXT NOT NULL,
-                    payload TEXT NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    UNIQUE(league, fixture_id, kickoff_utc)
+                    fixture_id BIGINT,
+                    league INTEGER,
+                    home_team TEXT,
+                    away_team TEXT,
+                    kickoff_utc TEXT,
+                    model_home_p DOUBLE PRECISION,
+                    model_draw_p DOUBLE PRECISION,
+                    model_away_p DOUBLE PRECISION,
+                    predicted_side TEXT,
+                    edge_value DOUBLE PRECISION,
+                    actual_result TEXT,
+                    payload TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
                 """
             )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ph_league ON predictions_history(league);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ph_fixture ON predictions_history(fixture_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ph_kickoff ON predictions_history(kickoff_utc);")
         else:
-            # SQLite schema
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS predictions_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    league INTEGER NOT NULL,
-                    fixture_id INTEGER NOT NULL,
-                    kickoff_utc TEXT NOT NULL,
-                    payload TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    UNIQUE(league, fixture_id, kickoff_utc)
+                    fixture_id INTEGER,
+                    league INTEGER,
+                    home_team TEXT,
+                    away_team TEXT,
+                    kickoff_utc TEXT,
+                    model_home_p REAL,
+                    model_draw_p REAL,
+                    model_away_p REAL,
+                    predicted_side TEXT,
+                    edge_value REAL,
+                    actual_result TEXT,
+                    payload TEXT,
+                    created_at TEXT
                 );
                 """
             )
 
         conn.commit()
-        logger.info("[DB] predictions_history ready (%s)", "postgres" if USE_POSTGRES else "sqlite")
     except Exception as e:
-        # Never crash the service on boot if DB isn't reachable yet.
-        logger.warning("[DB] init failed: %s", e)
+        # Do not take the whole service down if DB init fails.
+        print(f"[history_db] init_history_db failed: {e}")
     finally:
-        if conn is not None:
-            try:
+        try:
+            if conn is not None:
                 conn.close()
-            except Exception:
-                pass
+        except Exception:
+            pass
 
 
-# Do not crash on import; DB will be created lazily (and we also try once on import).
-try:
-    init_history_db()
-except Exception:
-    pass
 def record_predictions_history(league: int, fixtures: list[dict]) -> None:
     """
     Persist prediction payloads for later analysis.
