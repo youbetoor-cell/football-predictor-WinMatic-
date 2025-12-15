@@ -71,64 +71,79 @@ def _norm_result_label(value):
 
 def ensure_predictions_db() -> None:
     """
-    Ensure predictions_history exists.
+    Ensure the predictions_history table exists with the columns used by the API.
 
-    - SQLite (local dev): keep the current "add missing columns" behavior.
-    - Postgres (Render): create a fixed schema once.
+    - If DATABASE_URL is set (starts with 'postgres'), we use Postgres.
+    - Otherwise we use local SQLite at DB_PATH.
+
+    Safe to call many times.
     """
     try:
         if USE_POSTGRES:
+            if psycopg2 is None:
+                raise RuntimeError("DATABASE_URL is set but psycopg2 is not installed. Add psycopg2-binary to requirements.txt")
+
             conn = db_connect()
-            cur = conn.cursor()
+            cur = db_cursor(conn)
+
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS predictions_history (
                     id BIGSERIAL PRIMARY KEY,
-                    fixture_id BIGINT,
-                    league INTEGER,
+                    fixture_id BIGINT NOT NULL,
+                    league INTEGER NOT NULL,
                     home_team TEXT,
                     away_team TEXT,
-                    kickoff_utc TEXT,
+                    kickoff_utc TEXT NOT NULL,
                     model_home_p DOUBLE PRECISION,
                     model_draw_p DOUBLE PRECISION,
                     model_away_p DOUBLE PRECISION,
                     predicted_side TEXT,
                     edge_value DOUBLE PRECISION,
                     actual_result TEXT,
-                    payload TEXT
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text),
+                    UNIQUE(league, fixture_id, kickoff_utc)
                 );
                 """
             )
-            # Helpful indexes
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_ph_league_kickoff ON predictions_history(league, kickoff_utc);")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_ph_fixture ON predictions_history(fixture_id);")
             conn.commit()
+            cur.close()
             conn.close()
             return
 
-        # ------------------------
-        # SQLite path (existing behavior)
-        # ------------------------
+        # SQLite path
         db_dir = os.path.dirname(DB_PATH) or "."
         os.makedirs(db_dir, exist_ok=True)
 
         conn = db_connect()
-        cur = conn.cursor()
+        cur = db_cursor(conn)
 
-        # 1) Create the table if it doesn't exist at all.
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS predictions_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fixture_id INTEGER NOT NULL,
+                league INTEGER NOT NULL,
+                home_team TEXT,
+                away_team TEXT,
+                kickoff_utc TEXT NOT NULL,
+                model_home_p REAL,
+                model_draw_p REAL,
+                model_away_p REAL,
+                predicted_side TEXT,
+                edge_value REAL,
+                actual_result TEXT,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(league, fixture_id, kickoff_utc)
             );
             """
         )
 
-        # 2) See what columns we currently have
         cur.execute("PRAGMA table_info(predictions_history);")
         existing_cols = {row[1] for row in cur.fetchall()}
 
-        # 3) Columns we expect
         expected_cols = {
             "fixture_id": "INTEGER",
             "league": "INTEGER",
@@ -141,162 +156,36 @@ def ensure_predictions_db() -> None:
             "predicted_side": "TEXT",
             "edge_value": "REAL",
             "actual_result": "TEXT",
-            # optional JSON payload field for backwards compatibility
             "payload": "TEXT",
+            "created_at": "TEXT",
         }
 
-        # 4) Add any missing columns
-        for name, coltype in expected_cols.items():
-            if name not in existing_cols:
-                cur.execute(
-                    f"ALTER TABLE predictions_history "
-                    f"ADD COLUMN {name} {coltype}"
-                )
+        for col, ctype in expected_cols.items():
+            if col not in existing_cols:
+                try:
+                    cur.execute(f"ALTER TABLE predictions_history ADD COLUMN {col} {ctype};")
+                except Exception:
+                    pass
 
-        conn.commit()
-
-    except Exception as e:
         try:
-            logger.warning("[DB] ensure_predictions_db failed: %s", e)
-        except Exception:
-            print("[DB] ensure_predictions_db failed:", e)
-    finally:
-        try:
-            conn.close()
+            cur.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_unique ON predictions_history(league, fixture_id, kickoff_utc);"
+            )
         except Exception:
             pass
 
+        conn.commit()
+        conn.close()
 
-# ============================================================
-# CONFIG
-# ============================================================
+    except Exception as e:
+        logger.warning("[DB] ensure_predictions_db failed: %s", e)
 
-load_dotenv()
 
-API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
-
-if not API_FOOTBALL_KEY:
-    raise RuntimeError("API_FOOTBALL_KEY environment variable is not set")
-
-API_BASE = "https://v3.football.api-sports.io"
-
-ART = "artifacts"
-os.makedirs(ART, exist_ok=True)
-
-SNAPSHOT_DIR = os.path.join(ART, "snapshots")
-os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-
-API_CACHE_FILE = os.path.join(ART, "api_cache.json")
-API_DISK_CACHE_FILE = os.path.join(ART, "api_disk_cache.json")
 CACHE_ONLY_MODE = os.getenv("WINMATIC_CACHE_ONLY", "0") == "1"
 API_QUOTA_EXHAUSTED = False  # becomes True after daily limit is hit
 
-# ============================================================
-# PERSISTENT HISTORY STORAGE
-# ============================================================
-# On Render Free, the local filesystem is ephemeral. Your SQLite file will be lost on redeploy/restart.
-# To persist history, set DATABASE_URL (Render Postgres). Locally, SQLite is still used by default.
-#
-# Render Postgres docs: internal URL for your service, external URL for tools on your laptop.
-# https://render.com/docs/postgresql-creating-connecting
-#
-# ENV:
-#   DATABASE_URL         -> if set (postgres:// or postgresql://), we use Postgres
-#   WINMATIC_DB_PATH     -> optional override for local SQLite path
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-USE_POSTGRES = DATABASE_URL.lower().startswith("postgres")
-
-DB_PATH = os.getenv("WINMATIC_DB_PATH", os.path.join("data", "predictions_history.db"))
-os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
-
-# Optional: psycopg2 is only required if you use Postgres
-try:
-    import psycopg2  # type: ignore
-    from psycopg2 import pool as _pg_pool  # type: ignore
-except Exception:  # pragma: no cover
-    psycopg2 = None  # type: ignore
-    _pg_pool = None  # type: ignore
-
-
-def _pg_url_with_ssl(url: str) -> str:
-    # Render external connections use TLS. Many clients work without forcing, but this is safer.
-    if "sslmode=" in url:
-        return url
-    return url + ("&" if "?" in url else "?") + "sslmode=require"
-
-
-_PG_POOL = None
-
-class _CursorWrapper:
-    def __init__(self, cur):
-        self._cur = cur
-
-    def execute(self, query, params=None):
-        if USE_POSTGRES and isinstance(query, str):
-            query = query.replace("?", "%s")
-        return self._cur.execute(query, params)
-
-    def executemany(self, query, seq_of_params):
-        if USE_POSTGRES and isinstance(query, str):
-            query = query.replace("?", "%s")
-        return self._cur.executemany(query, seq_of_params)
-
-    def __getattr__(self, name):
-        return getattr(self._cur, name)
-
-
-class _PooledPGConn:
-    def __init__(self, conn, pool):
-        self._conn = conn
-        self._pool = pool
-
-    def cursor(self, *args, **kwargs):
-        return _CursorWrapper(self._conn.cursor(*args, **kwargs))
-
-    def commit(self):
-        return self._conn.commit()
-
-    def rollback(self):
-        return self._conn.rollback()
-
-    def close(self):
-        # Return to pool instead of closing the socket
-        try:
-            self._pool.putconn(self._conn)
-        except Exception:
-            try:
-                self._conn.close()
-            except Exception:
-                pass
-
-    def __getattr__(self, name):
-        return getattr(self._conn, name)
-
-
-def db_connect():
-    """Return a DB connection.
-    - SQLite (default) uses DB_PATH
-    - Postgres (when DATABASE_URL is set) uses a small connection pool
-    """
-    global _PG_POOL
-    if USE_POSTGRES:
-        if psycopg2 is None or _pg_pool is None:
-            raise RuntimeError("Postgres selected (DATABASE_URL set) but psycopg2 is not installed. Add psycopg2-binary to requirements.")
-        if _PG_POOL is None:
-            # Small pool is enough for a hobby app.
-            _PG_POOL = _pg_pool.ThreadedConnectionPool(
-                minconn=1, maxconn=5, dsn=_pg_url_with_ssl(DATABASE_URL)
-            )
-        return _PooledPGConn(_PG_POOL.getconn(), _PG_POOL)
-
-    # SQLite
-    # Ensure DB directory exists
-    try:
-        db_dir = os.path.dirname(DB_PATH) or \".\"
-        os.makedirs(db_dir, exist_ok=True)
-    except Exception:
-        pass
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+DB_PATH = os.path.join("data", "predictions_history.db")
+os.makedirs("data", exist_ok=True)
 
 
 DEFAULT_LEAGUE = 39  # Premier League
@@ -306,6 +195,66 @@ DEFAULT_LEAGUE = 39  # Premier League
 # ============================================================
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
+
+
+# ============================================================
+# DATABASE BACKEND (SQLite locally, Postgres on Render when DATABASE_URL is set)
+# ============================================================
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+USE_POSTGRES = DATABASE_URL.lower().startswith("postgres")
+
+try:
+    import psycopg2  # type: ignore
+except Exception:
+    psycopg2 = None  # type: ignore
+
+
+def _pg_url_with_ssl(url: str) -> str:
+    """
+    Render Postgres URLs sometimes require SSL. If sslmode isn't specified, add it.
+    Safe for internal URLs too.
+    """
+    if not url:
+        return url
+    if "sslmode=" in url:
+        return url
+    return url + ("&" if "?" in url else "?") + "sslmode=require"
+
+
+class _CursorWrapper:
+    def __init__(self, cur, is_postgres: bool):
+        self._cur = cur
+        self._is_pg = is_postgres
+
+    def execute(self, query: str, params=None):
+        if self._is_pg:
+            q = query.replace("?", "%s").replace("datetime('now')", "CURRENT_TIMESTAMP")
+            return self._cur.execute(q, params)
+        return self._cur.execute(query, params or ())
+
+    def executemany(self, query: str, seq_of_params):
+        if self._is_pg:
+            q = query.replace("?", "%s").replace("datetime('now')", "CURRENT_TIMESTAMP")
+            return self._cur.executemany(q, seq_of_params)
+        return self._cur.executemany(query, seq_of_params)
+
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+
+def db_connect():
+    """
+    Return a DB connection to either SQLite (default) or Postgres (if DATABASE_URL is set).
+    """
+    if USE_POSTGRES:
+        if psycopg2 is None:
+            raise RuntimeError("DATABASE_URL is set but psycopg2 is not installed. Add psycopg2-binary to requirements.txt")
+        return psycopg2.connect(_pg_url_with_ssl(DATABASE_URL))
+    return sqlite3.connect(DB_PATH)
+
+
+def db_cursor(conn):
+    return _CursorWrapper(conn.cursor(), USE_POSTGRES)
 
 def require_admin(
     x_admin_token: str | None = Header(None, alias="X-Admin-Token")
@@ -628,96 +577,21 @@ def current_season() -> int:
 # HISTORY DB
 # ============================================================
 
-def _conn_is_postgres(conn) -> bool:
-    """Detect whether the *actual* connection talks to Postgres.
-
-    We do this because a wrong env var / wrong flag can otherwise run SQLite DDL
-    (AUTOINCREMENT) against Postgres and crash the service.
-    """
-    try:
-        # Our pooled wrapper uses `._conn`
-        if hasattr(conn, "_conn"):
-            mod = getattr(conn._conn.__class__, "__module__", "")
-            return isinstance(mod, str) and mod.startswith("psycopg2")
-        # Raw psycopg2 connection
-        mod = getattr(conn.__class__, "__module__", "")
-        return isinstance(mod, str) and mod.startswith("psycopg2")
-    except Exception:
-        return False
-
-
 def init_history_db() -> None:
-    """Ensure predictions_history exists (SQLite locally, Postgres on Render when configured).
-
-    NOTE:
-    - SQLite supports `AUTOINCREMENT`.
-    - Postgres DOES NOT. Using it will crash with:
-      `psycopg2.errors.SyntaxError: ... near "AUTOINCREMENT"`
     """
-    os.makedirs(ART, exist_ok=True)
-    conn = None
-    try:
-        conn = db_connect()
-        cur = conn.cursor()
+    Backwards-compatible init hook.
 
-        is_pg = _conn_is_postgres(conn)
+    We now use ensure_predictions_db() which supports both SQLite and Postgres.
+    """
+    ensure_predictions_db()
+    logger.info("[DB] predictions_history ready (postgres=%s)", USE_POSTGRES)
 
-        if is_pg:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS predictions_history (
-                    id BIGSERIAL PRIMARY KEY,
-                    fixture_id BIGINT,
-                    league INTEGER,
-                    home_team TEXT,
-                    away_team TEXT,
-                    kickoff_utc TEXT,
-                    model_home_p DOUBLE PRECISION,
-                    model_draw_p DOUBLE PRECISION,
-                    model_away_p DOUBLE PRECISION,
-                    predicted_side TEXT,
-                    edge_value DOUBLE PRECISION,
-                    actual_result TEXT,
-                    payload TEXT,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                );
-                """
-            )
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_ph_league ON predictions_history(league);")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_ph_fixture ON predictions_history(fixture_id);")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_ph_kickoff ON predictions_history(kickoff_utc);")
-        else:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS predictions_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    fixture_id INTEGER,
-                    league INTEGER,
-                    home_team TEXT,
-                    away_team TEXT,
-                    kickoff_utc TEXT,
-                    model_home_p REAL,
-                    model_draw_p REAL,
-                    model_away_p REAL,
-                    predicted_side TEXT,
-                    edge_value REAL,
-                    actual_result TEXT,
-                    payload TEXT,
-                    created_at TEXT
-                );
-                """
-            )
 
-        conn.commit()
-    except Exception as e:
-        # Do not take the whole service down if DB init fails.
-        print(f"[history_db] init_history_db failed: {e}")
-    finally:
-        try:
-            if conn is not None:
-                conn.close()
-        except Exception:
-            pass
+# Initialize DB once at import-time. If the DB is temporarily unavailable, do not crash the API.
+try:
+    init_history_db()
+except Exception as e:
+    logger.warning("[DB] init failed (service will still start): %s", e)
 
 
 def record_predictions_history(league: int, fixtures: list[dict]) -> None:
@@ -733,7 +607,7 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
     conn = None
     try:
         conn = db_connect()
-        cur = conn.cursor()
+        cur = db_cursor(conn)
 
         # Ensure unique key exists (needed for ON CONFLICT)
         try:
@@ -757,27 +631,16 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
         if not rows:
             return
 
-        if USE_POSTGRES:
-            cur.executemany(
-                """
-                INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
-                VALUES (%s, %s, %s, %s, NOW())
-                ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
-                  payload = EXCLUDED.payload
-                """,
-                rows,
-            )
-        else:
-            cur.executemany(
-                """
-                INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
-                VALUES (?, ?, ?, ?, datetime('now'))
-                ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
-                  payload = excluded.payload,
-                  created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)
-                """,
-                rows,
-            )
+        cur.executemany(
+            """
+            INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
+            VALUES (?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
+              payload = excluded.payload,
+              created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)
+            """,
+            rows,
+        )
         conn.commit()
 
     except Exception as e:
@@ -2623,56 +2486,113 @@ app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 @app.get("/debug/db")
 def debug_db():
     """
-    Small diagnostic endpoint.
-    Useful on Render to confirm whether you're using SQLite or Postgres.
+    Quick DB sanity check (safe to expose; does not reveal secrets).
     """
-    import os
     from pathlib import Path
+    info: dict[str, Any] = {
+        "cwd": os.getcwd(),
+        "use_postgres": bool(USE_POSTGRES),
+        "database_url_set": bool(DATABASE_URL),
+    }
 
-    info = {"cwd": os.getcwd(), "use_postgres": bool(USE_POSTGRES)}
-
-    if USE_POSTGRES:
-        info["db_kind"] = "postgres"
-        info["database_url_set"] = bool(DATABASE_URL)
+    if not USE_POSTGRES:
+        p = Path(DB_PATH)
+        info.update(
+            {
+                "db_kind": "sqlite",
+                "db_path": DB_PATH,
+                "db_abs": str(p.resolve()),
+                "exists": p.exists(),
+            }
+        )
         try:
-            con = db_connect()
-            cur = con.cursor()
-            cur.execute(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                  AND table_name = 'predictions_history'
-                ORDER BY ordinal_position;
-                """
-            )
-            info["predictions_history_cols"] = [r[0] for r in cur.fetchall()]
-            cur.execute("SELECT COUNT(*) FROM predictions_history;")
-            info["predictions_history_rows"] = int(cur.fetchone()[0])
-            con.close()
+            conn = db_connect()
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(predictions_history);")
+            info["predictions_history_cols"] = [row[1] for row in cur.fetchall()]
+            conn.close()
         except Exception as e:
-            info["error"] = repr(e)
+            info["error"] = f"{e}"
         return info
 
-    # SQLite
-    info["db_kind"] = "sqlite"
-    p = Path(DB_PATH)
-    info["db_path"] = DB_PATH
-    info["db_abs"] = str(p.resolve())
-    info["exists"] = p.exists()
+    # Postgres
+    info["db_kind"] = "postgres"
     try:
-        con = db_connect()
-        try:
-            cols = [r[1] for r in con.execute("PRAGMA table_info(predictions_history)").fetchall()]
-            info["predictions_history_cols"] = cols
-            info["predictions_history_rows"] = int(con.execute("SELECT COUNT(*) FROM predictions_history;").fetchone()[0])
-        finally:
-            con.close()
+        conn = db_connect()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'predictions_history'
+            ORDER BY ordinal_position
+            """
+        )
+        info["predictions_history_cols"] = [r[0] for r in cur.fetchall()]
+        cur.execute("SELECT COUNT(*) FROM predictions_history")
+        info["predictions_history_rows"] = int(cur.fetchone()[0])
+        conn.close()
     except Exception as e:
-        info["error"] = repr(e)
-
+        info["error"] = f"{e}"
     return info
 
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], allow_credentials=True,
+    allow_methods=["*"], allow_headers=["*"],
+)
+
+# Serve /static/*
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Root → /static/index.html
+@app.get("/")
+def root():
+    return RedirectResponse(url="/static/index.html")
+
+# ---------- Team logo cache/proxy ----------
+LOGO_DIR = os.path.join("static", "team-logo")
+os.makedirs(LOGO_DIR, exist_ok=True)
+
+# 1x1 transparent PNG (base64) to seed /static/team-logo/default.png
+_DEFAULT_PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMA"
+    "ASsJTYQAAAAASUVORK5CYII="
+)
+
+def _ensure_default_logo():
+    default_path = os.path.join(LOGO_DIR, "default.png")
+    if not os.path.exists(default_path):
+        try:
+            with open(default_path, "wb") as f:
+                f.write(base64.b64decode(_DEFAULT_PNG_B64))
+            logger.info("[LOGO] created default placeholder at %s", default_path)
+        except Exception as e:
+            logger.warning("[LOGO] failed to create default placeholder: %s", e)
+
+_ensure_default_logo()
+
+def _logo_cache_path(team_id: int) -> str:
+    return os.path.join(LOGO_DIR, f"{team_id}.png")
+
+def _fetch_and_cache_logo(team_id: int) -> Optional[bytes]:
+    url = f"https://media.api-sports.io/football/teams/{team_id}.png"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200 and r.content:
+            path = _logo_cache_path(team_id)
+            try:
+                with open(path, "wb") as f:
+                    f.write(r.content)
+                logger.info("[LOGO] cached %s → %s", url, path)
+            except Exception as e:
+                logger.warning("[LOGO] write cache failed: %s", e)
+            return r.content
+        logger.warning("[LOGO] CDN returned %s for team_id=%s", r.status_code, team_id)
+    except Exception as e:
+        logger.warning("[LOGO] fetch failed for team_id=%s: %s", team_id, e)
+    return None
 
 @app.get("/team-logo/default.png")
 def team_logo_default():
@@ -3512,7 +3432,7 @@ def api_results_sync(
     since = (now - timedelta(days=lookback_days)).isoformat()
 
     conn = db_connect()
-    cur = conn.cursor()
+    cur = db_cursor(conn)
 
     # candidates: finished by time, missing actual_result
     cur.execute(
@@ -3575,7 +3495,7 @@ def api_results_sync(
                 continue
 
             conn = db_connect()
-            cur = conn.cursor()
+            cur = db_cursor(conn)
             cur.execute(
                 """
                 UPDATE predictions_history
@@ -3843,9 +3763,20 @@ def api_backtest_1x2(
             try:
                 ensure_predictions_db()
                 conn = db_connect()
-                cur = conn.cursor()
+                cur = db_cursor(conn)
 
-                cols = [r[1] for r in cur.execute("PRAGMA table_info(predictions_history)").fetchall()]
+                if USE_POSTGRES:
+                    cur.execute(
+                        """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema='public' AND table_name='predictions_history'
+                        ORDER BY ordinal_position
+                        """
+                    )
+                    cols = [r[0] for r in cur.fetchall()]
+                else:
+                    cols = [r[1] for r in cur.execute("PRAGMA table_info(predictions_history)").fetchall()]
                 # build dynamic upsert only with columns that exist
                 insert_cols = []
                 insert_vals = []
@@ -3943,7 +3874,7 @@ def api_progress_metrics(
     since_ts = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
 
     conn = db_connect()
-    cur = conn.cursor()
+    cur = db_cursor(conn)
 
     # include id + fixture_id so we can pick the latest row per fixture
     cur.execute(
@@ -4067,7 +3998,7 @@ def api_progress_roi(
 
     try:
         conn = db_connect()
-        cur = conn.cursor()
+        cur = db_cursor(conn)
         # We ALSO select the primary key id so we can pick the latest row per fixture
         cur.execute(
             """
@@ -4276,7 +4207,7 @@ def api_history(
         ensure_predictions_db()
 
         conn = db_connect()
-        cur = conn.cursor()
+        cur = db_cursor(conn)
         cur.execute(
             """
             SELECT
@@ -4369,7 +4300,7 @@ def api_pnl_history(
 
     try:
         conn = db_connect()
-        cur = conn.cursor()
+        cur = db_cursor(conn)
         cur.execute(
             """
             SELECT
@@ -4488,7 +4419,7 @@ def api_roi_by_league(
     ensure_predictions_db()
 
     conn = db_connect()
-    cur = conn.cursor()
+    cur = db_cursor(conn)
 
     edge_filter = ""
     params = []
@@ -4544,7 +4475,7 @@ def api_pnl_debug(
     """
     ensure_predictions_db()
     conn = db_connect()
-    cur = conn.cursor()
+    cur = db_cursor(conn)
     cur.execute(
         """
         SELECT
@@ -4615,7 +4546,7 @@ def api_predictions_sanity(
     ensure_predictions_db()
 
     conn = db_connect()
-    cur = conn.cursor()
+    cur = db_cursor(conn)
     cur.execute(
         """
         SELECT
@@ -4703,7 +4634,7 @@ def debug_fixture(
 
     try:
         conn = db_connect()
-        cur = conn.cursor()
+        cur = db_cursor(conn)
         cur.execute(
             """
             SELECT
@@ -4905,7 +4836,7 @@ def debug_pending_results(
     ensure_predictions_db()
 
     conn = db_connect()
-    cur = conn.cursor()
+    cur = db_cursor(conn)
     cur.execute(
         """
         SELECT
@@ -4966,7 +4897,7 @@ def api_recent_results(
 
     try:
         conn = db_connect()
-        cur = conn.cursor()
+        cur = db_cursor(conn)
         # Get all finished predictions for this league, newest first
         cur.execute(
             """
@@ -5071,7 +5002,7 @@ def api_update_results(
     ensure_predictions_db()
 
     conn = db_connect()
-    cur = conn.cursor()
+    cur = db_cursor(conn)
     cur.execute(
         """
         SELECT DISTINCT fixture_id
@@ -5091,7 +5022,7 @@ def api_update_results(
     updated = 0
 
     conn = db_connect()
-    cur = conn.cursor()
+    cur = db_cursor(conn)
 
     for fx_id in pending_ids:
         if updated >= max_updates:
