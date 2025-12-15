@@ -290,7 +290,13 @@ def db_connect():
         return _PooledPGConn(_PG_POOL.getconn(), _PG_POOL)
 
     # SQLite
-    return db_connect()
+    # Ensure DB directory exists
+    try:
+        db_dir = os.path.dirname(DB_PATH) or \".\"
+        os.makedirs(db_dir, exist_ok=True)
+    except Exception:
+        pass
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 
 DEFAULT_LEAGUE = 39  # Premier League
@@ -623,28 +629,62 @@ def current_season() -> int:
 # ============================================================
 
 def init_history_db() -> None:
+    """Ensure predictions_history exists in whichever DB we are using."""
     os.makedirs(ART, exist_ok=True)
-    conn = db_connect()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS predictions_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            league INTEGER NOT NULL,
-            fixture_id INTEGER NOT NULL,
-            kickoff_utc TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            UNIQUE(league, fixture_id, kickoff_utc)
-        );
-        """
-    )
-    conn.commit()
-    conn.close()
-    logger.info("[DB] history.db ready")
+    conn = None
+    try:
+        conn = db_connect()
+        cur = conn.cursor()
 
-init_history_db()
+        if USE_POSTGRES:
+            # Postgres schema (similar logical fields to SQLite version)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS predictions_history (
+                    id BIGSERIAL PRIMARY KEY,
+                    league INTEGER NOT NULL,
+                    fixture_id BIGINT NOT NULL,
+                    kickoff_utc TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE(league, fixture_id, kickoff_utc)
+                );
+                """
+            )
+        else:
+            # SQLite schema
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS predictions_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    league INTEGER NOT NULL,
+                    fixture_id INTEGER NOT NULL,
+                    kickoff_utc TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(league, fixture_id, kickoff_utc)
+                );
+                """
+            )
 
+        conn.commit()
+        logger.info("[DB] predictions_history ready (%s)", "postgres" if USE_POSTGRES else "sqlite")
+    except Exception as e:
+        # Never crash the service on boot if DB isn't reachable yet.
+        logger.warning("[DB] init failed: %s", e)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# Do not crash on import; DB will be created lazily (and we also try once on import).
+try:
+    init_history_db()
+except Exception:
+    pass
 def record_predictions_history(league: int, fixtures: list[dict]) -> None:
     """
     Persist prediction payloads for later analysis.
@@ -682,16 +722,27 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
         if not rows:
             return
 
-        cur.executemany(
-            """
-            INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
-            VALUES (?, ?, ?, ?, datetime('now'))
-            ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
-              payload = excluded.payload,
-              created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)
-            """,
-            rows,
-        )
+        if USE_POSTGRES:
+            cur.executemany(
+                """
+                INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
+                VALUES (%s, %s, %s, %s, NOW())
+                ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
+                  payload = EXCLUDED.payload
+                """,
+                rows,
+            )
+        else:
+            cur.executemany(
+                """
+                INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
+                  payload = excluded.payload,
+                  created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)
+                """,
+                rows,
+            )
         conn.commit()
 
     except Exception as e:
