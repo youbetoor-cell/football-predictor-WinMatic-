@@ -2,86 +2,1121 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>WinMatic · Pricing</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- just reuse the same <style> from index.html for now -->
+  <title>WinMatic · Progress</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <style>
-    /* COPY the entire <style> block from your index.html here.
-       To keep this message shorter, I’m not pasting the 400+ lines again.
-       In VS Code: open index.html, select everything between <style> and </style>,
-       paste it here replacing this comment. */
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --text: #e5e7eb;
+      --text-soft: #9ca3af;
+      --text-softer: #6b7280;
+      --accent-purple: #8b5cf6;
+      --accent-green: #22c55e;
+      --accent-blue: #38bdf8;
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --shadow-soft: 0 24px 70px rgba(0, 0, 0, 0.85);
+      --shadow-card: 0 18px 50px rgba(15, 23, 42, 0.98);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, #2a145a 0, #05051b 40%, #020617 100%);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ===== TOP MENU ===== */
+
+    .topbar-hover-zone {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 16px;
+      z-index: 40;
+    }
+
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 22px;
+      background: rgba(2, 6, 23, 0.96);
+      border-bottom: 1px solid rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-logo {
+      width:36px;
+      height:36px;
+      border-radius:9999px;
+      background: radial-gradient(circle at 20% 10%, #a855f7, #6366f1 40%, #22c55e 95%);
+      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 0 40px rgba(129,140,248,.9);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:800;
+      font-size:1.1rem;
+      color:#f9fafb;
+    }
+
+    .brand-name {
+      font-weight:800;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      font-size:.9rem;
+    }
+
+    .brand-tagline {
+      font-size:.75rem;
+      color:var(--text-soft);
+    }
+
+    .nav {
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:0;
+      opacity:0;
+      transform:translateY(-4px);
+      pointer-events:none;
+      transition:opacity .18s ease, transform .18s ease;
+    }
+
+    .topbar-hover-zone:hover + .topbar .nav,
+    .topbar:hover .nav {
+      opacity:1;
+      transform:translateY(0);
+      pointer-events:auto;
+    }
+
+    .nav-item {
+      border-radius:9999px;
+      padding:6px 11px;
+      font-size:.82rem;
+      color:var(--text-soft);
+      display:flex;
+      align-items:center;
+      gap:8px;
+      cursor:pointer;
+      border:1px solid transparent;
+      transition:.18s;
+      position: relative;
+      text-decoration: none;
+    }
+
+    .nav-item::before {
+      content:"●";
+      font-size:.5rem;
+      opacity:.7;
+    }
+
+    .nav-item:hover {
+      background:#061126;
+      color:var(--text);
+      border-color:#111827;
+      transform: translateY(-1px);
+    }
+
+    .nav-item.active {
+      background:rgba(139,92,246,.18);
+      border-color:rgba(139,92,246,.8);
+      color:#ddd6fe;
+      box-shadow:0 0 18px rgba(139,92,246,.8);
+    }
+
+    @media (max-width: 860px) {
+      .topbar-hover-zone {
+        display:none;
+      }
+
+      body {
+        padding-top:54px;
+      }
+
+      .topbar {
+        padding:8px 12px;
+      }
+
+      .nav {
+        flex-wrap:nowrap;
+        overflow-x:auto;
+        white-space:nowrap;
+        max-width:100%;
+        opacity:1;
+        transform:translateY(0);
+        pointer-events:auto;
+      }
+
+      .nav::-webkit-scrollbar {
+        display:none;
+      }
+
+      .nav-item {
+        font-size:.78rem;
+        padding:5px 9px;
+      }
+    }
+
+    /* ===== PAGE LAYOUT ===== */
+
+    .page-shell {
+      max-width: 1100px;
+      margin: 110px auto 70px;
+      padding: 0 22px;
+      width: 100%;
+    }
+
+    @media (max-width: 860px) {
+      .page-shell {
+        margin-top: 80px;
+        padding: 0 16px;
+      }
+    }
+
+    .progress-hero {
+      border-radius: var(--radius-lg);
+      padding: 20px 20px 18px;
+      border: 1px solid rgba(15,23,42,.9);
+      background:
+        radial-gradient(circle at top left, rgba(139,92,246,.38), transparent 60%),
+        radial-gradient(circle at center right, rgba(34,197,94,.22), transparent 60%),
+        #020617;
+      box-shadow: var(--shadow-soft);
+      margin-bottom: 20px;
+    }
+
+    .progress-hero-headline {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .progress-hero-left {
+      max-width: 540px;
+    }
+
+    .progress-eyebrow {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:3px 10px;
+      border-radius:9999px;
+      background:rgba(15,23,42,.9);
+      border:1px solid rgba(148,163,184,.3);
+      font-size:.72rem;
+      color:var(--text-soft);
+      margin-bottom:8px;
+    }
+
+    .progress-eyebrow-dot {
+      width:7px;
+      height:7px;
+      border-radius:9999px;
+      background:#22c55e;
+      box-shadow:0 0 12px rgba(34,197,94,1);
+    }
+
+    .progress-title {
+      font-size: 1.9rem;
+      font-weight: 800;
+      margin: 0 0 6px;
+    }
+
+    .progress-title span {
+      color: #c4b5fd;
+    }
+
+    .progress-subtitle {
+      font-size: 0.94rem;
+      color: var(--text-soft);
+      max-width: 500px;
+      line-height: 1.5;
+    }
+
+    .progress-meta-row {
+      margin-top: 10px;
+      display:flex;
+      flex-wrap:wrap;
+      gap: 8px;
+      font-size: 0.8rem;
+      color: var(--text-softer);
+    }
+
+    .progress-tag {
+      padding: 3px 10px;
+      border-radius: 9999px;
+      border: 1px solid rgba(148,163,184,.35);
+      background: rgba(15,23,42,.95);
+    }
+
+    /* === Controls === */
+
+    .controls-row {
+      margin-top: 14px;
+      display:flex;
+      flex-wrap:wrap;
+      gap: 10px;
+      align-items:center;
+    }
+
+    .control-group {
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      font-size: 0.8rem;
+    }
+
+    .control-label {
+      color: var(--text-soft);
+    }
+
+    .control-select {
+      min-width: 180px;
+      border-radius: 9999px;
+      border: 1px solid #111827;
+      background:#020617;
+      color: var(--text);
+      padding: 5px 12px;
+      font-size: 0.85rem;
+    }
+
+    .window-pill-row {
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+    }
+
+    .window-pill {
+      border-radius:9999px;
+      padding:4px 10px;
+      border:1px solid #1f2937;
+      background:#020617;
+      font-size:0.82rem;
+      color:var(--text-soft);
+      cursor:pointer;
+      transition:.16s;
+    }
+
+    .window-pill:hover {
+      border-color:#4b5563;
+      color:var(--text);
+    }
+
+    .window-pill.active {
+      border-color:rgba(139,92,246,.9);
+      background:rgba(79,70,229,.25);
+      color:#e5e7eb;
+      box-shadow:0 0 12px rgba(129,140,248,.8);
+    }
+
+    .progress-hero-right {
+      min-width: 210px;
+      max-width: 240px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(148,163,184,.5);
+      padding: 10px 13px;
+      background: radial-gradient(circle at top left, rgba(15,23,42,.9), #020617);
+      box-shadow: 0 12px 30px rgba(15,23,42,1);
+      font-size: 0.8rem;
+    }
+
+    .progress-hero-right-title {
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .progress-metric-row {
+      display:flex;
+      justify-content:space-between;
+      margin-top:4px;
+    }
+
+    .progress-metric-label {
+      color: var(--text-softer);
+    }
+
+    .progress-metric-value {
+      font-weight: 600;
+    }
+
+    .progress-metric-value.accent {
+      color:#bbf7d0;
+    }
+
+    .progress-metric-sub {
+      font-size: 0.72rem;
+      margin-top: 4px;
+      color: var(--text-softer);
+    }
+
+    .progress-status {
+      font-size: 0.78rem;
+      margin-top: 8px;
+      color: var(--text-softer);
+    }
+
+    .progress-status.error {
+      color: #fecaca;
+    }
+
+    /* Metric cards */
+
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+      margin-bottom: 18px;
+    }
+
+    .metric-card {
+      border-radius: 18px;
+      padding: 10px 13px;
+      background: linear-gradient(180deg, rgba(15,23,42,.98), #020617);
+      border: 1px solid rgba(15,23,42,1);
+      box-shadow: var(--shadow-card);
+      font-size: 0.85rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .metric-label {
+      color: var(--text-soft);
+      margin-bottom: 4px;
+    }
+
+    .metric-value {
+      font-size: 1.3rem;
+      font-weight: 700;
+    }
+
+    .metric-sub {
+      font-size: 0.76rem;
+      color: var(--text-softer);
+      margin-top: 2px;
+    }
+
+    .metric-pill {
+      position:absolute;
+      top:7px;
+      right:9px;
+      font-size:.7rem;
+      padding:2px 7px;
+      border-radius:9999px;
+      border:1px solid rgba(148,163,184,.45);
+      background:rgba(15,23,42,.98);
+      color:var(--text-soft);
+    }
+
+    .metric-pill.green {
+      border-color:rgba(34,197,94,.8);
+      color:#bbf7d0;
+    }
+
+    /* Chart section */
+
+    .chart-card {
+      margin-top: 10px;
+      border-radius: var(--radius-md);
+      background: radial-gradient(circle at top left, rgba(15,23,42,.96), #020617);
+      border: 1px solid rgba(15,23,42,1);
+      padding: 12px 14px 14px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .chart-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      margin-bottom: 6px;
+      gap: 8px;
+    }
+
+    .chart-title {
+      font-size: 0.96rem;
+      font-weight: 600;
+    }
+
+    .chart-subtitle {
+      font-size: 0.78rem;
+      color: var(--text-softer);
+      text-align: right;
+    }
+
+    .chart-wrapper {
+      margin-top: 6px;
+      border-radius: 20px;
+      background: radial-gradient(circle at top, #020617, #020617 60%, #020617 100%);
+      border:1px solid #111827;
+      padding: 10px 12px 14px;
+      overflow: hidden;
+      display:flex;
+      justify-content:center;
+    }
+
+    .chart-svg {
+      width: 100%;
+      max-width: 720px;
+      aspect-ratio: 16 / 9;
+      display:block;
+    }
+
+    .chart-legend {
+      margin-top: 6px;
+      display:flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 0.78rem;
+      color: var(--text-softer);
+    }
+
+    .chart-legend span {
+      display:inline-flex;
+      align-items:center;
+      gap: 6px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #8b5cf6, #38bdf8, #22c55e);
+      box-shadow: 0 0 10px rgba(56,189,248,.9);
+    }
+
+    .empty-chart {
+      font-size: 0.8rem;
+      color: var(--text-softer);
+      text-align: center;
+      padding: 12px 0 4px;
+    }
   </style>
 </head>
-<body>
 
-  <!-- Global nav, same as on index, Tutorial active -->
+<body>
+  <!-- Desktop hover trigger -->
+  <div class="topbar-hover-zone"></div>
+
+  <!-- Top menu -->
   <header class="topbar">
-    <div class="topbar-inner">
+    <div class="topbar-left">
       <a href="index.html" class="brand">
         <div class="brand-logo">W</div>
         <div>
-          <div class="brand-text-main">WINMATIC</div>
-          <div class="brand-text-sub">AI FOOTBALL EDGE ENGINE</div>
+          <div class="brand-name">WINMATIC</div>
+          <div class="brand-tagline">AI Match Edge Engine</div>
         </div>
       </a>
-
+    </div>
+    <div class="topbar-right">
       <nav class="nav">
-         <a class="nav-item" href="index.html">Home</a>
-
-         <a class="nav-item" href="predictor.html">Predictions</a>
-         <a class="nav-item" href="predictor.html#today">All matches (today)</a>
-
-         <a class="nav-item" href="bets.html">Bet of the day</a>
-         <a class="nav-item" href="value.html">Value Scanner</a>
-
-         <a class="nav-item" href="results.html">Results</a>
-         <a class="nav-item active" href="progress.html">Progress</a>
-         <a class="nav-item" href="metrics.html#metrics">Metrics</a>
-
-         <a class="nav-item" href="tutorial.html">Tutorial</a>
-         <a class="nav-item" href="pricing.html">View pricing</a>
-         <a class="nav-item" href="contact.html">Contact</a>
+          <a href="index.html" class="nav-item">Home</a>
+        <a href="predictor.html" class="nav-item">Predictions</a>
+        <a href="all-matches.html" class="nav-item">All matches (today)</a>
+        <a href="value.html" class="nav-item">Value Scanner</a>
+        <a href="bets.html" class="nav-item">Bet of the day</a>
+        <a href="progress.html" class="nav-item active">Progress</a>
+        <a href="results.html" class="nav-item">Results</a>
+        <a href="metrics.html#metrics" class="nav-item">Metrics</a>
+        <a href="tutorial.html" class="nav-item">Tutorial</a>
+        <a href="pricing.html" class="nav-item">View pricing</a>
+        <a href="contact.html" class="nav-item">Contact</a>
       </nav>
-
-      <div class="nav-right">
-        <a class="pill" href="pricing.html">View pricing</a>
-        <a class="cta-primary" href="predictor.html">Launch Predictor</a>
-      </div>
     </div>
   </header>
 
+  <!-- Page content -->
   <main class="page-shell">
-    <section class="cards-grid">
-  <article class="info-card">
-    <h3>Hobby</h3>
-    <p>Perfect for personal betting experiments. Limited leagues and request quotas.</p>
-  </article>
-  <article class="info-card">
-    <h3>Pro</h3>
-    <p>Higher quotas, more leagues, and advanced monitoring tools for serious users.</p>
-  </article>
-  <article class="info-card">
-    <h3>Custom</h3>
-    <p>Need something special? Add your own odds feeds, leagues, and models.</p>
-  </article>
-</section>
+    <!-- Hero / header -->
+    <section class="progress-hero">
+      <div class="progress-hero-headline">
+        <div class="progress-hero-left">
+          <div class="progress-eyebrow">
+            <span class="progress-eyebrow-dot"></span>
+            <span>Live model performance · Premier League by default</span>
+          </div>
+          <h1 class="progress-title">
+            Track how <span>WinMatic</span> is performing in the wild.
+          </h1>
+          <p class="progress-subtitle">
+            This page shows how the model has been doing on recent fixtures: accuracy,
+            sample size, and how performance changes across different time windows.
+            Switch league and window to stress-test the engine.
+          </p>
 
+          <div class="progress-meta-row">
+            <div class="progress-tag" id="progress-league-tag">League: 39 (Premier League)</div>
+            <div class="progress-tag" id="progress-window-tag">Window: last 60 days</div>
+            <div class="progress-tag" id="progress-generated-tag">Updated: –</div>
+          </div>
 
-    <section class="cards-grid">
-      <article class="info-card">
-        <h3>Step 1 – Load predictions</h3>
-        <p>Open the Predictor page and click <strong>Load Matches</strong> to fetch the latest games and model probabilities.</p>
-      </article>
-      <article class="info-card">
-        <h3>Step 2 – Scan for edges</h3>
-        <p>Use the <strong>Value Scanner</strong> to compare WinMatic's probabilities to live odds and highlight possible value bets.</p>
-      </article>
-      <article class="info-card">
-        <h3>Step 3 – Track results</h3>
-        <p>Visit the <strong>Results</strong> page to review hit rate, log loss, and your simulated ROI on past value bets.</p>
-      </article>
+          <!-- Controls -->
+          <div class="controls-row">
+            <div class="control-group">
+              <span class="control-label">League</span>
+              <select id="league-select" class="control-select">
+                <option value="39">Premier League</option>
+                <option value="140">La Liga</option>
+                <option value="135">Serie A</option>
+                <option value="78">Bundesliga</option>
+                <option value="61">Ligue 1</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <span class="control-label">Evaluation window</span>
+              <div class="window-pill-row" id="window-pill-row">
+                <button class="window-pill active" data-window="14">14 days</button>
+                <button class="window-pill" data-window="30">30 days</button>
+                <button class="window-pill" data-window="60">60 days</button>
+                <button class="window-pill" data-window="120">120 days</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="progress-hero-right">
+          <div class="progress-hero-right-title">Current snapshot</div>
+
+          <div class="progress-hero-right-title">
+            Live hit rate – recent settled fixtures
+          </div>
+
+          <div class="progress-metric-row">
+            <span class="progress-metric-label">Hit rate</span>
+            <span class="progress-metric-value accent" id="metric-accuracy">–</span>
+          </div>
+          <div class="progress-metric-sub">
+            Share of correct 1X2 picks on matches with a final result in this league & window.
+          </div>
+
+          <div class="progress-metric-row">
+            <span class="progress-metric-label">Samples</span>
+            <span class="progress-metric-value" id="metric-samples">–</span>
+          </div>
+          <div class="progress-metric-row">
+            <span class="progress-metric-label">Log loss</span>
+            <span class="progress-metric-value" id="metric-logloss">–</span>
+          </div>
+
+          <div class="progress-status" id="progress-status">
+            Pulling progress metrics from the API…
+          </div>
+        </aside>
+      </div>
+
+      <!-- Metric cards -->
+      <div class="metrics-row">
+        <article class="metric-card">
+          <div class="metric-pill green">Edge vs coin flip</div>
+          <div class="metric-label">Current hit rate</div>
+          <div class="metric-value" id="metric-accuracy-large">–</div>
+          <div class="metric-sub">
+            A fair coin at 1X2 would hit ~33%. Anything consistently above that with
+            proper staking translates into long-term edge.
+          </div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-pill">Sample depth</div>
+          <div class="metric-label">Matches in window</div>
+          <div class="metric-value" id="metric-samples-large">–</div>
+          <div class="metric-sub">
+            Larger windows are smoother, shorter windows react faster to form swings and
+            regime changes in a league.
+          </div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-pill">Sharpness</div>
+          <div class="metric-label">Log loss (lower is better)</div>
+          <div class="metric-value" id="metric-logloss-large">–</div>
+          <div class="metric-sub">
+            Measures how well-calibrated the probabilities are, not just how often the
+            model picks the right side.
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Chart section -->
+    <section class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Accuracy across time windows</div>
+        <div class="chart-subtitle" id="chart-subtitle">
+          Comparing hit rates over 14, 30, 60 and 120-day windows for the selected league.
+        </div>
+      </div>
+
+      <div class="chart-wrapper">
+        <svg class="chart-svg" id="progress-chart" viewBox="0 0 640 360" preserveAspectRatio="xMidYMid meet">
+          <!-- SVG content injected by JS -->
+        </svg>
+      </div>
+
+      <div class="empty-chart" id="chart-empty-msg">
+        Waiting for API data to draw the progress curve…
+      </div>
+
+      <div class="chart-legend">
+        <span><span class="legend-dot"></span> Model hit-rate by days window</span>
+      </div>
     </section>
   </main>
 
+  <script>
+  (function () {
+    var currentLeague = 39;
+    var currentWindow = 14; // default
+    var WINDOW_SERIES = [14, 30, 60, 120];
+    var seriesData = [];
+
+    var metricAccuracy = document.getElementById("metric-accuracy");
+    var metricSamples = document.getElementById("metric-samples");
+    var metricLogloss = document.getElementById("metric-logloss");
+    var statusEl = document.getElementById("progress-status");
+
+    var metricAccuracyLarge = document.getElementById("metric-accuracy-large");
+    var metricSamplesLarge = document.getElementById("metric-samples-large");
+    var metricLoglossLarge = document.getElementById("metric-logloss-large");
+
+    var leagueTag = document.getElementById("progress-league-tag");
+    var windowTag = document.getElementById("progress-window-tag");
+    var generatedTag = document.getElementById("progress-generated-tag");
+
+    var leagueSelect = document.getElementById("league-select");
+    var windowPillRow = document.getElementById("window-pill-row");
+
+    var chartSvg = document.getElementById("progress-chart");
+    var chartEmptyMsg = document.getElementById("chart-empty-msg");
+    var chartSubtitle = document.getElementById("chart-subtitle");
+
+    function formatPercent(v) {
+      if (v == null || isNaN(v)) return "–";
+      return (v * 100).toFixed(1) + "%";
+    }
+
+    function formatNumber(v) {
+      if (v == null || isNaN(v)) return "–";
+      return String(v);
+    }
+
+    function formatLogloss(v) {
+      if (v == null || isNaN(v)) return "–";
+      return v.toFixed(3);
+    }
+
+    function formatDate(iso) {
+      if (!iso) return "–";
+      try {
+        var d = new Date(iso);
+        return d.toLocaleString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+      } catch (e) {
+        return iso;
+      }
+    }
+
+    function fetchProgressMetrics(league, windowDays) {
+      var url = "/progress/metrics?league=" + league + "&window_days=" + windowDays;
+      return fetch(url).then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      });
+    }
+
+    // ---------- SNAPSHOT (right card) ----------
+
+    function applySnapshot(data) {
+      if (!data || data.accuracy == null || isNaN(data.accuracy)) {
+        throw new Error("No accuracy in response");
+      }
+
+      var acc = data.accuracy;
+      var samples = data.sample_size;
+      var logLoss = data.log_loss;
+      var generated = data.generated;
+
+      if (metricAccuracy) metricAccuracy.textContent = formatPercent(acc);
+      if (metricSamples) metricSamples.textContent = formatNumber(samples);
+      if (metricLogloss) metricLogloss.textContent = formatLogloss(logLoss);
+
+      if (metricAccuracyLarge) metricAccuracyLarge.textContent = formatPercent(acc);
+      if (metricSamplesLarge) metricSamplesLarge.textContent = formatNumber(samples);
+      if (metricLoglossLarge) metricLoglossLarge.textContent = formatLogloss(logLoss);
+
+      if (leagueTag) leagueTag.textContent = "League: " + (data.league != null ? data.league : currentLeague);
+      if (windowTag) windowTag.textContent = "Window: last " + (data.window_days != null ? data.window_days : currentWindow) + " days";
+      if (generatedTag) generatedTag.textContent = "Updated: " + formatDate(generated);
+
+      if (statusEl) {
+        statusEl.classList.remove("error");
+        statusEl.textContent = "Snapshot loaded from live progress metrics.";
+      }
+    }
+
+    function loadSnapshot() {
+      if (!statusEl) return;
+      statusEl.classList.remove("error");
+      statusEl.textContent = "Pulling progress metrics from the API…";
+
+      // Try currentWindow; if it fails (e.g. 14 not supported), auto-fallback to 60d once
+      fetchProgressMetrics(currentLeague, currentWindow)
+        .then(function (data) {
+          applySnapshot(data);
+        })
+        .catch(function (err) {
+          console.warn("Snapshot error on window " + currentWindow + ":", err);
+
+          if (currentWindow !== 60) {
+            currentWindow = 60;
+            updatePills();
+            if (windowTag) windowTag.textContent = "Window: last " + currentWindow + " days";
+            return fetchProgressMetrics(currentLeague, currentWindow)
+              .then(function (data60) {
+                applySnapshot(data60);
+              })
+              .catch(function (e2) {
+                console.error("Fallback 60d snapshot error:", e2);
+                if (statusEl) {
+                  statusEl.textContent = "Could not load progress metrics from the API.";
+                  statusEl.classList.add("error");
+                }
+              });
+          } else {
+            console.error("Snapshot error:", err);
+            if (statusEl) {
+              statusEl.textContent = "Could not load progress metrics from the API.";
+              statusEl.classList.add("error");
+            }
+          }
+        });
+    }
+
+    // ---------- CHART (multi-window bar chart) ----------
+
+    function clearChart() {
+      if (!chartSvg) return;
+      while (chartSvg.firstChild) chartSvg.removeChild(chartSvg.firstChild);
+    }
+
+    function drawChart(activeWindow) {
+      if (!chartSvg || !chartEmptyMsg) return;
+
+      clearChart();
+      chartEmptyMsg.style.display = "block";
+
+      if (!seriesData || !seriesData.length) {
+        chartEmptyMsg.textContent = "No data returned for these windows.";
+        return;
+      }
+
+      var valid = seriesData.filter(function (p) {
+        return p.accuracy != null && !isNaN(p.accuracy);
+      });
+      if (!valid.length) {
+        chartEmptyMsg.textContent = "No valid accuracy values to plot.";
+        return;
+      }
+
+      chartEmptyMsg.style.display = "none";
+
+      var minAcc = Math.min.apply(null, valid.map(function (p) { return p.accuracy; }));
+      var maxAcc = Math.max.apply(null, valid.map(function (p) { return p.accuracy; }));
+
+      var padding = 0.02;
+      var yMin = Math.max(0.3, minAcc - padding);
+      var yMax = Math.min(0.8, maxAcc + padding);
+
+      var windowsSorted = valid.slice().sort(function (a, b) {
+        return a.windowDays - b.windowDays;
+      });
+
+      var innerLeft = 80;
+      var innerRight = 600;
+      var innerTop = 60;
+      var innerBottom = 280;
+
+      function scaleX(idx, total) {
+        var gap = (innerRight - innerLeft) / (total + 1);
+        return innerLeft + gap * (idx + 1);
+      }
+
+      function scaleY(v) {
+        if (yMax === yMin) return (innerTop + innerBottom) / 2;
+        var r = (v - yMin) / (yMax - yMin);
+        return innerBottom - r * (innerBottom - innerTop);
+      }
+
+      var axisColor = "#1f2937";
+      var gridColor = "#111827";
+      var labelColor = "#9ca3af";
+
+      var defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+      var grad = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
+      grad.setAttribute("id", "barGradient");
+      grad.setAttribute("x1", "0%");
+      grad.setAttribute("y1", "0%");
+      grad.setAttribute("x2", "0%");
+      grad.setAttribute("y2", "100%");
+
+      function addStop(gradient, offset, color, opacity) {
+        var s = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+        s.setAttribute("offset", offset);
+        s.setAttribute("stop-color", color);
+        if (opacity != null) s.setAttribute("stop-opacity", opacity);
+        gradient.appendChild(s);
+      }
+      addStop(grad, "0%", "#38bdf8", 1);
+      addStop(grad, "50%", "#22c55e", 0.95);
+      addStop(grad, "100%", "#16a34a", 0.9);
+      defs.appendChild(grad);
+      chartSvg.appendChild(defs);
+
+      var bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      bgRect.setAttribute("x", innerLeft);
+      bgRect.setAttribute("y", innerTop);
+      bgRect.setAttribute("width", innerRight - innerLeft);
+      bgRect.setAttribute("height", innerBottom - innerTop);
+      bgRect.setAttribute("rx", "18");
+      bgRect.setAttribute("fill", "#020617");
+      bgRect.setAttribute("stroke", "#111827");
+      bgRect.setAttribute("stroke-width", "1.2");
+      chartSvg.appendChild(bgRect);
+
+      var yTicks = [yMin, (yMin + yMax) / 2, yMax];
+      yTicks.forEach(function (v) {
+        var y = scaleY(v);
+
+        var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", innerLeft);
+        line.setAttribute("y1", y);
+        line.setAttribute("x2", innerRight);
+        line.setAttribute("y2", y);
+        line.setAttribute("stroke", gridColor);
+        line.setAttribute("stroke-width", "0.8");
+        line.setAttribute("stroke-dasharray", "3 6");
+        chartSvg.appendChild(line);
+
+        var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", innerLeft - 10);
+        text.setAttribute("y", y + 4);
+        text.setAttribute("fill", labelColor);
+        text.setAttribute("font-size", "11");
+        text.setAttribute("text-anchor", "end");
+        text.textContent = (v * 100).toFixed(1) + "%";
+        chartSvg.appendChild(text);
+      });
+
+      var xAxis = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      xAxis.setAttribute("x1", innerLeft);
+      xAxis.setAttribute("y1", innerBottom);
+      xAxis.setAttribute("x2", innerRight);
+      xAxis.setAttribute("y2", innerBottom);
+      xAxis.setAttribute("stroke", axisColor);
+      xAxis.setAttribute("stroke-width", "1.4");
+      chartSvg.appendChild(xAxis);
+
+      var yAxis = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      yAxis.setAttribute("x1", innerLeft);
+      yAxis.setAttribute("y1", innerTop);
+      yAxis.setAttribute("x2", innerLeft);
+      yAxis.setAttribute("y2", innerBottom);
+      yAxis.setAttribute("stroke", axisColor);
+      yAxis.setAttribute("stroke-width", "1.4");
+      chartSvg.appendChild(yAxis);
+
+      var total = windowsSorted.length;
+      var barWidth = 40;
+
+      windowsSorted.forEach(function (p, idx) {
+        var cx = scaleX(idx, total);
+        var barTop = scaleY(p.accuracy);
+        var isActive = (p.windowDays === activeWindow);
+
+        var rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", cx - barWidth / 2);
+        rect.setAttribute("y", barTop);
+        rect.setAttribute("width", barWidth);
+        rect.setAttribute("height", innerBottom - barTop);
+        rect.setAttribute("rx", "10");
+        rect.setAttribute("fill", "url(#barGradient)");
+        rect.setAttribute("opacity", isActive ? "1" : "0.6");
+        rect.setAttribute("stroke", isActive ? "#38bdf8" : "rgba(15,23,42,0.9)");
+        rect.setAttribute("stroke-width", isActive ? "2.0" : "1.0");
+        rect.style.cursor = "pointer";
+
+        var title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        title.textContent =
+          p.windowDays + " days · " +
+          (p.accuracy != null ? (p.accuracy * 100).toFixed(2) + "% hit" : "–") +
+          (p.samples != null ? " · " + p.samples + " matches" : "");
+        rect.appendChild(title);
+
+        rect.addEventListener("click", function () {
+          setWindow(p.windowDays);
+        });
+
+        chartSvg.appendChild(rect);
+
+        var label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", cx);
+        label.setAttribute("y", innerBottom + 20);
+        label.setAttribute("fill", isActive ? "#e5e7eb" : labelColor);
+        label.setAttribute("font-size", "12");
+        label.setAttribute("text-anchor", "middle");
+        label.textContent = p.windowDays + "d";
+        chartSvg.appendChild(label);
+      });
+
+      if (chartSubtitle) {
+        chartSubtitle.textContent =
+          "Hit rate across 14, 30, 60 and 120-day windows (league " +
+          currentLeague +
+          "). Click a bar or pill to focus a window.";
+      }
+    }
+
+    function loadSeries() {
+      if (!chartEmptyMsg) return;
+      chartEmptyMsg.style.display = "block";
+      chartEmptyMsg.textContent = "Loading series from API…";
+      seriesData = [];
+
+      var chain = Promise.resolve();
+      WINDOW_SERIES.forEach(function (w) {
+        chain = chain.then(function () {
+          return fetchProgressMetrics(currentLeague, w)
+            .then(function (d) {
+              if (d && d.accuracy != null && !isNaN(d.accuracy)) {
+                seriesData.push({
+                  windowDays: w,
+                  accuracy: d.accuracy,
+                  samples: d.sample_size
+                });
+              }
+            })
+            .catch(function (err) {
+              console.warn("Window error", w, err);
+            });
+        });
+      });
+
+      chain
+        .then(function () {
+          if (!seriesData.length) {
+            chartEmptyMsg.style.display = "block";
+            chartEmptyMsg.textContent = "No series data from API.";
+            return;
+          }
+          chartEmptyMsg.style.display = "none";
+          drawChart(currentWindow);
+        })
+        .catch(function (err) {
+          console.error("Series load error:", err);
+          chartEmptyMsg.style.display = "block";
+          chartEmptyMsg.textContent = "Could not load series data from the API.";
+        });
+    }
+
+    // ---------- CONTROLS ----------
+
+    function updatePills() {
+      if (!windowPillRow) return;
+      var pills = windowPillRow.querySelectorAll(".window-pill");
+      Array.prototype.forEach.call(pills, function (b) {
+        var v = parseInt(b.getAttribute("data-window"), 10);
+        if (v === currentWindow) b.classList.add("active");
+        else b.classList.remove("active");
+      });
+    }
+
+    function setWindow(newWindow) {
+      currentWindow = newWindow;
+      updatePills();
+      if (windowTag) windowTag.textContent = "Window: last " + currentWindow + " days";
+      loadSnapshot();
+      drawChart(currentWindow);
+    }
+
+    function attachControlHandlers() {
+      if (leagueSelect) {
+        leagueSelect.addEventListener("change", function () {
+          currentLeague = parseInt(leagueSelect.value, 10);
+          if (leagueTag) leagueTag.textContent = "League: " + currentLeague;
+          loadSnapshot();
+          loadSeries();
+        });
+      }
+
+      if (windowPillRow) {
+        var pills = windowPillRow.querySelectorAll(".window-pill");
+        Array.prototype.forEach.call(pills, function (btn) {
+          btn.addEventListener("click", function () {
+            var value = parseInt(btn.getAttribute("data-window"), 10);
+            if (value === currentWindow) return;
+            setWindow(value);
+          });
+        });
+      }
+
+      updatePills();
+      if (windowTag) windowTag.textContent = "Window: last " + currentWindow + " days";
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      attachControlHandlers();
+      loadSnapshot();
+      loadSeries();
+    });
+  })();
+</script>
 </body>
 </html>

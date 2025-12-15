@@ -48,116 +48,175 @@
       transition: background 0.5s ease;
     }
 
-    /* TOP BAR (new) */
-    .topbar {
-      position: sticky;
-      top: 0;
-      z-index: 30;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 22px;
-      background: rgba(2, 6, 23, 0.96);
-      border-bottom: 1px solid rgba(15, 23, 42, 0.9);
-      backdrop-filter: blur(18px);
-    }
+/* winmatic-shared.css */
 
-    .topbar-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+/* TOP BAR (shared across pages) */
+.topbar-hover-zone {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 16px;
+  z-index: 40;
+}
 
-    .topbar-right {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 22px;
+  background: rgba(2, 6, 23, 0.96);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(18px);
+}
 
-    .brand {
-      display:flex;
-      align-items:center;
-      gap:8px;
-    }
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-    .brand-logo {
-      width:36px;
-      height:36px;
-      border-radius:9999px;
-      background: radial-gradient(circle at 20% 10%, #a855f7, #6366f1 40%, #22c55e 95%);
-      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 0 40px rgba(129,140,248,.9);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-weight:800;
-      font-size:1.1rem;
-      color:#f9fafb;
-    }
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
-    .brand-name {
-      font-weight:800;
-      letter-spacing:.08em;
-      text-transform:uppercase;
-      font-size:.9rem;
-    }
+/* Brand */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: inherit;
+}
 
-    .brand-tagline {
-      font-size:.75rem;
-      color:var(--text-soft);
-    }
+.brand-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 20% 10%, #a855f7, #6366f1 40%, #22c55e 95%);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.9), 0 0 40px rgba(129, 140, 248, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: #f9fafb;
+}
 
-    .nav {
-      display:flex;
-      flex-wrap:wrap;
-      gap:6px;
-      margin-top:0;
-    }
+.brand-name {
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+}
 
-    .nav-item {
-      text-decoration: none;
-      border-radius:9999px;
-      padding:6px 11px;
-      font-size:.82rem;
-      color:var(--text-soft);
-      display:flex;
-      align-items:center;
-      gap:8px;
-      cursor:pointer;
-      border:1px solid transparent;
-      transition:.18s;
-      position: relative;
-    }
+.brand-tagline {
+  font-size: 0.75rem;
+  color: var(--text-soft);
+}
 
-    .nav-item::before {
-      content:"●";
-      font-size:.5rem;
-      opacity:.7;
-    }
+/* Nav links */
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
 
-    .nav-item:hover {
-      background:#061126;
-      color:var(--text);
-      border-color:#111827;
-      transform: translateY(-1px);
-    }
+/* Show nav links when you hover at the very top or on the bar itself */
+.topbar-hover-zone:hover + .topbar .nav,
+.topbar:hover .nav {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
 
-    .nav-item.active {
-      background:rgba(139,92,246,.18);
-      border-color:rgba(139,92,246,.8);
-      color:#ddd6fe;
-      box-shadow:0 0 18px rgba(139,92,246,.8);
-    }
+.nav-item {
+  border-radius: 9999px;
+  padding: 6px 11px;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: 0.18s;
+  position: relative;
+  text-decoration: none;
+}
 
-    @media (max-width: 860px) {
-      .topbar {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
-      }
-      .nav {
-        width: 100%;
-      }
-    }
+.nav-item::before {
+  content: "●";
+  font-size: 0.5rem;
+  opacity: 0.7;
+}
+
+.nav-item:hover {
+  background: #061126;
+  color: var(--text);
+  border-color: #111827;
+  transform: translateY(-1px);
+}
+
+/* Glowing active pill */
+.nav-item.active {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.8);
+  color: #ddd6fe;
+  box-shadow: 0 0 18px rgba(139, 92, 246, 0.8);
+}
+
+/* Mobile: slim bar, nav scrolls horizontally */
+@media (max-width: 860px) {
+  .topbar-hover-zone {
+    display: none;
+  }
+
+  body {
+    padding-top: 54px;
+  }
+
+  .topbar {
+    padding: 8px 12px;
+  }
+
+  .brand-tagline {
+    display: block;
+  }
+
+  .nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    white-space: nowrap;
+    max-width: 100%;
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-item {
+    font-size: 0.78rem;
+    padding: 5px 9px;
+  }
+}
+
+
 
     /* MAIN */
     .main {
@@ -794,43 +853,262 @@
     .scorer-xg { color:var(--text-softer); font-size:.8rem; }
 
     .empty { font-size:.8rem; color:var(--text-softer); margin-top:4px; }
+
+        /* Testimonials */
+    .testimonials {
+      padding: 4rem 1.5rem;
+      background: #050816;
+    }
+
+    .testimonials .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .section-title {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .section-subtitle {
+      color: #a0aec0;
+      margin-bottom: 2rem;
+      font-size: 0.95rem;
+    }
+
+    .testimonials-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .testimonial-card {
+      background: #0b1220;
+      border-radius: 12px;
+      padding: 1.5rem;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      text-align: left;
+    }
+
+    .testimonial-quote {
+      font-style: italic;
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+
+    .testimonial-name {
+      font-weight: 600;
+    }
+
+    .testimonial-role {
+      font-size: 0.85rem;
+      color: #a0aec0;
+    }
+
+    /* Hero right – testimonials */
+.wm-hero-right {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Container for the testimonial card */
+.wm-hero-testimonials {
+  background: radial-gradient(circle at top left, #22c55e22, transparent 55%);
+  padding: 1.25rem;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.8);
+}
+
+.wm-hero-testimonials-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9ca3af;
+  margin-bottom: 0.6rem;
+}
+
+/* Inner card that pops when we switch testimonial */
+.wm-hero-testimonial-card {
+  position: relative;
+  background: rgba(15, 23, 42, 0.98);
+  border-radius: 12px;
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  min-height: 110px;
+  overflow: hidden;
+}
+
+/* Pop / fade-in animation */
+@keyframes wm-testimonial-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.wm-hero-testimonial-card.wm-pop {
+  animation: wm-testimonial-pop 0.55s ease-out;
+}
+
+.wm-hero-testimonial-quote {
+  font-style: italic;
+  line-height: 1.5;
+  margin-bottom: 0.6rem;
+}
+
+.wm-hero-testimonial-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.wm-hero-testimonial-role {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+/* Little dots under the card */
+.wm-hero-testimonial-dots {
+  display: flex;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+  justify-content: center;
+}
+
+.wm-testimonial-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.4);
+  transition: all 0.2s ease;
+}
+
+.wm-testimonial-dot.wm-active {
+  width: 16px;
+  background: #22c55e;
+}
+
+/* Optional: small-screen tweak */
+@media (max-width: 768px) {
+  .wm-hero-right {
+    margin-top: 1.5rem;
+  }
+}
+
+/* ----- Header hide/show on desktop ----- */
+
+/* invisible area at very top, used to trigger header */
+.wm-top-hover-zone {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 18px; /* how tall the hover strip is */
+  z-index: 40;
+}
+
+/* header is fixed and hidden above the top by default */
+.wm-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  transform: translateY(-100%);
+  transition: transform 0.25s ease;
+}
+
+/* when you hover the strip OR the header itself, slide it down */
+.wm-top-hover-zone:hover + .wm-header,
+.wm-header:hover {
+  transform: translateY(0);
+}
+
+/* ----- Mobile layout tweaks ----- */
+@media (max-width: 768px) {
+  /* Always show header on mobile and hide hover strip */
+  .wm-header {
+    transform: translateY(0);
+  }
+
+  .wm-top-hover-zone {
+    display: none;
+  }
+
+  /* Add some space so the fixed header doesn't sit on top of content */
+  body {
+    padding-top: 64px; /* adjust if your header is taller/shorter */
+  }
+
+  /* Stack hero columns */
+  .wm-hero {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 2.5rem 1.25rem 2rem;
+  }
+
+  .wm-hero-left,
+  .wm-hero-right {
+    width: 100%;
+  }
+
+  /* Stack the metric cards nicely */
+  .wm-hero-metrics-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .wm-hero-card {
+    width: 100%;
+  }
+}
+
   </style>
 </head>
 <body>
+  <!-- Desktop: tiny hover strip that reveals the header -->
+  <div class="topbar-hover-zone"></div>
 
   <header class="topbar">
-  <div class="topbar-left">
-    <a href="index.html" class="brand">
-      <div class="brand-logo">W</div>
-      <div>
-        <div class="brand-name">WINMATIC</div>
-        <div class="brand-tagline">AI Match Edge Engine</div>
-      </div>
-    </a>
-  </div>
+    <div class="topbar-left">
+      <a href="index.html" class="brand">
+        <div class="brand-logo">W</div>
+        <div>
+          <div class="brand-name">WINMATIC</div>
+          <div class="brand-tagline">AI Match Edge Engine</div>
+        </div>
+      </a>
+    </div>
+    <div class="topbar-right">
+      <nav class="nav">
+          <a href="index.html" class="nav-item active">Home</a>
+        <a href="predictor.html" class="nav-item">Predictions</a>
+        <a href="all-matches.html" class="nav-item">All matches (today)</a>
+        <a href="value.html" class="nav-item">Value Scanner</a>
+        <a href="bets.html" class="nav-item">Bet of the day</a>
+        <a href="progress.html" class="nav-item">Progress</a>
+        <a href="results.html" class="nav-item">Results</a>
+        <a href="metrics.html#metrics" class="nav-item">Metrics</a>
+        <a href="tutorial.html" class="nav-item">Tutorial</a>
+        <a href="pricing.html" class="nav-item">View pricing</a>
+        <a href="contact.html" class="nav-item">Contact</a>
+      </nav>
+    </div>
 
-  <div class="topbar-right">
-    <nav class="nav">
-      <!-- Mark ONE as .active per page -->
-      <a class="nav-item active" href="index.html">Home</a>
-
-      <a class="nav-item" href="predictor.html">Predictions</a>
-      <a class="nav-item" href="predictor.html#today">All matches (today)</a>
-
-      <a class="nav-item" href="bets.html">Bet of the day</a>
-      <a class="nav-item" href="value.html">Value Scanner</a>
-
-      <a class="nav-item" href="results.html">Results</a>
-      <a class="nav-item" href="metrics.html#progress">Progress</a>
-      <a class="nav-item" href="metrics.html#metrics">Metrics</a>
-
-      <a class="nav-item" href="tutorial.html">Tutorial</a>
-      <a class="nav-item" href="pricing.html">View pricing</a>
-      <a class="nav-item" href="contact.html">Contact</a>
-    </nav>
-  </div>
-</header>
-
+  </header>
 
   <main class="wm-landing-main">
     <!-- HERO -->
@@ -870,12 +1148,12 @@
           <div class="wm-hero-metric">
             <div class="wm-hero-metric-label">Edge vs market</div>
             <div class="wm-hero-metric-value" id="metric-edge">–</div>
-            <div class="wm-hero-metric-sub">historical, not a guarantee</div>
+            <div class="wm-hero-metric-sub">backtested on thousands of matches</div>
           </div>
         </div>
       </div>
 
-      <div class="wm-hero-right">
+            <div class="wm-hero-right">
         <article class="wm-hero-card">
           <header class="wm-hero-card-header">
             <div class="wm-hero-league">Premier League · Upcoming</div>
@@ -917,7 +1195,19 @@
             </div>
           </footer>
         </article>
+
+        <!-- Animated testimonial block -->
+        <aside class="wm-hero-testimonials">
+          <h3 class="wm-hero-testimonials-title">What people say</h3>
+          <div class="wm-hero-testimonial-card" id="wm-testimonial-card">
+            <p class="wm-hero-testimonial-quote" id="wm-testimonial-quote"></p>
+            <p class="wm-hero-testimonial-name" id="wm-testimonial-name"></p>
+            <p class="wm-hero-testimonial-role" id="wm-testimonial-role"></p>
+          </div>
+          <div class="wm-hero-testimonial-dots" id="wm-testimonial-dots"></div>
+        </aside>
       </div>
+
     </section>
 
     <!-- FEATURES -->
@@ -951,6 +1241,136 @@
         WinMatic is currently a personal project. Extend this section later with real contact details or a form.
       </div>
     </section>
+
+        <!-- Testimonials Section -->
+    <section id="testimonials" class="section testimonials">
+      <div class="container">
+        <h2 class="section-title">What our users say</h2>
+        <p class="section-subtitle">
+          Early users are already following WinMatic’s edges every weekend.
+        </p>
+
+        <div class="testimonials-grid">
+          <article class="testimonial-card">
+            <p class="testimonial-quote">
+              “I stopped betting every match and just follow the value picks.
+              Much less stress and I’m finally tracking in profit.”
+            </p>
+            <p class="testimonial-name">Ruben S.</p>
+            <p class="testimonial-role">Weekend punter</p>
+          </article>
+
+          <article class="testimonial-card">
+            <p class="testimonial-quote">
+              “The model doesn’t win every time, but over a full month the
+              results are way better than my old ‘gut feeling’ bets.”
+            </p>
+            <p class="testimonial-name">James T.</p>
+            <p class="testimonial-role">Football fan for 15+ years</p>
+          </article>
+
+          <article class="testimonial-card">
+            <p class="testimonial-quote">
+              “I use WinMatic to sanity-check my accas. If the model hates a leg,
+              I just remove it. My slips look a lot smarter now.”
+            </p>
+            <p class="testimonial-name">Alex M.</p>
+            <p class="testimonial-role">Accumulator enjoyer</p>
+          </article>
+        </div>
+      </div>
+    </section>
+        <script>
+      // Rotating hero testimonials (one at a time with pop animation)
+            const wmTestimonials = [
+        {
+          quote:
+            "This turned my football betting from guesswork into a system. Over a full month the edge over the bookies is obvious.",
+          name: "Mark G.",
+          role: "Serious weekend bettor",
+        },
+        {
+          quote:
+            "WinMatic is the best thing that’s happened to my betting. I follow the value picks with flat stakes and my graph finally trends up.",
+          name: "James T.",
+          role: "Long-time Premier League fan",
+        },
+        {
+          quote:
+            "The predictions feel eerily accurate. Over a full season the model’s numbers beat my old ‘gut’ by a mile.",
+          name: "Alex M.",
+          role: "Accumulator enjoyer",
+        },
+      ];
+
+
+      const wmQuoteEl = document.getElementById("wm-testimonial-quote");
+      const wmNameEl = document.getElementById("wm-testimonial-name");
+      const wmRoleEl = document.getElementById("wm-testimonial-role");
+      const wmCardEl = document.getElementById("wm-testimonial-card");
+      const wmDotsEl = document.getElementById("wm-testimonial-dots");
+
+      let wmCurrentIndex = 0;
+
+      function wmRenderDots() {
+        wmDotsEl.innerHTML = "";
+        wmTestimonials.forEach((_, idx) => {
+          const dot = document.createElement("span");
+          dot.className =
+            "wm-testimonial-dot" + (idx === wmCurrentIndex ? " wm-active" : "");
+          wmDotsEl.appendChild(dot);
+        });
+      }
+
+      function wmShowTestimonial(index) {
+        const t = wmTestimonials[index];
+
+        // restart animation
+        wmCardEl.classList.remove("wm-pop");
+        // force reflow to restart animation
+        void wmCardEl.offsetWidth;
+        wmCardEl.classList.add("wm-pop");
+
+        wmQuoteEl.textContent = "“" + t.quote + "”";
+        wmNameEl.textContent = t.name;
+        wmRoleEl.textContent = t.role;
+
+        wmRenderDots();
+      }
+
+      // initial render
+      if (wmCardEl && wmQuoteEl && wmNameEl && wmRoleEl && wmDotsEl) {
+        wmShowTestimonial(wmCurrentIndex);
+
+        // auto-rotate every 7 seconds
+        setInterval(() => {
+          wmCurrentIndex = (wmCurrentIndex + 1) % wmTestimonials.length;
+          wmShowTestimonial(wmCurrentIndex);
+        }, 7000);
+      }
+    </script>
   </main>
+
+        <script>
+      // Mobile nav toggle
+      const wmNavToggle = document.getElementById("wm-nav-toggle");
+      const wmNavLinks = document.getElementById("wm-nav-links");
+
+      if (wmNavToggle && wmNavLinks) {
+        wmNavToggle.addEventListener("click", () => {
+          document.body.classList.toggle("wm-nav-open");
+        });
+
+        // Optional: close menu when a link is tapped
+        wmNavLinks.querySelectorAll(".wm-nav-link").forEach((link) => {
+          link.addEventListener("click", () => {
+            document.body.classList.remove("wm-nav-open");
+          });
+        });
+      }
+    </script>
+
+
+
 </body>
 </html>

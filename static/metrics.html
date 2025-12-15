@@ -40,11 +40,22 @@
       transition: background 0.5s ease;
     }
 
-    /* TOP BAR */
-    .topbar {
-      position: sticky;
+    /* TOP BAR (shared across pages) */
+    .topbar-hover-zone {
+      position: fixed;
       top: 0;
-      z-index: 30;
+      left: 0;
+      right: 0;
+      height: 16px;
+      z-index: 40;
+    }
+
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -67,89 +78,126 @@
     }
 
     .brand {
-      display:flex;
-      align-items:center;
-      gap:8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
       text-decoration: none;
       color: inherit;
     }
 
     .brand-logo {
-      width:36px;
-      height:36px;
-      border-radius:9999px;
+      width: 36px;
+      height: 36px;
+      border-radius: 9999px;
       background: radial-gradient(circle at 20% 10%, #a855f7, #6366f1 40%, #22c55e 95%);
-      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 0 40px rgba(129,140,248,.9);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-weight:800;
-      font-size:1.1rem;
-      color:#f9fafb;
+      box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.9), 0 0 40px rgba(129, 140, 248, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: #f9fafb;
     }
 
     .brand-name {
-      font-weight:800;
-      letter-spacing:.08em;
-      text-transform:uppercase;
-      font-size:.9rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 0.9rem;
     }
 
     .brand-tagline {
-      font-size:.75rem;
-      color:var(--text-soft);
+      font-size: 0.75rem;
+      color: var(--text-soft);
     }
 
     .nav {
-      display:flex;
-      flex-wrap:wrap;
-      gap:6px;
-      margin-top:0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 0;
+      opacity: 0;
+      transform: translateY(-4px);
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+
+    .topbar-hover-zone:hover + .topbar .nav,
+    .topbar:hover .nav {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
     }
 
     .nav-item {
-      border-radius:9999px;
-      padding:6px 11px;
-      font-size:.82rem;
-      color:var(--text-soft);
-      display:flex;
-      align-items:center;
-      gap:8px;
-      cursor:pointer;
-      border:1px solid transparent;
-      transition:.18s;
+      border-radius: 9999px;
+      padding: 6px 11px;
+      font-size: 0.82rem;
+      color: var(--text-soft);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: 0.18s;
       position: relative;
       text-decoration: none;
     }
 
     .nav-item::before {
-      content:"●";
-      font-size:.5rem;
-      opacity:.7;
+      content: "●";
+      font-size: 0.5rem;
+      opacity: 0.7;
     }
 
     .nav-item:hover {
-      background:#061126;
-      color:var(--text);
-      border-color:#111827;
+      background: #061126;
+      color: var(--text);
+      border-color: #111827;
       transform: translateY(-1px);
     }
 
     .nav-item.active {
-      background:rgba(139,92,246,.18);
-      border-color:rgba(139,92,246,.8);
-      color:#ddd6fe;
-      box-shadow:0 0 18px rgba(139,92,246,.8);
+      background: rgba(139, 92, 246, 0.18);
+      border-color: rgba(139, 92, 246, 0.8);
+      color: #ddd6fe;
+      box-shadow: 0 0 18px rgba(139, 92, 246, 0.8);
     }
 
     @media (max-width: 860px) {
-      .topbar {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
+      .topbar-hover-zone {
+        display: none;
       }
+
+      body {
+        padding-top: 54px;
+      }
+
+      .topbar {
+        padding: 8px 12px;
+      }
+
+      .brand-tagline {
+        display: block;
+      }
+
       .nav {
-        width: 100%;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        white-space: nowrap;
+        max-width: 100%;
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+
+      .nav::-webkit-scrollbar {
+        display: none;
+      }
+
+      .nav-item {
+        font-size: 0.78rem;
+        padding: 5px 9px;
       }
     }
 
@@ -313,6 +361,18 @@
       box-shadow:0 0 28px rgba(94,234,212,.9);
     }
 
+    .btn-secondary {
+      background:rgba(15,23,42,.96);
+      color:#f9fafb;
+      border:1px solid rgba(148,163,184,.5);
+      box-shadow:0 10px 22px rgba(15,23,42,0.9);
+    }
+
+    .btn-secondary:hover {
+      transform:translateY(-1px);
+      box-shadow:0 0 22px rgba(148,163,184,.6);
+    }
+
     .status-line {
       font-size:.78rem;
       color:var(--text-softer);
@@ -380,7 +440,6 @@
     .accuracy-label { font-size:.78rem; color:var(--text-softer); margin-top:2px; }
     .accuracy-baseline { font-size:.78rem; color:var(--text-soft); margin-top:4px; }
 
-    /* MINI METRICS */
     .mini-metrics {
       display:grid;
       grid-template-columns:repeat(2,minmax(0,1fr));
@@ -419,7 +478,6 @@
     .mini-pill.green { border-color:rgba(34,197,94,.8); color:#bbf7d0; }
     .mini-pill.purple { border-color:rgba(129,140,248,.8); color:#c4b5fd; }
 
-    /* PANELS */
     .panel {
       border-radius:var(--radius-md);
       background:radial-gradient(circle at top left, rgba(15,23,42,.96), #020617);
@@ -435,6 +493,8 @@
       justify-content:space-between;
       align-items:baseline;
       margin-bottom:6px;
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
     .panel-title { font-size:.96rem; font-weight:600; }
@@ -482,11 +542,64 @@
       background:rgba(15,23,42,.9);
       border:1px solid rgba(30,64,175,.8);
     }
+
+    /* PnL panel styles */
+    .panel-matches {
+      border-radius:var(--radius-md);
+      background:radial-gradient(circle at top left, rgba(15,23,42,.96), #020617);
+      border:1px solid rgba(15,23,42,1);
+      padding:11px 13px;
+      box-shadow:var(--shadow-card);
+      font-size:.82rem;
+      margin-bottom:18px;
+      margin-top: 6px;
+    }
+
+    .matches-list {
+      margin-top: 8px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+
+    .match-row {
+      display:grid;
+      grid-template-columns:minmax(0,2.2fr) repeat(4,minmax(0,1fr));
+      gap:8px;
+      padding:8px 10px;
+      border-radius:14px;
+      border:1px solid rgba(15,23,42,1);
+      background:linear-gradient(180deg, rgba(15,23,42,.98), #020617);
+      font-size:.78rem;
+      align-items:flex-start;
+    }
+
+    @media (max-width:780px) {
+      .match-row {
+        grid-template-columns:minmax(0,1fr);
+      }
+    }
+
+    .team-name { font-weight:600; }
+    .muted { color:var(--text-softer); }
+    .small { font-size:.72rem; }
+
+    .edge .value { font-weight:600; }
+
+    .empty {
+      font-size:.78rem;
+      color:var(--text-soft);
+      padding:10px 4px;
+    }
+
+    #minEdge {
+      accent-color: var(--accent-green);
+    }
   </style>
 </head>
 <body>
+  <div class="topbar-hover-zone"></div>
 
-  <!-- GLOBAL MENU -->
   <header class="topbar">
     <div class="topbar-left">
       <a href="index.html" class="brand">
@@ -501,12 +614,12 @@
       <nav class="nav">
         <a href="index.html" class="nav-item">Home</a>
         <a href="predictor.html" class="nav-item">Predictions</a>
-        <a href="all-matches.html" class="nav-item">All matches (today)</a>
+        <a href="predictor.html#today" class="nav-item">All matches (today)</a>
         <a href="value.html" class="nav-item">Value Scanner</a>
-        <a href="value.html#bet-of-day" class="nav-item">Bet of the day</a>
-        <a href="#progress" class="nav-item">Progress</a>
-        <a href="#results" class="nav-item">Results</a>
-        <a href="#metrics" class="nav-item active">Metrics</a>
+        <a href="value.html" class="nav-item">Bet of the day</a>
+        <a href="metrics.html#progress" class="nav-item">Progress</a>
+        <a href="metrics.html" class="nav-item">Results</a>
+        <a href="metrics.html#metrics" class="nav-item active">Metrics</a>
         <a href="tutorial.html" class="nav-item">Tutorial</a>
         <a href="pricing.html" class="nav-item">View pricing</a>
         <a href="contact.html" class="nav-item">Contact</a>
@@ -569,7 +682,6 @@
     <div id="status-line" class="status-line">
       Click “Load metrics” to fetch the latest summary from <code>/model-info</code>.
     </div>
-
 
     <!-- ACCURACY + MINI METRICS -->
     <section class="accuracy-and-metrics" id="progress">
@@ -654,6 +766,7 @@
       </ul>
     </section>
 
+
     <!-- METRICS PANEL -->
     <section class="panel" id="metrics">
       <div class="panel-header">
@@ -707,302 +820,486 @@
       </table>
     </section>
 
+    <!-- PnL PANEL -->
     <section class="panel-matches">
-  <div class="panel-header">
-    <div>
-      <h2 class="panel-title">Bankroll performance (PnL)</h2>
-      <p class="panel-subtitle">
-        Flat 1-unit stakes on all value bets (edge ≥ 5%). Odds are estimated from your logged edge.
-      </p>
-    </div>
-    <button id="refreshPnlBtn" class="btn btn-secondary">Refresh PnL</button>
-  </div>
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">Bankroll performance (PnL)</h2>
+          <p class="panel-subtitle">
+            Flat 1-unit stakes on all bets with edge ≥ your threshold. Odds are estimated from logged edges.
+          </p>
+        </div>
 
-  <div class="mini-metrics">
-    <div class="mini-card">
-      <div class="mini-label">Total bets</div>
-      <div class="mini-value" id="pnlTotalBets">--</div>
-      <div class="mini-sub">With settled results</div>
-    </div>
+        <div style="display:flex; gap:.75rem; align-items:center; flex-wrap:wrap">
+          <label class="field-label" for="pnlLeague">League</label>
+          <select id="pnlLeague" class="select-with-logo" style="min-width:180px">
+            <option value="39" selected>Premier League</option>
+            <!-- add others as you enable them -->
+          </select>
 
-    <div class="mini-card">
-      <div class="mini-label">Total profit</div>
-      <div class="mini-value" id="pnlTotalProfit">--</div>
-      <div class="mini-sub">Units from flat staking</div>
-    </div>
+          <label class="field-label" for="minEdge">Min edge</label>
+          <input id="minEdge" type="range" min="0" max="0.15" step="0.01" value="0.05" />
+          <span id="minEdgeVal" class="mini-pill" style="position:static;">5%</span>
 
-    <div class="mini-card">
-      <div class="mini-label">ROI per bet</div>
-      <div class="mini-value" id="pnlRoiPerBet">--</div>
-      <div class="mini-sub">Avg return per placed bet</div>
-    </div>
-  </div>
+          <button id="refreshPnlBtn" class="btn btn-secondary">Refresh PnL</button>
+        </div>
+      </div>
 
-  <div class="matches-list" id="pnlList">
-    <div class="empty">PnL history will appear here once bets are settled.</div>
-  </div>
-</section>
+      <div class="mini-metrics">
+        <div class="mini-card">
+          <div class="mini-label">Total bets</div>
+          <div class="mini-value" id="pnlTotalBets">–</div>
+          <div class="mini-sub">Settled selections</div>
+        </div>
 
+        <div class="mini-card">
+          <div class="mini-label">Total profit</div>
+          <div class="mini-value" id="pnlTotalProfit">–</div>
+          <div class="mini-sub">Units (flat staking)</div>
+        </div>
 
+        <div class="mini-card">
+          <div class="mini-label">ROI per bet</div>
+          <div class="mini-value" id="pnlRoiPerBet">–</div>
+          <div class="mini-sub">Average return</div>
+        </div>
+      </div>
+
+      <div style="border:1px solid rgba(15,23,42,.9); border-radius:18px; padding:8px 12px; margin:8px 0 10px; background:linear-gradient(180deg, rgba(15,23,42,.98), #020617)">
+        <canvas id="pnlSpark" height="70" style="width:100%"></canvas>
+        <div class="mini-sub">Cumulative profit over time</div>
+      </div>
+
+      <div class="matches-list" id="pnlList">
+        <div class="empty" id="pnl-empty-message">
+          PnL history will appear here once bets are settled.
+        </div>
+      </div>
+
+      <!-- New Card -->
+      <div class="card">
+        <h2>League ROI leaderboard</h2>
+        <p class="muted small">
+          Flat-stake ROI per league based on settled bets.
+        </p>
+        <div id="leagueLeaderboard"></div>
+      </div>
+    </section>
   </main>
 
   <script>
-  const LEAGUES = {
-    39:  "Premier League",
-    140: "La Liga",
-    135: "Serie A",
-    78:  "Bundesliga",
-    61:  "Ligue 1",
-    94:  "Primeira Liga"
-  };
-
-  function pct(x) {
-    if (typeof x !== "number" || !isFinite(x)) return null;
-    return x * 100;
-  }
-
-  function formatPct(x, digits = 1) {
-    const v = pct(x);
-    if (v === null) return "–";
-    return v.toFixed(digits);
-  }
-
-  function formatNumber(x, digits = 5) {
-    if (typeof x !== "number" || !isFinite(x)) return "–";
-    return x.toFixed(digits);
-  }
-
-  async function loadMetrics() {
-    const leagueSelect = document.getElementById("league-select");
-    const statusLine = document.getElementById("status-line");
-    const leagueId = parseInt(leagueSelect.value, 10) || 39;
-
-    statusLine.textContent = "Loading /model-info…";
-    statusLine.classList.remove("error");
-
-    try {
-      // 👇 changed from /metrics/model-info to /model-info
-      const resp = await fetch(`/model-info?league=${leagueId}`);
-      if (!resp.ok) {
-        statusLine.textContent = `HTTP ${resp.status} while calling /model-info.`;
-        statusLine.classList.add("error");
-        return;
-      }
-      const data = await resp.json();
-      if (!data.ok) {
-        statusLine.textContent = data.message || "Backend returned ok=false.";
-        statusLine.classList.add("error");
-        return;
-      }
-
-      const info = data.info || data;
-      const metrics = info.metrics || {};
-      const calib = metrics.calibration || {};
-
-      const hitExpected = metrics.hit_rate_expected;
-      const hitActual   = metrics.hit_rate_actual;
-      const hitBaseline = metrics.baseline_hit_rate ?? metrics.market_hit_rate;
-
-      const edgeVsBaseline = metrics.edge_vs_baseline;
-      const edgeVsMarket   = metrics.edge_vs_market;
-
-      const logloss = metrics.logloss_1x2;
-      const brier   = metrics.brier_1x2;
-
-      const samplesTotal = metrics.samples_total;
-      const samplesTrain = metrics.samples_train;
-      const samplesTest  = metrics.samples_test;
-
-      // HERO
-      document.getElementById("hero-league-label").textContent =
-        LEAGUES[leagueId] || `League ${leagueId}`;
-      document.getElementById("hero-samples-test").textContent =
-        samplesTest != null ? samplesTest : "–";
-      document.getElementById("hero-edge-market").textContent =
-        edgeVsMarket != null ? `${formatPct(edgeVsMarket, 1)} p.p.` : "–";
-
-      // ACCURACY RING
-      const ring = document.getElementById("accuracy-ring");
-      const hitPct = pct(hitActual);
-      if (hitPct != null) {
-        document.getElementById("metric-hit-rate").textContent =
-          `${hitPct.toFixed(1)}%`;
-        const angle = Math.max(0, Math.min(360, hitActual * 360));
-        ring.style.setProperty("--acc-angle", `${angle.toFixed(0)}deg`);
-      } else {
-        document.getElementById("metric-hit-rate").textContent = "–%";
-        ring.style.setProperty("--acc-angle", "0deg");
-      }
-
-      const basePct = pct(hitBaseline);
-      document.getElementById("metric-baseline-label").textContent =
-        basePct != null
-          ? `Baseline / market: ${basePct.toFixed(1)}%`
-          : "Baseline: –%";
-
-      // MINI METRICS
-      document.getElementById("metric-edge-market").textContent =
-        edgeVsMarket != null ? `${formatPct(edgeVsMarket, 1)} p.p.` : "– p.p.";
-
-      document.getElementById("metric-samples-train").textContent =
-        samplesTrain ?? "–";
-      document.getElementById("metric-samples-test").textContent =
-        samplesTest ?? "–";
-      document.getElementById("metric-samples-total").textContent =
-        samplesTotal ?? "–";
-
-      document.getElementById("metric-logloss").textContent =
-        formatNumber(logloss, 5);
-      document.getElementById("metric-brier").textContent =
-        formatNumber(brier, 5);
-
-      // RESULTS BULLETS
-      const bullets = document.getElementById("results-bullets");
-      bullets.innerHTML = "";
-
-      const li1 = document.createElement("li");
-      li1.textContent =
-        `Model hit rate: ${formatPct(hitActual, 1)}% vs baseline ${formatPct(hitBaseline, 1)}%.`;
-      bullets.appendChild(li1);
-
-      const li2 = document.createElement("li");
-      li2.textContent =
-        `Edge vs market: ${formatPct(edgeVsMarket, 1)} percentage points on the test set.`;
-      bullets.appendChild(li2);
-
-      const li3 = document.createElement("li");
-      li3.textContent =
-        `Train / test split: ${samplesTrain ?? "–"} training fixtures and ${samplesTest ?? "–"} held-out fixtures.`;
-      bullets.appendChild(li3);
-
-      if (hitExpected != null) {
-        const li4 = document.createElement("li");
-        li4.textContent =
-          `Expected hit rate from probabilities: ${formatPct(hitExpected, 1)}% (sanity check of calibration).`;
-        bullets.appendChild(li4);
-      }
-
-      // METRICS TABLE
-      document.getElementById("tbl-samples-train").textContent =
-        samplesTrain ?? "–";
-      document.getElementById("tbl-samples-test").textContent =
-        samplesTest ?? "–";
-      document.getElementById("tbl-samples-total").textContent =
-        samplesTotal ?? "–";
-
-      document.getElementById("tbl-hit-model").textContent =
-        formatPct(hitActual, 2);
-      document.getElementById("tbl-hit-expected").textContent =
-        formatPct(hitExpected, 2);
-      document.getElementById("tbl-hit-baseline").textContent =
-        formatPct(hitBaseline, 2);
-
-      document.getElementById("tbl-edge-baseline").textContent =
-        edgeVsBaseline != null ? `${formatPct(edgeVsBaseline, 2)} p.p.` : "–";
-      document.getElementById("tbl-edge-market").textContent =
-        edgeVsMarket   != null ? `${formatPct(edgeVsMarket, 2)} p.p.`   : "–";
-
-      document.getElementById("tbl-logloss").textContent =
-        formatNumber(logloss, 5);
-      document.getElementById("tbl-brier").textContent =
-        formatNumber(brier, 5);
-
-      statusLine.textContent =
-        "Metrics loaded from /model-info – all numbers shown are based on the latest training run.";
-    } catch (err) {
-      console.error("Error loading metrics:", err);
-      statusLine.textContent = "Network or parsing error while calling /model-info.";
-      statusLine.classList.add("error");
-    }
-  }
-
-  function initMetricsPage() {
-    const btn = document.getElementById("btn-load-metrics");
-    if (btn) btn.addEventListener("click", loadMetrics);
-
-    // Auto-load Premier League on page open
-    loadMetrics();
-  }
-
-  document.addEventListener("DOMContentLoaded", initMetricsPage);
-</script>
-
-<script>
-  async function loadPnl() {
-    const leagueSelect = document.getElementById("league-select");
-    const leagueId = parseInt(leagueSelect?.value, 10) || 39;
-
-    const totalBetsEl   = document.getElementById("pnlTotalBets");
-    const totalProfitEl = document.getElementById("pnlTotalProfit");
-    const roiPerBetEl   = document.getElementById("pnlRoiPerBet");
-    const listEl        = document.getElementById("pnlList");
-    const refreshBtn    = document.getElementById("refreshPnlBtn");
-
-    if (!totalBetsEl || !totalProfitEl || !roiPerBetEl || !listEl) {
-      console.warn("PnL elements not found");
-      return;
+    // ------------------------
+    // Small helpers
+    // ------------------------
+    function $(id) {
+      return document.getElementById(id);
     }
 
-    // Loading state
-    totalBetsEl.textContent   = "…";
-    totalProfitEl.textContent = "…";
-    roiPerBetEl.textContent   = "…";
-    listEl.innerHTML = '<div class="empty">Loading PnL…</div>';
-
-    if (refreshBtn) {
-      refreshBtn.disabled = true;
-      refreshBtn.textContent = "Loading…";
+    function setText(id, value) {
+      const el = $(id);
+      if (el) el.textContent = value;
     }
 
-    try {
-      const res = await fetch(`/metrics/pnl-history?league=${leagueId}&min_edge=0.0`);
-      if (!res.ok) {
-        throw new Error("HTTP " + res.status);
+    function formatNumber(x, digits = 0) {
+      if (x === null || x === undefined || isNaN(Number(x))) return "–";
+      return Number(x).toFixed(digits);
+    }
+
+    function formatPctValue(p, digits = 1) {
+      if (p === null || p === undefined || isNaN(Number(p))) return "–";
+      return (Number(p) * 100).toFixed(digits);
+    }
+
+    function pctFromProb(p) {
+      if (p === null || p === undefined || isNaN(Number(p))) return null;
+      return Number(p) * 100;
+    }
+
+    const LEAGUES = {
+      39: "Premier League (ENG)",
+      140: "La Liga (ESP)",
+      135: "Serie A (ITA)",
+      78: "Bundesliga (GER)",
+      61: "Ligue 1 (FRA)",
+      94: "Primeira Liga (POR)"
+    };
+
+    // ------------------------
+    // MODEL METRICS (/model-info)
+    // ------------------------
+    async function loadMetrics() {
+      const leagueSelect = $("league-select");
+      const statusLine   = $("status-line");
+      const leagueId     = parseInt(leagueSelect ? leagueSelect.value : "39", 10) || 39;
+
+      if (statusLine) {
+        statusLine.textContent = "Loading /model-info…";
+        statusLine.classList.remove("error");
       }
 
-      const data = await res.json();
-      if (!data.ok) {
-        throw new Error(data.error || "API error");
+      try {
+        const resp = await fetch("/model-info?league=" + leagueId);
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+
+        const data = await resp.json();
+        if (!data.ok) throw new Error(data.message || "Backend returned ok=false.");
+
+        const info    = data.info || data;
+        const metrics = info.metrics || {};
+
+        const hitActual    = metrics.hit_rate_actual;
+        const hitExpected  = metrics.hit_rate_expected;
+        const baselineHit  =
+          metrics.market_hit_rate != null
+            ? metrics.market_hit_rate
+            : metrics.baseline_hit_rate;
+
+        const edgeBaseline = metrics.edge_vs_baseline;
+        const edgeMarket   =
+          metrics.edge_vs_market != null ? metrics.edge_vs_market : edgeBaseline;
+
+        const logloss      = metrics.logloss_1x2;
+        const brier        = metrics.brier_1x2;
+        const samplesTotal = metrics.samples_total;
+        const samplesTrain = metrics.samples_train;
+        const samplesTest  = metrics.samples_test;
+
+        // HERO
+        setText("hero-league-label", LEAGUES[leagueId] || ("League " + leagueId));
+        setText("hero-samples-test", samplesTest != null ? samplesTest : "–");
+        setText(
+          "hero-edge-market",
+          edgeMarket != null ? formatPctValue(edgeMarket, 1) + " p.p." : "–"
+        );
+
+        // ACCURACY RING
+        const ringEl    = $("accuracy-ring");
+        const accLabel  = $("metric-hit-rate");
+        const baseLabel = $("metric-baseline-label");
+
+        if (hitActual != null && ringEl && accLabel) {
+          const accPct = pctFromProb(hitActual);
+          accLabel.textContent = accPct.toFixed(1) + "%";
+
+          const angle = Math.max(0, Math.min(100, accPct)) * 3.6;
+          ringEl.style.setProperty("--acc-angle", angle.toFixed(0) + "deg");
+        } else {
+          if (accLabel) accLabel.textContent = "–%";
+          if (ringEl) ringEl.style.setProperty("--acc-angle", "0deg");
+        }
+
+        if (baseLabel) {
+          if (baselineHit != null) {
+            baseLabel.textContent =
+              "Baseline / market: " + formatPctValue(baselineHit, 1) + "%";
+          } else {
+            baseLabel.textContent = "Baseline: –%";
+          }
+        }
+
+        // MINI METRICS (cards to the right)
+        setText(
+          "metric-edge-market",
+          edgeMarket != null ? formatPctValue(edgeMarket, 1) + " p.p." : "– p.p."
+        );
+        setText("metric-samples-train", samplesTrain != null ? samplesTrain : "–");
+        setText("metric-samples-test",  samplesTest  != null ? samplesTest  : "–");
+        setText("metric-samples-total", samplesTotal != null ? samplesTotal : "–");
+        setText("metric-logloss",       formatNumber(logloss, 5));
+        setText("metric-brier",         formatNumber(brier,   5));
+
+        // RESULTS BULLETS
+        const bullets = $("results-bullets");
+        if (bullets) {
+          bullets.innerHTML = "";
+
+          const li1 = document.createElement("li");
+          li1.textContent =
+            "Model hit rate: " + formatPctValue(hitActual, 1) + "% vs baseline " +
+            formatPctValue(baselineHit, 1) + "%.";
+          bullets.appendChild(li1);
+
+          if (edgeMarket != null) {
+            const li2 = document.createElement("li");
+            li2.textContent =
+              "Edge vs market: " + formatPctValue(edgeMarket, 1) +
+              " percentage points on the test set.";
+            bullets.appendChild(li2);
+          }
+
+          const li3 = document.createElement("li");
+          li3.textContent =
+            "Train / test split: " +
+            (samplesTrain != null ? samplesTrain : "–") +
+            " training fixtures and " +
+            (samplesTest != null ? samplesTest : "–") +
+            " held-out fixtures.";
+          bullets.appendChild(li3);
+
+          if (hitExpected != null) {
+            const li4 = document.createElement("li");
+            li4.textContent =
+              "Expected hit rate from probabilities: " +
+              formatPctValue(hitExpected, 1) +
+              "% (calibration sanity check).";
+            bullets.appendChild(li4);
+          }
+        }
+
+        // TECHNICAL METRICS TABLE
+        setText("tbl-samples-train", samplesTrain != null ? samplesTrain : "–");
+        setText("tbl-samples-test",  samplesTest  != null ? samplesTest  : "–");
+        setText("tbl-samples-total", samplesTotal != null ? samplesTotal : "–");
+
+        setText("tbl-hit-model",
+          hitActual   != null ? formatPctValue(hitActual,   2) : "–");
+        setText("tbl-hit-expected",
+          hitExpected != null ? formatPctValue(hitExpected, 2) : "–");
+        setText("tbl-hit-baseline",
+          baselineHit != null ? formatPctValue(baselineHit, 2) : "–");
+
+        setText("tbl-edge-baseline",
+          edgeBaseline != null ? formatPctValue(edgeBaseline, 2) : "–");
+        setText("tbl-edge-market",
+          edgeMarket   != null ? formatPctValue(edgeMarket,   2) : "–");
+
+        setText("tbl-logloss", formatNumber(logloss, 5));
+        setText("tbl-brier",   formatNumber(brier,   5));
+
+        if (statusLine) {
+          statusLine.textContent =
+            "Metrics loaded from /model-info – all numbers shown are based on the latest training run.";
+        }
+      } catch (err) {
+        console.error("Error loading metrics:", err);
+        if (statusLine) {
+          statusLine.textContent =
+            "Network or parsing error while calling /model-info.";
+          statusLine.classList.add("error");
+        }
+      }
+    }
+
+    // ------------------------
+    // PnL / ROI PANEL (/metrics/pnl-history)
+    // ------------------------
+    function getMinEdge() {
+      const slider = $("minEdge");
+      if (!slider) return 0;
+      const v = parseFloat(slider.value);
+      return isNaN(v) ? 0 : v;
+    }
+
+    function updateMinEdgeLabel() {
+      const slider = $("minEdge");
+      const lbl = $("minEdgeVal");
+      if (!slider || !lbl) return;
+      const v = getMinEdge();
+      lbl.textContent = Math.round(v * 100) + "%";
+    }
+
+    async function loadPnl() {
+      const pnlLeagueSelect = $("pnlLeague");
+      const leagueSelect    = $("league-select");
+      const leagueId =
+        parseInt(
+          (pnlLeagueSelect && pnlLeagueSelect.value) ||
+          (leagueSelect && leagueSelect.value) ||
+          "39",
+          10
+        ) || 39;
+
+      const minEdge = getMinEdge();
+
+      try {
+        const resp = await fetch(
+          `/metrics/pnl-history?league=${leagueId}&min_edge=${minEdge.toFixed(2)}`
+        );
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        updatePnlUI(data);
+      } catch (err) {
+        console.error("PnL load error:", err);
+        updatePnlUI({ ok: false, error: String(err) });
+      }
+    }
+
+    // NEW: normalise, deduplicate and recompute cumulative profit
+    function normalizePnlPoints(pnl) {
+      if (!pnl) return [];
+
+      let raw = [];
+
+      if (Array.isArray(pnl.points) && pnl.points.length) {
+        raw = pnl.points.slice();
+      } else if (Array.isArray(pnl.history) && pnl.history.length) {
+        raw = pnl.history.map((h) => ({
+          ...h,
+          stake_flat: 1.0,
+          profit: typeof h.pnl === "number" ? h.pnl : 0
+        }));
       }
 
-      const nBets       = data.n_bets ?? 0;
-      const totalProfit = data.total_profit ?? 0;
-      const roiFlat     = data.roi_flat ?? 0;
+      if (!raw.length) return [];
 
-      totalBetsEl.textContent   = nBets.toString();
-      totalProfitEl.textContent = totalProfit.toFixed(2);
-      roiPerBetEl.textContent   = roiFlat.toFixed(3);
+      // Deduplicate identical bets (same match + side + edge)
+      const seen = new Set();
+      const deduped = [];
 
-      const points = data.points || [];
-      if (!points.length) {
-        listEl.innerHTML = '<div class="empty">No settled value bets yet.</div>';
+      for (const pt of raw) {
+        const key = [
+          pt.fixture_id ?? "",
+          pt.match_id ?? "",
+          pt.game_id ?? "",
+          pt.kickoff_utc ?? "",
+          pt.home_team ?? "",
+          pt.away_team ?? "",
+          pt.bet_side ?? "",
+          typeof pt.edge_value === "number" ? pt.edge_value.toFixed(4) : ""
+        ].join("|");
+
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push(pt);
+        }
+      }
+
+      // Recompute cumulative profit from per-bet profit
+      let cum = 0;
+      deduped.forEach((pt) => {
+        const profit =
+          typeof pt.profit === "number"
+            ? pt.profit
+            : typeof pt.pnl === "number"
+            ? pt.pnl
+            : pt.win === true
+            ? 1
+            : pt.win === false
+            ? -1
+            : 0;
+
+        pt.profit = profit;
+        cum += profit;
+        pt.cum_profit = cum;
+
+        // Best-effort win flag if missing
+        if (pt.win === undefined || pt.win === null) {
+          if (profit > 0) pt.win = true;
+          else if (profit < 0) pt.win = false;
+        }
+      });
+
+      return deduped;
+    }
+
+    function renderPnlSparkline(points) {
+      const canvas = $("pnlSpark");
+      if (!canvas || !canvas.getContext) return;
+      const ctx = canvas.getContext("2d");
+
+      const width  = canvas.offsetWidth || 300;
+      const height = canvas.height || 70;
+      canvas.width = width;
+      canvas.height = height;
+
+      ctx.clearRect(0, 0, width, height);
+
+      if (!points || !points.length) return;
+
+      const ys = points.map((p) =>
+        typeof p.cum_profit === "number" ? p.cum_profit : 0
+      );
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const span = maxY - minY || 1;
+
+      const paddingX = 4;
+      const paddingY = 4;
+
+      ctx.beginPath();
+      points.forEach((pt, idx) => {
+        const x =
+          paddingX +
+          ((width - paddingX * 2) *
+            (points.length === 1 ? 0 : idx / (points.length - 1)));
+        const yNorm =
+          ((typeof pt.cum_profit === "number" ? pt.cum_profit : 0) - minY) /
+          span;
+        const y =
+          height - paddingY - yNorm * (height - paddingY * 2);
+
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#22c55e";
+      ctx.stroke();
+    }
+
+    function updatePnlUI(pnl) {
+      const totalBetsEl   = $("pnlTotalBets");
+      const totalProfitEl = $("pnlTotalProfit");
+      const roiEl         = $("pnlRoiPerBet");
+      const listEl        = $("pnlList");
+
+      if (!totalBetsEl || !totalProfitEl || !roiEl || !listEl) {
+        console.warn("PnL elements not found");
         return;
       }
 
-      // Newest bets first
+      const points = normalizePnlPoints(pnl);
+
+      if (!pnl || !pnl.ok || points.length === 0) {
+        totalBetsEl.textContent   = "–";
+        totalProfitEl.textContent = "–";
+        roiEl.textContent         = "–";
+        listEl.innerHTML =
+          '<div class="empty">PnL history will appear here once bets are settled.</div>';
+        renderPnlSparkline([]);
+        return;
+      }
+
+      // Recompute totals from the deduped points
+      const nBets = points.length;
+      const totalProfit = points.reduce(
+        (acc, pt) =>
+          acc + (typeof pt.profit === "number" ? pt.profit : 0),
+        0
+      );
+      const roiPerBet = nBets ? totalProfit / nBets : 0;
+
+      totalBetsEl.textContent   = formatNumber(nBets, 0);
+      totalProfitEl.textContent = formatNumber(totalProfit, 2);
+      roiEl.textContent         = formatPctValue(roiPerBet, 2) + "%";
+
+      // Recent bets log
+      const recent = points.slice(-12).reverse();
       listEl.innerHTML = "";
-      points.slice().reverse().forEach((pt) => {
+
+      recent.forEach((pt) => {
+        const win     = !!pt.win;
+        const profit  = typeof pt.profit === "number" ? pt.profit : 0;
+        const edgePct =
+          typeof pt.edge_value === "number"
+            ? (pt.edge_value * 100).toFixed(1) + "%"
+            : "–";
+        const kickoff = pt.kickoff_utc
+          ? new Date(pt.kickoff_utc).toLocaleString()
+          : "";
+        const home    = pt.home_team || "Home";
+        const away    = pt.away_team || "Away";
+
         const row = document.createElement("div");
         row.className = "match-row";
 
-        const when = pt.kickoff_utc
-          ? new Date(pt.kickoff_utc).toLocaleString()
-          : "";
-
-        const edgePct = typeof pt.edge_value === "number"
-          ? (pt.edge_value * 100).toFixed(1) + "%"
-          : "--";
-
-        const outcome = pt.win ? "✅ Win" : "❌ Loss";
-
-        const profit = typeof pt.profit === "number" ? pt.profit : 0;
-        const profitText =
-          (profit >= 0 ? "+" : "") + profit.toFixed(1) + " u";
+        const profitText = (profit >= 0 ? "+" : "") + profit.toFixed(1) + " u";
+        const outcome    = win ? "✅ Win" : "❌ Loss";
 
         row.innerHTML = `
           <div class="teams">
-            <div class="team-name">${pt.home_team} vs ${pt.away_team}</div>
-            <div class="muted small">${when}</div>
+            <div class="team-name">${home} vs ${away}</div>
+            <div class="muted small">${kickoff}</div>
           </div>
           <div class="edge">
             <div class="muted small">Bet side</div>
@@ -1023,38 +1320,107 @@
         `;
         listEl.appendChild(row);
       });
-    } catch (err) {
-      console.error("Error loading PnL", err);
-      listEl.innerHTML =
-        '<div class="empty">Failed to load PnL.</div>';
-    } finally {
-      if (refreshBtn) {
-        refreshBtn.disabled = false;
-        refreshBtn.textContent = "Refresh PnL";
+
+      renderPnlSparkline(points);
+    }
+
+    async function loadLeagueLeaderboard() {
+      const div = $("leagueLeaderboard");
+      if (!div) return;
+
+      try {
+        const resp = await fetch("/metrics/roi-by-league?min_edge=0.0");
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const data = await resp.json();
+        if (!data.ok || !Array.isArray(data.leagues)) {
+          throw new Error("Bad payload");
+        }
+
+        const leagues = data.leagues;
+
+        if (!leagues.length) {
+          div.innerHTML = '<div class="empty">No settled bets yet.</div>';
+          return;
+        }
+
+        let html = `
+          <table class="metrics-table">
+            <thead>
+              <tr>
+                <th>League</th>
+                <th>Bets</th>
+                <th>Wins</th>
+                <th>Total PnL (u)</th>
+                <th>ROI / bet</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        leagues.forEach((row) => {
+          html += `
+            <tr>
+              <td>${row.league}</td>
+              <td>${row.n_bets}</td>
+              <td>${row.wins}</td>
+              <td>${row.total_profit.toFixed(1)}</td>
+              <td>${(row.roi_flat * 100).toFixed(1)}%</td>
+            </tr>
+          `;
+        });
+
+        html += "</tbody></table>";
+        div.innerHTML = html;
+      } catch (err) {
+        console.error("league leaderboard error", err);
+        div.innerHTML = '<div class="empty">Error loading league leaderboard.</div>';
       }
     }
-  }
 
-  document.addEventListener("DOMContentLoaded", () => {
-    // Load once on page load
-    loadPnl();
 
-    // Refresh PnL button
-    const refreshBtn = document.getElementById("refreshPnlBtn");
-    if (refreshBtn) {
-      refreshBtn.addEventListener("click", () => loadPnl());
-    }
+    // ------------------------
+    // INIT
+    // ------------------------
+    document.addEventListener("DOMContentLoaded", () => {
+      const btnLoad        = $("btn-load-metrics");
+      const leagueSelect   = $("league-select");
+      const refreshPnlBtn  = $("refreshPnlBtn");
+      const minEdgeSlider  = $("minEdge");
 
-    // When you press "Load metrics", also reload PnL for that league
-    const metricsBtn = document.getElementById("btn-load-metrics");
-    if (metricsBtn) {
-      metricsBtn.addEventListener("click", () => loadPnl());
-    }
-  });
-</script>
+      if (btnLoad) {
+        btnLoad.addEventListener("click", () => {
+          loadMetrics();
+          loadPnl();
+        });
+      }
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="/static/assets/metrics.js"></script>
+      if (leagueSelect) {
+        leagueSelect.addEventListener("change", () => {
+          loadMetrics();
+          loadPnl();
+        });
+      }
 
+      if (refreshPnlBtn) {
+        refreshPnlBtn.addEventListener("click", () => loadPnl());
+      }
+
+      if (minEdgeSlider) {
+        minEdgeSlider.addEventListener("input", () => {
+          updateMinEdgeLabel();
+        });
+        minEdgeSlider.addEventListener("change", () => {
+          updateMinEdgeLabel();
+          loadPnl();
+        });
+        updateMinEdgeLabel();
+      }
+
+      // Initial load
+      loadMetrics();
+      loadPnl();
+      loadLeagueLeaderboard();
+    });
+  </script>
 </body>
 </html>

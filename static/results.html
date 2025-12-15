@@ -5,7 +5,7 @@
   <title>WinMatic – Results & Accuracy</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
-        .page-controls {
+    .page-controls {
       margin-top: 10px;
       display: inline-flex;
       align-items: center;
@@ -58,11 +58,22 @@
       transition: background 0.5s ease;
     }
 
-    /* TOP BAR (same as other pages) */
-    .topbar {
-      position: sticky;
+    /* TOP BAR (shared across pages) */
+    .topbar-hover-zone {
+      position: fixed;
       top: 0;
-      z-index: 30;
+      left: 0;
+      right: 0;
+      height: 16px;
+      z-index: 40;
+    }
+
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -85,262 +96,417 @@
     }
 
     .brand {
-      display:flex;
-      align-items:center;
-      gap:8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
       text-decoration: none;
       color: inherit;
     }
 
     .brand-logo {
-      width:36px;
-      height:36px;
-      border-radius:9999px;
+      width: 36px;
+      height: 36px;
+      border-radius: 9999px;
       background: radial-gradient(circle at 20% 10%, #a855f7, #6366f1 40%, #22c55e 95%);
-      box-shadow:0 0 0 1px rgba(15,23,42,.9), 0 0 40px rgba(129,140,248,.9);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-weight:800;
-      font-size:1.1rem;
-      color:#f9fafb;
+      box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.9), 0 0 40px rgba(129, 140, 248, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: #f9fafb;
     }
 
     .brand-name {
-      font-weight:800;
-      letter-spacing:.08em;
-      text-transform:uppercase;
-      font-size:.9rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 0.9rem;
     }
 
     .brand-tagline {
-      font-size:.75rem;
-      color:var(--text-soft);
+      font-size: 0.75rem;
+      color: var(--text-soft);
     }
 
     .nav {
-      display:flex;
-      flex-wrap:wrap;
-      gap:6px;
-      margin-top:0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 0;
+      opacity: 0;
+      transform: translateY(-4px);
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+
+    .topbar-hover-zone:hover + .topbar .nav,
+    .topbar:hover .nav {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
     }
 
     .nav-item {
-      border-radius:9999px;
-      padding:6px 11px;
-      font-size:.82rem;
-      color:var(--text-soft);
-      display:flex;
-      align-items:center;
-      gap:8px;
-      cursor:pointer;
-      border:1px solid transparent;
-      transition:.18s;
+      border-radius: 9999px;
+      padding: 6px 11px;
+      font-size: 0.82rem;
+      color: var(--text-soft);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: 0.18s;
       position: relative;
       text-decoration: none;
     }
 
     .nav-item::before {
-      content:"●";
-      font-size:.5rem;
-      opacity:.7;
+      content: "●";
+      font-size: 0.5rem;
+      opacity: 0.7;
     }
 
     .nav-item:hover {
-      background:#061126;
-      color:var(--text);
-      border-color:#111827;
+      background: #061126;
+      color: var(--text);
+      border-color: #111827;
       transform: translateY(-1px);
     }
 
     .nav-item.active {
-      background:rgba(139,92,246,.18);
-      border-color:rgba(139,92,246,.8);
-      color:#ddd6fe;
-      box-shadow:0 0 18px rgba(139,92,246,.8);
+      background: rgba(139, 92, 246, 0.18);
+      border-color: rgba(139, 92, 246, 0.8);
+      color: #ddd6fe;
+      box-shadow: 0 0 18px rgba(139, 92, 246, 0.8);
     }
 
     @media (max-width: 860px) {
-      .topbar {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
+      .topbar-hover-zone {
+        display: none;
       }
+
+      body {
+        padding-top: 54px;
+      }
+
+      .topbar {
+        padding: 8px 12px;
+      }
+
+      .brand-tagline {
+        display: block;
+      }
+
       .nav {
-        width: 100%;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        white-space: nowrap;
+        max-width: 100%;
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+
+      .nav::-webkit-scrollbar {
+        display: none;
+      }
+
+      .nav-item {
+        font-size: 0.78rem;
+        padding: 5px 9px;
       }
     }
 
     /* LAYOUT */
-    .main {
-      flex:1;
-      padding:18px 22px 26px;
+    .wm-main {
       max-width: 1100px;
-      width: 100%;
       margin: 0 auto;
+      padding: 72px 18px 26px; /* space for fixed topbar */
     }
 
-    .page-header {
-      margin-bottom: 18px;
+    .wm-section {
+      border-radius: 24px;
+      border: 1px solid rgba(15,23,42,0.95);
+      background:
+        radial-gradient(circle at top left, rgba(56,189,248,0.16), transparent 55%),
+        radial-gradient(circle at bottom right, rgba(34,197,94,0.18), transparent 55%),
+        #020617;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.85);
+      padding: 16px 18px 18px;
     }
 
-    .page-kicker {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--accent-blue);
-      margin-bottom: 4px;
+    .wm-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
     }
 
-    .page-title {
-      font-size: 1.7rem;
+    .wm-section-title {
+      margin: 0;
+      font-size: 1.05rem;
       font-weight: 700;
-      margin: 0 0 6px;
     }
 
-    .page-subtitle {
-      font-size: 0.9rem;
-      color: var(--text-soft);
-      max-width: 520px;
+    .wm-section-sub {
+      margin: 3px 0 0;
+      font-size: 0.8rem;
+      color: #9ca3af;
     }
 
-    .summary-grid {
+    .wm-section-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .wm-field-label {
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+
+    .wm-select {
+      border-radius: 999px;
+      border: 1px solid #111827;
+      background: #020617;
+      color: #e5e7eb;
+      font-size: 0.8rem;
+      padding: 4px 10px;
+    }
+
+    .wm-results-status {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      margin-bottom: 10px;
+    }
+
+    .wm-results-status.wm-error {
+      color: #fecaca;
+    }
+
+    /* 3 fat columns on desktop, 2 on small laptop/tablet, 1 on mobile */
+    .wm-results-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 18px;
-      margin-top: 14px;
+      gap: 26px 30px;
+      align-items: stretch;
     }
 
-    @media (max-width: 800px) {
-      .summary-grid {
+    @media (max-width: 900px) {
+      .wm-results-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      .wm-results-grid {
         grid-template-columns: 1fr;
       }
     }
 
-    .stat-card {
-      border-radius: 18px;
-      padding: 10px 13px;
-      background: linear-gradient(180deg, rgba(15,23,42,.98), #020617);
-      border: 1px solid rgba(15,23,42,1);
-      box-shadow: var(--shadow-card);
-      font-size: .8rem;
+
+    /* RESULT CARD */
+    .wm-result-card {
       position: relative;
-      overflow: hidden;
+      border-radius: 22px;
+      border: 1px solid rgba(15,23,42,1);
+      background:
+        radial-gradient(circle at top, rgba(15,23,42,1), #020617 60%);
+      box-shadow: 0 22px 60px rgba(15,23,42,1);
+      padding: 18px 22px 18px;
+      font-size: 0.9rem;
+      min-height: 220px;
     }
 
-    .stat-label {
-      color: var(--text-soft);
-      margin-bottom: 3px;
-      font-size: 0.78rem;
+
+
+    .wm-result-date-top {
+      text-align: center;
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #9ca3af;
+      margin-bottom: 8px;
     }
 
-    .stat-value {
-      font-size: 1.2rem;
+
+    .wm-result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .wm-result-status-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.82rem;
       font-weight: 700;
+      box-shadow: 0 0 14px rgba(15,23,42,0.9);
     }
 
-    .stat-sub {
-      font-size: .75rem;
-      color: var(--text-softer);
+    .wm-result-status-icon.win {
+      background: radial-gradient(circle at 30% 0%, #22c55e, #16a34a);
+      color: #ecfdf5;
+    }
+
+    .wm-result-status-icon.loss {
+      background: radial-gradient(circle at 30% 0%, #ef4444, #b91c1c);
+      color: #fef2f2;
+    }
+
+    .wm-result-header-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .wm-result-match {
+      font-weight: 600;
+      font-size: 0.88rem;
+    }
+
+    .wm-result-outcome {
+      font-size: 0.8rem;
+      color: #e5e7eb;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 0%, #0f172a, #020617);
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      align-self: flex-start;
       margin-top: 2px;
     }
 
-    .stat-good { color: #bbf7d0; }
-    .stat-bad { color: #fecaca; }
 
-    .panel {
-      border-radius: 18px;
-      padding: 11px 13px 14px;
-      background: radial-gradient(circle at top left, rgba(15,23,42,.96), #020617);
-      border: 1px solid rgba(15,23,42,1);
-      box-shadow: var(--shadow-card);
+    .wm-result-teams-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
     }
 
-    .panel-header {
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      margin-bottom:8px;
-      gap:10px;
+    .wm-result-team {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .panel-title {
-      font-size:.96rem;
-      font-weight:600;
+    /* Glowing orbs with actual logos */
+    .wm-result-team-orb {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 18px rgba(34,197,94,.8);
+      background: radial-gradient(circle at 30% 0%, #22c55e, #16a34a);
+      overflow: hidden;
     }
 
-    .panel-subtitle {
-      font-size:.78rem;
-      color:var(--text-softer);
+    .wm-result-team-orb.away {
+      box-shadow: 0 0 18px rgba(129,140,248,.9);
+      background: radial-gradient(circle at 30% 0%, #6366f1, #4f46e5);
     }
 
-    .btn {
-      border-radius:9999px;
-      padding:6px 14px;
-      border:1px solid rgba(148,163,184,.4);
-      background:rgba(15,23,42,.95);
-      color:var(--text-soft);
-      font-size:.8rem;
-      cursor:pointer;
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
+    .wm-result-team-orb img {
+      width: 80%;
+      height: 80%;
+      border-radius: 999px;
+      object-fit: contain;
+      background: #020617;
+      position: relative;
+      z-index: 1;
     }
 
-    .btn:hover {
-      background:rgba(15,23,42,1);
-      color:var(--text);
+    .wm-result-team-orb span {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #f9fafb;
+      position: relative;
+      z-index: 1;
     }
 
-    .status-line {
-      font-size: .78rem;
-      color: var(--text-softer);
-      margin-bottom: 6px;
-    }
-
-    .status-line.error {
-      color: #fecaca;
-    }
-
-    .table-wrap {
-      width: 100%;
-      overflow-x: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.8rem;
-    }
-
-    th, td {
-      padding: 7px 8px;
-      text-align: left;
-      border-bottom: 1px solid rgba(31,41,55,0.9);
-      white-space: nowrap;
-    }
-
-    th {
-      font-weight: 500;
-      color: var(--text-soft);
+    .wm-result-team-name {
       font-size: 0.78rem;
-      background: rgba(15,23,42,0.95);
     }
 
-    tbody tr:nth-child(even) {
-      background: rgba(15,23,42,0.85);
+    .wm-result-probs {
+      margin-top: 4px;
     }
 
-    .empty-row {
-      text-align:center;
-      color:var(--text-soft);
-      padding:12px 0;
+    .wm-result-prob-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+
+    .wm-result-prob-label {
+      width: 36px;
+      font-size: 0.72rem;
+      color: #9ca3af;
+    }
+
+    .wm-result-prob-bar-wrap {
+      flex: 1;
+      height: 6px;
+      border-radius: 999px;
+      background: #020617;
+      border: 1px solid #111827;
+      overflow: hidden;
+    }
+
+    .wm-result-prob-bar {
+      height: 100%;
+      border-radius: inherit;
+      width: 0%;
+    }
+
+    .wm-result-prob-bar.home {
+      background: linear-gradient(90deg, #22c55e, #16a34a);
+    }
+
+    .wm-result-prob-bar.draw {
+      background: linear-gradient(90deg, #38bdf8, #0ea5e9);
+    }
+
+    .wm-result-prob-bar.away {
+      background: linear-gradient(90deg, #6366f1, #a855f7);
+    }
+
+    .wm-result-prob-value {
+      width: 44px;
+      text-align: right;
+      font-size: 0.72rem;
+    }
+
+    @media (max-width: 640px) {
+      .wm-section-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .wm-section-controls {
+        align-items: flex-start;
+      }
     }
   </style>
 </head>
 <body>
-  <!-- GLOBAL TOP NAV -->
+  <!-- Desktop hover strip -->
+  <div class="topbar-hover-zone"></div>
+
   <header class="topbar">
     <div class="topbar-left">
       <a href="index.html" class="brand">
@@ -353,257 +519,292 @@
     </div>
     <div class="topbar-right">
       <nav class="nav">
-        <a class="nav-item" href="index.html">Home</a>
-
-        <a class="nav-item" href="predictor.html">Predictions</a>
-        <a class="nav-item" href="predictor.html#today">All matches (today)</a>
-
-        <a class="nav-item" href="bets.html">Bet of the day</a>
-        <a class="nav-item" href="value.html">Value Scanner</a>
-
-        <a class="nav-item active" href="results.html">Results</a>
-        <a class="nav-item" href="progress.html">Progress</a>
-        <a class="nav-item" href="metrics.html#metrics">Metrics</a>
-
-        <a class="nav-item" href="tutorial.html">Tutorial</a>
-        <a class="nav-item" href="pricing.html">View pricing</a>
-        <a class="nav-item" href="contact.html">Contact</a>
+        <a href="index.html" class="nav-item">Home</a>
+        <a href="predictor.html" class="nav-item">Predictions</a>
+        <a href="all-matches.html" class="nav-item">All matches (today)</a>
+        <a href="value.html" class="nav-item">Value Scanner</a>
+        <a href="bets.html" class="nav-item">Bet of the day</a>
+        <a href="progress.html" class="nav-item">Progress</a>
+        <a href="results.html" class="nav-item active">Results</a>
+        <a href="metrics.html#metrics" class="nav-item">Metrics</a>
+        <a href="tutorial.html" class="nav-item">Tutorial</a>
+        <a href="pricing.html" class="nav-item">View pricing</a>
+        <a href="contact.html" class="nav-item">Contact</a>
       </nav>
     </div>
   </header>
 
-  <main class="main">
-    <section class="page-header">
-      <div class="page-kicker">Model results</div>
-      <h1 class="page-title">Prediction accuracy & recent bets</h1>
-      <p class="page-subtitle">
-        This page reads from <code>predictions_history</code> and shows how often the model was right,
-        plus the last few finished matches.
-      </p>
-
-      <!-- League dropdown -->
-      <div class="page-controls">
-        <span class="page-controls-label">League:</span>
-        <select id="league-select" class="page-controls-select">
-          <option value="39">Premier League (39)</option>
-          <option value="140">La Liga (140)</option>
-          <option value="78">Bundesliga (78)</option>
-          <option value="135">Serie A (135)</option>
-          <option value="61">Ligue 1 (61)</option>
-        </select>
-      </div>
-    </section>
-
-    <!-- SUMMARY CARDS -->
-    <section class="summary-grid">
-      <article class="stat-card">
-        <div class="stat-label">Total finished bets</div>
-        <div id="stat-total" class="stat-value">–</div>
-        <div class="stat-sub">Rows with prediction + actual result</div>
-      </article>
-      <article class="stat-card">
-        <div class="stat-label">Correct predictions</div>
-        <div id="stat-correct" class="stat-value stat-good">–</div>
-        <div class="stat-sub">When predicted side matched result</div>
-      </article>
-      <article class="stat-card">
-        <div class="stat-label">Hit rate</div>
-        <div id="stat-accuracy" class="stat-value">–</div>
-        <div class="stat-sub">Correct / total</div>
-      </article>
-    </section>
-
-    <!-- TABLE -->
-    <section class="panel">
-      <header class="panel-header">
+  <main class="wm-main">
+    <section class="wm-section">
+      <header class="wm-section-header">
         <div>
-          <div class="panel-title">Recent finished matches</div>
-          <div class="panel-subtitle">Latest predictions with known results (league 39 by default).</div>
+          <h1 class="wm-section-title">Recent model performance</h1>
+          <p class="wm-section-sub" id="results-summary">
+            Loading the latest settled fixtures…
+          </p>
         </div>
-        <button id="btn-refresh" class="btn">🔄 Update results</button>
+        <div class="wm-section-controls">
+          <label class="wm-field-label" for="results-league-select">League</label>
+          <select id="results-league-select" class="wm-select">
+            <option value="39">Premier League</option>
+            <option value="140">La Liga</option>
+            <option value="135">Serie A</option>
+            <option value="78">Bundesliga</option>
+            <option value="61">Ligue 1</option>
+          </select>
+        </div>
       </header>
 
-      <div id="results-message" class="status-line">Loading…</div>
+      <div id="results-status" class="wm-results-status">
+        Pulling recent results from the API…
+      </div>
 
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Fixture</th>
-              <th>Model pick</th>
-              <th>Edge</th>
-              <th>Actual</th>
-              <th>Outcome</th>
-            </tr>
-          </thead>
-          <tbody id="results-body">
-            <tr>
-              <td colspan="6" class="empty-row">Loading…</td>
-            </tr>
-          </tbody>
-        </table>
+      <div id="results-grid" class="wm-results-grid">
+        <!-- cards injected by JS -->
       </div>
     </section>
   </main>
 
   <script>
-  // Current league (default 39)
-  let CURRENT_LEAGUE = 39;
+  (function () {
+    var leagueSelect = document.getElementById("results-league-select");
+    var gridEl = document.getElementById("results-grid");
+    var statusEl = document.getElementById("results-status");
+    var summaryEl = document.getElementById("results-summary");
 
-  function getLeagueId() {
-    const sel = document.getElementById("league-select");
-    if (!sel) return CURRENT_LEAGUE;
-    const val = parseInt(sel.value, 10);
-    if (!Number.isNaN(val)) {
-      CURRENT_LEAGUE = val;
-    }
-    return CURRENT_LEAGUE;
-  }
-
-  function fmtDate(iso) {
-    if (!iso) return "-";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-
-  function fmtPct(x) {
-    if (!Number.isFinite(x)) return "0.0%";
-    return (x * 100).toFixed(1) + "%";
-  }
-
-  async function loadResults() {
-    const league = getLeagueId();
-
-    const msg = document.getElementById("results-message");
-    const tbody = document.getElementById("results-body");
-    const elTotal = document.getElementById("stat-total");
-    const elCorrect = document.getElementById("stat-correct");
-    const elAcc = document.getElementById("stat-accuracy");
-
-    if (msg) msg.textContent = `Loading results for league ${league}…`;
-    if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-row">Loading…</td></tr>';
-    }
-
-    try {
-      const res = await fetch(`/results/recent?league=${league}&limit=50`);
-      const data = await res.json();
-
-      if (!data.ok) {
-        if (msg) msg.textContent = data.error || "Backend returned ok=false.";
-        if (tbody) {
-          tbody.innerHTML =
-            '<tr><td colspan="6" class="empty-row">Error loading data.</td></tr>';
-        }
-        return;
-      }
-
-      const fixtures = Array.isArray(data.fixtures) ? data.fixtures : [];
-      const total = fixtures.length;
-      const correct = fixtures.filter(f => f.won).length;
-      const acc = total ? correct / total : 0;
-
-      if (elTotal) elTotal.textContent = String(total);
-      if (elCorrect) elCorrect.textContent = String(correct);
-      if (elAcc) elAcc.textContent = total ? fmtPct(acc) : "0.0%";
-
-      if (!fixtures.length) {
-        if (msg) msg.textContent =
-          `No finished matches with results yet for league ${league}.`;
-        if (tbody) {
-          tbody.innerHTML =
-            '<tr><td colspan="6" class="empty-row">No data yet.</td></tr>';
-        }
-        return;
-      }
-
-      if (msg) msg.textContent =
-        `Showing ${fixtures.length} finished matches for league ${league}.`;
-
-      if (!tbody) return;
-      tbody.innerHTML = "";
-
-      fixtures.forEach(f => {
-        const tr = document.createElement("tr");
-
-        const date = fmtDate(f.kickoff_utc);
-        const fixture = `${f.home_team || "?"} vs ${f.away_team || "?"}`;
-        const pick = (f.predicted_side || "-").toUpperCase();
-        const edge = (typeof f.edge_value === "number")
-          ? (f.edge_value * 100).toFixed(1) + "%"
-          : "–";
-        const actual = (f.actual_result || "-").toUpperCase();
-        const outcome = f.won ? "✅ Correct" : "❌ Wrong";
-
-        tr.innerHTML = `
-          <td>${date}</td>
-          <td>${fixture}</td>
-          <td>${pick}</td>
-          <td>${edge}</td>
-          <td>${actual}</td>
-          <td>${outcome}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-    } catch (err) {
-      console.error("Error loading /results/recent:", err);
-      if (msg) msg.textContent = "Error loading results.";
-      if (tbody) {
-        tbody.innerHTML =
-          '<tr><td colspan="6" class="empty-row">Error loading results.</td></tr>';
+    function fmtDate(iso) {
+      try {
+        var d = new Date(iso);
+        return d.toLocaleDateString(undefined, {
+          day: "2-digit",
+          month: "short",
+          year: "numeric"
+        });
+      } catch {
+        return iso;
       }
     }
-  }
 
-  async function refreshAndReload() {
-    const league = getLeagueId();
-    const btn = document.getElementById("btn-refresh");
-    const msg = document.getElementById("results-message");
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "Updating…";
-    }
-    if (msg) msg.textContent =
-      `Calling /update-results for league ${league}…`;
-
-    try {
-      await fetch(`/update-results?league=${league}`);
-    } catch (err) {
-      console.error("Error calling /update-results:", err);
+    function describeOutcome(actual) {
+      if (actual === "home") return "Full-time: home win";
+      if (actual === "away") return "Full-time: away win";
+      if (actual === "draw") return "Full-time: draw";
+      return "Full-time result pending";
     }
 
-    await loadResults();
-
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "🔄 Update results";
+    function initials(teamName) {
+      if (!teamName) return "?";
+      var parts = teamName.trim().split(/\s+/);
+      if (parts.length === 1) return teamName.slice(0, 2).toUpperCase();
+      return (parts[0][0] + parts[1][0]).toUpperCase();
     }
-  }
 
-  document.addEventListener("DOMContentLoaded", () => {
-    // Initial load for default league (39)
-    loadResults();
-
-    // React to league changes
-    const sel = document.getElementById("league-select");
-    if (sel) {
-      sel.addEventListener("change", () => {
-        loadResults();
+    function fetchRecent(league) {
+      var url = "/results/recent?league=" + league + "&limit=18";
+      return fetch(url).then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
       });
     }
 
-    const btn = document.getElementById("btn-refresh");
-    if (btn) btn.addEventListener("click", refreshAndReload);
-  });
-</script>
+    function renderCards(fixtures) {
+      gridEl.innerHTML = "";
 
+      if (!fixtures || !fixtures.length) {
+        gridEl.innerHTML =
+          "<div style='font-size:0.8rem;opacity:0.7;'>No settled fixtures yet for this league.</div>";
+        summaryEl.textContent = "";
+        return;
+      }
+
+      var wins = 0;
+      var total = fixtures.length;
+
+      fixtures.forEach(function (fx) {
+        if (fx.won) wins += 1;
+
+        var ph = (fx.model_probs && fx.model_probs.home) || 0;
+        var pd = (fx.model_probs && fx.model_probs.draw) || 0;
+        var pa = (fx.model_probs && fx.model_probs.away) || 0;
+
+        var card = document.createElement("article");
+        card.className = "wm-result-card";
+
+        var dateTop = document.createElement("div");
+        dateTop.className = "wm-result-date-top";
+        dateTop.textContent = fmtDate(fx.kickoff_utc);
+        card.appendChild(dateTop);
+
+        var header = document.createElement("div");
+        header.className = "wm-result-header";
+
+        var icon = document.createElement("div");
+        icon.className = "wm-result-status-icon " + (fx.won ? "win" : "loss");
+        icon.textContent = fx.won ? "✓" : "✕";
+
+        var headerText = document.createElement("div");
+        headerText.className = "wm-result-header-text";
+
+        var match = document.createElement("div");
+        match.className = "wm-result-match";
+        match.textContent = (fx.home_team || "?") + " vs " + (fx.away_team || "?");
+
+        var outcome = document.createElement("div");
+        outcome.className = "wm-result-outcome";
+        outcome.textContent = describeOutcome(fx.actual_result);
+
+        headerText.appendChild(match);
+        headerText.appendChild(outcome);
+
+        header.appendChild(icon);
+        header.appendChild(headerText);
+        card.appendChild(header);
+
+        // teams row with REAL logos in glowing orbs
+        var teamsRow = document.createElement("div");
+        teamsRow.className = "wm-result-teams-row";
+
+        var homeBlock = document.createElement("div");
+        homeBlock.className = "wm-result-team";
+
+        var homeOrb = document.createElement("div");
+        homeOrb.className = "wm-result-team-orb home";
+        if (fx.home_logo) {
+          var homeImg = document.createElement("img");
+          homeImg.src = fx.home_logo;
+          homeImg.alt = (fx.home_team || "") + " logo";
+          homeOrb.appendChild(homeImg);
+        } else {
+          var homeSpan = document.createElement("span");
+          homeSpan.textContent = initials(fx.home_team);
+          homeOrb.appendChild(homeSpan);
+        }
+
+        var homeName = document.createElement("div");
+        homeName.className = "wm-result-team-name";
+        homeName.textContent = fx.home_team || "";
+
+        homeBlock.appendChild(homeOrb);
+        homeBlock.appendChild(homeName);
+
+        var awayBlock = document.createElement("div");
+        awayBlock.className = "wm-result-team";
+
+        var awayOrb = document.createElement("div");
+        awayOrb.className = "wm-result-team-orb away";
+        if (fx.away_logo) {
+          var awayImg = document.createElement("img");
+          awayImg.src = fx.away_logo;
+          awayImg.alt = (fx.away_team || "") + " logo";
+          awayOrb.appendChild(awayImg);
+        } else {
+          var awaySpan = document.createElement("span");
+          awaySpan.textContent = initials(fx.away_team);
+          awayOrb.appendChild(awaySpan);
+        }
+
+        var awayName = document.createElement("div");
+        awayName.className = "wm-result-team-name";
+        awayName.textContent = fx.away_team || "";
+
+        awayBlock.appendChild(awayOrb);
+        awayBlock.appendChild(awayName);
+
+        teamsRow.appendChild(homeBlock);
+        teamsRow.appendChild(awayBlock);
+        card.appendChild(teamsRow);
+
+        // probability bars
+        var probsWrap = document.createElement("div");
+        probsWrap.className = "wm-result-probs";
+
+        [
+          ["H", ph, "home"],
+          ["D", pd, "draw"],
+          ["A", pa, "away"],
+        ].forEach(function (row) {
+          var code = row[0];
+          var val = row[1];
+          var cls = row[2];
+
+          var rowEl = document.createElement("div");
+          rowEl.className = "wm-result-prob-row";
+
+          var lab = document.createElement("div");
+          lab.className = "wm-result-prob-label";
+          lab.textContent = code;
+
+          var barWrap = document.createElement("div");
+          barWrap.className = "wm-result-prob-bar-wrap";
+
+          var bar = document.createElement("div");
+          bar.className = "wm-result-prob-bar " + cls;
+          var pct = Math.round((val || 0) * 100);
+          bar.style.width = pct + "%";
+
+          barWrap.appendChild(bar);
+
+          var valEl = document.createElement("div");
+          valEl.className = "wm-result-prob-value";
+          valEl.textContent = pct.toString() + "%";
+
+          rowEl.appendChild(lab);
+          rowEl.appendChild(barWrap);
+          rowEl.appendChild(valEl);
+          probsWrap.appendChild(rowEl);
+        });
+
+        card.appendChild(probsWrap);
+
+        gridEl.appendChild(card);
+      });
+
+      var hitRate = total ? (wins / total * 100).toFixed(1) : "–";
+
+      summaryEl.textContent =
+        "Latest " +
+        total +
+        " settled fixtures · " +
+        wins +
+        " correct calls · " +
+        hitRate +
+        "% live strike rate for this league.";
+    }
+
+    function loadResults() {
+      if (statusEl) {
+        statusEl.classList.remove("wm-error");
+        statusEl.textContent = "Pulling recent results from the API…";
+      }
+
+      var league = leagueSelect ? leagueSelect.value : 39;
+
+      fetchRecent(league)
+        .then(function (data) {
+          if (!data || !data.ok) throw new Error("API error");
+          renderCards(data.fixtures || []);
+          if (statusEl) {
+            statusEl.textContent =
+              "Loaded " + (data.count || 0) + " fixtures from /results/recent.";
+          }
+        })
+        .catch(function (err) {
+          console.error("Results load failed:", err);
+          if (statusEl) {
+            statusEl.classList.add("wm-error");
+            statusEl.textContent = "Could not load recent results from the API.";
+          }
+          gridEl.innerHTML = "";
+          summaryEl.textContent = "";
+        });
+    }
+
+    if (leagueSelect) {
+      leagueSelect.addEventListener("change", loadResults);
+    }
+
+    document.addEventListener("DOMContentLoaded", loadResults);
+  })();
+  </script>
 </body>
 </html>

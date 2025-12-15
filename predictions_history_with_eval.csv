@@ -1,4 +1,426 @@
 id,fixture_id,league,home_team,away_team,kickoff_utc,model_home_p,model_draw_p,model_away_p,predicted_side,edge_value,actual_result,payload,correct
-1,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,home,,False
-2,1379124,39,Liverpool,Brighton,2025-12-13T15:00:00+00:00,0.25,0.223,0.511,away,,home,,False
-3,1379122,39,Chelsea,Everton,2025-12-13T15:00:00+00:00,0.407,0.294,0.296,home,,home,,True
+1,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,,home,,False
+2,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,home,,home,,True
+3,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,,draw,,False
+4,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,home,,home,,True
+5,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,,home,,False
+6,1379115,39,Manchester City,Sunderland,2025-12-06T15:00:00+00:00,0.669,0.135,0.106,home,,home,,True
+7,1379114,39,Leeds,Liverpool,2025-12-06T17:30:00+00:00,0.178,0.158,0.571,away,,draw,,False
+8,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.346,0.225,0.412,away,,draw,,False
+9,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.07,0.117,0.724,away,,away,,True
+10,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.293,0.316,0.39,away,,away,,True
+11,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+12,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+13,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+14,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+15,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+16,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+17,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+18,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+19,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+20,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+21,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+22,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+23,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+24,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+25,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+26,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+27,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+28,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+29,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+30,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+31,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+32,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+33,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+34,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+35,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+36,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+37,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+38,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+39,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+40,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+41,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+42,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+43,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+44,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+45,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+46,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+47,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+48,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+49,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+50,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+51,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,,home,,False
+52,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,home,,home,,True
+53,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,,draw,,False
+54,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,home,,home,,True
+55,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,,home,,False
+56,1379115,39,Manchester City,Sunderland,2025-12-06T15:00:00+00:00,0.669,0.135,0.106,home,,home,,True
+57,1379114,39,Leeds,Liverpool,2025-12-06T17:30:00+00:00,0.178,0.158,0.571,away,,draw,,False
+58,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.346,0.225,0.412,away,,draw,,False
+59,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.07,0.117,0.724,away,,away,,True
+60,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.293,0.316,0.39,away,,away,,True
+61,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+62,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+63,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+64,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+65,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+66,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+67,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+68,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+69,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+70,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+71,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+72,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+73,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+74,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+75,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+76,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+77,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+78,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+79,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+80,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+81,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+82,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+83,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+84,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+85,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+86,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+87,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+88,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+89,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+90,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+91,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+92,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+93,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+94,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+95,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+96,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+97,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+98,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+99,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+100,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+101,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+102,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+103,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+104,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+105,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+106,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+107,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+108,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+109,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+110,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+111,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+112,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+113,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+114,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+115,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+116,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+117,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+118,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+119,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+120,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+121,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+122,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+123,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+124,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+125,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+126,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+127,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+128,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+129,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+130,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+131,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+132,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+133,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+134,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+135,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+136,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+137,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+138,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+139,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+140,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+141,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+142,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+143,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+144,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+145,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+146,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+147,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+148,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+149,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+150,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+151,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+152,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+153,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+154,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+155,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+156,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+157,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+158,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+159,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+160,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+161,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+162,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+163,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+164,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+165,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+166,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+167,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+168,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+169,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+170,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+171,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+172,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+173,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+174,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+175,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+176,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+177,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+178,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+179,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+180,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+181,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+182,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+183,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+184,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+185,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+186,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+187,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+188,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+189,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+190,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+191,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+192,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+193,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+194,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+195,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+196,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+197,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+198,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+199,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+200,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+201,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+202,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+203,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+204,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+205,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+206,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+207,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+208,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+209,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+210,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+211,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.125,0.183,0.666,away,0.2274,draw,,False
+212,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.082,0.129,0.714,away,0.2188,home,,False
+213,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.256,0.23,0.501,away,0.1874,home,,False
+214,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.569,0.162,0.185,away,0.0992,home,,False
+215,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.398,0.242,0.352,away,0.0828,home,,False
+216,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+217,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+218,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+219,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+220,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+221,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+222,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+223,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+224,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+225,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+226,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+227,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+228,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+229,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+230,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+231,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+232,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+233,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+234,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+235,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+236,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+237,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+238,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+239,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+240,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+241,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+242,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+243,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+244,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+245,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+246,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+247,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+248,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+249,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+250,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+251,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+252,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+253,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+254,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+255,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+256,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+257,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+258,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+259,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+260,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+261,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+262,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+263,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+264,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+265,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+266,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+267,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+268,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+269,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+270,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+271,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+272,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+273,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+274,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+275,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+276,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+277,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+278,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,0.1458,home,,False
+279,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.221,0.23,0.538,away,,home,,False
+280,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.682,0.153,0.111,home,,home,,True
+281,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.302,0.229,0.455,away,,draw,,False
+282,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,,home,,False
+283,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.406,0.226,0.352,home,,home,,True
+284,1379115,39,Manchester City,Sunderland,2025-12-06T15:00:00+00:00,0.57,0.152,0.172,home,,home,,True
+285,1379114,39,Leeds,Liverpool,2025-12-06T17:30:00+00:00,0.451,0.241,0.299,home,,draw,,False
+286,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+287,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+288,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+289,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+290,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+291,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+306,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+307,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+308,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+313,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+314,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+315,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+330,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+331,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+332,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+337,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+338,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+339,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+344,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+345,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+346,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+351,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+352,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+353,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+358,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+359,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+360,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+365,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+366,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+367,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+372,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+373,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+374,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+379,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+380,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+381,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+386,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+387,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+388,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+393,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+394,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+395,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+400,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+401,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+402,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+407,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+408,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+409,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+414,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+415,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+416,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+421,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+422,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+423,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+428,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+429,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+430,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+435,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+436,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+437,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+442,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+443,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+444,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+449,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+450,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+451,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+456,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+457,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+458,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+463,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+464,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+465,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+470,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.221,0.23,0.538,away,,home,,False
+471,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.682,0.153,0.111,home,,home,,True
+472,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.302,0.229,0.455,away,,draw,,False
+473,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,,home,,False
+474,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.406,0.226,0.352,home,,home,,True
+475,1379115,39,Manchester City,Sunderland,2025-12-06T15:00:00+00:00,0.57,0.152,0.172,home,,home,,True
+476,1379114,39,Leeds,Liverpool,2025-12-06T17:30:00+00:00,0.451,0.241,0.299,home,,draw,,False
+496,1379109,39,Aston Villa,Arsenal,2025-12-06T12:30:00+00:00,0.221,0.23,0.538,away,,home,,False
+497,1379116,39,Newcastle,Burnley,2025-12-06T15:00:00+00:00,0.682,0.153,0.111,home,,home,,True
+498,1379110,39,Bournemouth,Chelsea,2025-12-06T15:00:00+00:00,0.302,0.229,0.455,away,,draw,,False
+499,1379112,39,Everton,Nottingham Forest,2025-12-06T15:00:00+00:00,0.341,0.23,0.415,away,,home,,False
+500,1379117,39,Tottenham,Brentford,2025-12-06T15:00:00+00:00,0.406,0.226,0.352,home,,home,,True
+501,1379115,39,Manchester City,Sunderland,2025-12-06T15:00:00+00:00,0.57,0.152,0.172,home,,home,,True
+502,1379114,39,Leeds,Liverpool,2025-12-06T17:30:00+00:00,0.451,0.241,0.299,home,,draw,,False
+503,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+504,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+505,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+506,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+507,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+508,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+509,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+510,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+511,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+512,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+513,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+514,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+515,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+516,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+517,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+518,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.369,0.288,0.341,home,,draw,,False
+519,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.323,0.289,0.386,away,,away,,True
+520,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.293,0.271,0.432,away,,away,,True
+521,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+522,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+523,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+528,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,away,0.1416,draw,,False
+529,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+530,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+535,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+536,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+569,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,away,0.1416,draw,,False
+570,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+571,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+572,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+577,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+578,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+597,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+598,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+617,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+618,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+633,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+634,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+635,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+649,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,away,0.1416,draw,,False
+650,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+651,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+660,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+661,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+662,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+667,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+668,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+669,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+674,1379111,39,Brighton,West Ham,2025-12-07T14:00:00+00:00,0.444,0.196,0.313,home,,draw,,False
+675,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+676,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+681,1379113,39,Fulham,Crystal Palace,2025-12-07T16:30:00+00:00,0.308,0.319,0.372,away,,away,,True
+682,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
+691,1379118,39,Wolves,Manchester United,2025-12-08T20:00:00+00:00,0.137,0.253,0.604,away,,away,,True
