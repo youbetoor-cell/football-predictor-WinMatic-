@@ -71,20 +71,51 @@ def _norm_result_label(value):
 
 def ensure_predictions_db() -> None:
     """
-    Make sure the predictions_history table exists and has all columns
-    used by the API (fixture_id, league, teams, probs, result, etc.).
-    Safe to call many times.
+    Ensure predictions_history exists.
+
+    - SQLite (local dev): keep the current "add missing columns" behavior.
+    - Postgres (Render): create a fixed schema once.
     """
     try:
-        # Make sure the folder for the DB exists
+        if USE_POSTGRES:
+            conn = db_connect()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS predictions_history (
+                    id BIGSERIAL PRIMARY KEY,
+                    fixture_id BIGINT,
+                    league INTEGER,
+                    home_team TEXT,
+                    away_team TEXT,
+                    kickoff_utc TEXT,
+                    model_home_p DOUBLE PRECISION,
+                    model_draw_p DOUBLE PRECISION,
+                    model_away_p DOUBLE PRECISION,
+                    predicted_side TEXT,
+                    edge_value DOUBLE PRECISION,
+                    actual_result TEXT,
+                    payload TEXT
+                );
+                """
+            )
+            # Helpful indexes
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ph_league_kickoff ON predictions_history(league, kickoff_utc);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ph_fixture ON predictions_history(fixture_id);")
+            conn.commit()
+            conn.close()
+            return
+
+        # ------------------------
+        # SQLite path (existing behavior)
+        # ------------------------
         db_dir = os.path.dirname(DB_PATH) or "."
         os.makedirs(db_dir, exist_ok=True)
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
 
         # 1) Create the table if it doesn't exist at all.
-        #    We start with an id, then we'll add/ensure all other columns.
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS predictions_history (
@@ -97,7 +128,7 @@ def ensure_predictions_db() -> None:
         cur.execute("PRAGMA table_info(predictions_history);")
         existing_cols = {row[1] for row in cur.fetchall()}
 
-        # 3) Columns we want to be sure exist
+        # 3) Columns we expect
         expected_cols = {
             "fixture_id": "INTEGER",
             "league": "INTEGER",
@@ -123,19 +154,17 @@ def ensure_predictions_db() -> None:
                 )
 
         conn.commit()
+
     except Exception as e:
-        # Don't crash the app, just log a warning
         try:
             logger.warning("[DB] ensure_predictions_db failed: %s", e)
         except Exception:
-            # logger might not exist yet at import time in some setups
             print("[DB] ensure_predictions_db failed:", e)
     finally:
         try:
             conn.close()
         except Exception:
             pass
-
 
 
 # ============================================================
@@ -162,8 +191,106 @@ API_DISK_CACHE_FILE = os.path.join(ART, "api_disk_cache.json")
 CACHE_ONLY_MODE = os.getenv("WINMATIC_CACHE_ONLY", "0") == "1"
 API_QUOTA_EXHAUSTED = False  # becomes True after daily limit is hit
 
-DB_PATH = os.path.join("data", "predictions_history.db")
-os.makedirs("data", exist_ok=True)
+# ============================================================
+# PERSISTENT HISTORY STORAGE
+# ============================================================
+# On Render Free, the local filesystem is ephemeral. Your SQLite file will be lost on redeploy/restart.
+# To persist history, set DATABASE_URL (Render Postgres). Locally, SQLite is still used by default.
+#
+# Render Postgres docs: internal URL for your service, external URL for tools on your laptop.
+# https://render.com/docs/postgresql-creating-connecting
+#
+# ENV:
+#   DATABASE_URL         -> if set (postgres:// or postgresql://), we use Postgres
+#   WINMATIC_DB_PATH     -> optional override for local SQLite path
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+USE_POSTGRES = DATABASE_URL.lower().startswith("postgres")
+
+DB_PATH = os.getenv("WINMATIC_DB_PATH", os.path.join("data", "predictions_history.db"))
+os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+
+# Optional: psycopg2 is only required if you use Postgres
+try:
+    import psycopg2  # type: ignore
+    from psycopg2 import pool as _pg_pool  # type: ignore
+except Exception:  # pragma: no cover
+    psycopg2 = None  # type: ignore
+    _pg_pool = None  # type: ignore
+
+
+def _pg_url_with_ssl(url: str) -> str:
+    # Render external connections use TLS. Many clients work without forcing, but this is safer.
+    if "sslmode=" in url:
+        return url
+    return url + ("&" if "?" in url else "?") + "sslmode=require"
+
+
+_PG_POOL = None
+
+class _CursorWrapper:
+    def __init__(self, cur):
+        self._cur = cur
+
+    def execute(self, query, params=None):
+        if USE_POSTGRES and isinstance(query, str):
+            query = query.replace("?", "%s")
+        return self._cur.execute(query, params)
+
+    def executemany(self, query, seq_of_params):
+        if USE_POSTGRES and isinstance(query, str):
+            query = query.replace("?", "%s")
+        return self._cur.executemany(query, seq_of_params)
+
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+
+class _PooledPGConn:
+    def __init__(self, conn, pool):
+        self._conn = conn
+        self._pool = pool
+
+    def cursor(self, *args, **kwargs):
+        return _CursorWrapper(self._conn.cursor(*args, **kwargs))
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def close(self):
+        # Return to pool instead of closing the socket
+        try:
+            self._pool.putconn(self._conn)
+        except Exception:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+def db_connect():
+    """Return a DB connection.
+    - SQLite (default) uses DB_PATH
+    - Postgres (when DATABASE_URL is set) uses a small connection pool
+    """
+    global _PG_POOL
+    if USE_POSTGRES:
+        if psycopg2 is None or _pg_pool is None:
+            raise RuntimeError("Postgres selected (DATABASE_URL set) but psycopg2 is not installed. Add psycopg2-binary to requirements.")
+        if _PG_POOL is None:
+            # Small pool is enough for a hobby app.
+            _PG_POOL = _pg_pool.ThreadedConnectionPool(
+                minconn=1, maxconn=5, dsn=_pg_url_with_ssl(DATABASE_URL)
+            )
+        return _PooledPGConn(_PG_POOL.getconn(), _PG_POOL)
+
+    # SQLite
+    return db_connect()
 
 
 DEFAULT_LEAGUE = 39  # Premier League
@@ -497,7 +624,7 @@ def current_season() -> int:
 
 def init_history_db() -> None:
     os.makedirs(ART, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
     cur.execute(
         """
@@ -530,7 +657,7 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
 
     conn = None
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
 
         # Ensure unique key exists (needed for ON CONFLICT)
@@ -1240,23 +1367,43 @@ def add_rest_days_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def _poisson_outcome_probs(mu_home: float, mu_away: float, max_goals: int = 6) -> Tuple[float, float, float]:
     """
-    Backward-compatible wrapper.
-
-    We keep this helper because older parts of the codebase expect a tuple
-    (p_home_win, p_draw, p_away_win), but we want ONE single Poisson implementation
-    everywhere (poisson_1x2_probs) so /predict/upcoming and /backtest/1x2 can't drift.
+    Turn expected home/away goals (mu_home, mu_away) into
+    1X2 probabilities using a simple Poisson model.
 
     Returns:
         (p_home_win, p_draw, p_away_win)
     """
-    probs = poisson_1x2_probs(float(mu_home), float(mu_away), max_goals=int(max_goals)) or {}
-    ph = float(probs.get("home", 0.0) or 0.0)
-    pd = float(probs.get("draw", 0.0) or 0.0)
-    pa = float(probs.get("away", 0.0) or 0.0)
-    s = ph + pd + pa
-    if s > 0:
-        return ph / s, pd / s, pa / s
-    return 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0
+    # Avoid weird negative or zero values
+    mu_home = max(mu_home, 0.0001)
+    mu_away = max(mu_away, 0.0001)
+
+    def pois(mu: float, k: int) -> float:
+        try:
+            return (mu ** k) * math.exp(-mu) / math.factorial(k)
+        except OverflowError:
+            return 0.0
+
+    p_home = 0.0
+    p_draw = 0.0
+    p_away = 0.0
+
+    # Sum probabilities up to max_goals goals for each team
+    for hg in range(0, max_goals + 1):
+        for ag in range(0, max_goals + 1):
+            p = pois(mu_home, hg) * pois(mu_away, ag)
+            if hg > ag:
+                p_home += p
+            elif hg == ag:
+                p_draw += p
+            else:
+                p_away += p
+
+    total = p_home + p_draw + p_away
+    if total <= 0:
+        # fallback to something reasonable
+        return 1.0 / 3, 1.0 / 3, 1.0 / 3
+
+    return p_home / total, p_draw / total, p_away / total
 
 
 def _multiclass_logloss(y_true: np.ndarray, proba: np.ndarray, eps: float = 1e-15) -> float:
@@ -2204,31 +2351,8 @@ def apply_1x2_calibration(probs: dict, cal: dict) -> dict:
     if not all(isinstance(p[k], (int, float)) for k in p):
         return probs
 
-    # Support multiple calibration file schemas:
-    # - flat: {"temperature": 1.48, "draw_mult": 0.66}
-    # - nested: {"best_params": {"temperature": 1.48, "draw_mult": 0.66}, ...}
-    # - legacy aliases: T/temp, draw_multiplier
-    params = {}
-    if isinstance(cal, dict):
-        if isinstance(cal.get("best_params"), dict):
-            params = cal.get("best_params") or {}
-        else:
-            params = cal
-
-    def _get_num(d: dict, *keys, default: float = 1.0) -> float:
-        for k in keys:
-            v = d.get(k)
-            if isinstance(v, (int, float)):
-                return float(v)
-            if isinstance(v, str):
-                try:
-                    return float(v.strip())
-                except Exception:
-                    pass
-        return float(default)
-
-    T = _get_num(params, "temperature", "T", "temp", default=1.0)
-    dm = _get_num(params, "draw_mult", "draw_multiplier", "drawMult", default=1.0)
+    T = float(cal.get("temperature", 1.0)) if isinstance(cal, dict) else 1.0
+    dm = float(cal.get("draw_mult", 1.0)) if isinstance(cal, dict) else 1.0
     if T <= 0:
         T = 1.0
     if dm <= 0:
@@ -2412,23 +2536,50 @@ app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
 @app.get("/debug/db")
 def debug_db():
+    """
+    Small diagnostic endpoint.
+    Useful on Render to confirm whether you're using SQLite or Postgres.
+    """
     import os
-    import sqlite3
     from pathlib import Path
 
-    p = Path(DB_PATH)
-    info = {
-        "cwd": os.getcwd(),
-        "db_path": DB_PATH,
-        "db_abs": str(p.resolve()),
-        "exists": p.exists(),
-    }
+    info = {"cwd": os.getcwd(), "use_postgres": bool(USE_POSTGRES)}
 
+    if USE_POSTGRES:
+        info["db_kind"] = "postgres"
+        info["database_url_set"] = bool(DATABASE_URL)
+        try:
+            con = db_connect()
+            cur = con.cursor()
+            cur.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'predictions_history'
+                ORDER BY ordinal_position;
+                """
+            )
+            info["predictions_history_cols"] = [r[0] for r in cur.fetchall()]
+            cur.execute("SELECT COUNT(*) FROM predictions_history;")
+            info["predictions_history_rows"] = int(cur.fetchone()[0])
+            con.close()
+        except Exception as e:
+            info["error"] = repr(e)
+        return info
+
+    # SQLite
+    info["db_kind"] = "sqlite"
+    p = Path(DB_PATH)
+    info["db_path"] = DB_PATH
+    info["db_abs"] = str(p.resolve())
+    info["exists"] = p.exists()
     try:
-        con = sqlite3.connect(DB_PATH)
+        con = db_connect()
         try:
             cols = [r[1] for r in con.execute("PRAGMA table_info(predictions_history)").fetchall()]
             info["predictions_history_cols"] = cols
+            info["predictions_history_rows"] = int(con.execute("SELECT COUNT(*) FROM predictions_history;").fetchone()[0])
         finally:
             con.close()
     except Exception as e:
@@ -2436,63 +2587,6 @@ def debug_db():
 
     return info
 
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
-)
-
-# Serve /static/*
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Root → /static/index.html
-@app.get("/")
-def root():
-    return RedirectResponse(url="/static/index.html")
-
-# ---------- Team logo cache/proxy ----------
-LOGO_DIR = os.path.join("static", "team-logo")
-os.makedirs(LOGO_DIR, exist_ok=True)
-
-# 1x1 transparent PNG (base64) to seed /static/team-logo/default.png
-_DEFAULT_PNG_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMA"
-    "ASsJTYQAAAAASUVORK5CYII="
-)
-
-def _ensure_default_logo():
-    default_path = os.path.join(LOGO_DIR, "default.png")
-    if not os.path.exists(default_path):
-        try:
-            with open(default_path, "wb") as f:
-                f.write(base64.b64decode(_DEFAULT_PNG_B64))
-            logger.info("[LOGO] created default placeholder at %s", default_path)
-        except Exception as e:
-            logger.warning("[LOGO] failed to create default placeholder: %s", e)
-
-_ensure_default_logo()
-
-def _logo_cache_path(team_id: int) -> str:
-    return os.path.join(LOGO_DIR, f"{team_id}.png")
-
-def _fetch_and_cache_logo(team_id: int) -> Optional[bytes]:
-    url = f"https://media.api-sports.io/football/teams/{team_id}.png"
-    try:
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200 and r.content:
-            path = _logo_cache_path(team_id)
-            try:
-                with open(path, "wb") as f:
-                    f.write(r.content)
-                logger.info("[LOGO] cached %s → %s", url, path)
-            except Exception as e:
-                logger.warning("[LOGO] write cache failed: %s", e)
-            return r.content
-        logger.warning("[LOGO] CDN returned %s for team_id=%s", r.status_code, team_id)
-    except Exception as e:
-        logger.warning("[LOGO] fetch failed for team_id=%s: %s", team_id, e)
-    return None
 
 @app.get("/team-logo/default.png")
 def team_logo_default():
@@ -2590,35 +2684,41 @@ def build_predictions_for_fixtures(
         # Derived stats
         extra = derive_extra_stats(pred_home_goals, pred_away_goals)
 
-                # --- 1X2 probs from xG -> Poisson (RAW) ---
-        raw_probs = poisson_1x2_probs(
+        # Poisson probability engine
+        def poisson_prob(avg, k):
+            try:
+                return (avg ** k) * math.exp(-avg) / math.factorial(k)
+            except:
+                return 0.0
+
+        # --- 1X2 probs (normalized) ---
+        home_win_p, draw_p, away_win_p = _poisson_outcome_probs(
             float(pred_home_goals),
             float(pred_away_goals),
-            max_goals=10,
-        ) or {}
+            max_goals=10
+        )
 
-        # Defensive normalize (keeps downstream math stable)
-        rph = float(raw_probs.get("home", 0.0) or 0.0)
-        rpd = float(raw_probs.get("draw", 0.0) or 0.0)
-        rpa = float(raw_probs.get("away", 0.0) or 0.0)
-        rs = rph + rpd + rpa
-        if rs > 0:
-            rph, rpd, rpa = rph / rs, rpd / rs, rpa / rs
+
+        # Normalize to sum to 1.0 (important for 1X2 betting + fair comparisons)
+        total_p = home_win_p + draw_p + away_win_p
+        if total_p > 0:
+            home_win_p /= total_p
+            draw_p /= total_p
+            away_win_p /= total_p
         else:
-            rph = rpd = rpa = 1.0 / 3.0
-        raw_probs = {"home": rph, "draw": rpd, "away": rpa}
+            home_win_p = draw_p = away_win_p = 1.0 / 3.0
 
-        # ✅ Calibration (same logic as /backtest/1x2)
-        cal = load_1x2_calibration(league) or {}
-        probs = raw_probs
-        if cal:
-            probs = apply_1x2_calibration(raw_probs, cal) or raw_probs
+        # Best side (model favourite) + ✅ calibration
+        probs = {"home": home_win_p, "draw": draw_p, "away": away_win_p}
 
+        cal = load_1x2_calibration(league)
+        probs = apply_1x2_calibration(probs, cal)
+
+        # keep the scalar vars in sync (optional but nice)
         home_win_p = float(probs["home"])
         draw_p     = float(probs["draw"])
         away_win_p = float(probs["away"])
 
-        # Best side (model favourite)
         best_side = max(probs, key=probs.get)
         best_prob = probs[best_side]
 
@@ -2646,10 +2746,6 @@ def build_predictions_for_fixtures(
                 "home_win_p": round(home_win_p, 3),
                 "draw_p": round(draw_p, 3),
                 "away_win_p": round(away_win_p, 3),
-
-                # Debug helpers (so you can verify calibration quickly)
-                "raw_probs": {"home": round(raw_probs["home"], 3), "draw": round(raw_probs["draw"], 3), "away": round(raw_probs["away"], 3)},
-                "calibrated_probs": {"home": round(home_win_p, 3), "draw": round(draw_p, 3), "away": round(away_win_p, 3)},
 
                 "best_side": best_side,
                 "best_prob": round(best_prob, 4),
@@ -3329,7 +3425,7 @@ def api_results_sync(
     now = datetime.now(timezone.utc)
     since = (now - timedelta(days=lookback_days)).isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     # candidates: finished by time, missing actual_result
@@ -3392,7 +3488,7 @@ def api_results_sync(
                 updated += 1
                 continue
 
-            conn = sqlite3.connect(DB_PATH)
+            conn = db_connect()
             cur = conn.cursor()
             cur.execute(
                 """
@@ -3660,7 +3756,7 @@ def api_backtest_1x2(
         if write_db and not dry_run:
             try:
                 ensure_predictions_db()
-                conn = sqlite3.connect(DB_PATH)
+                conn = db_connect()
                 cur = conn.cursor()
 
                 cols = [r[1] for r in cur.execute("PRAGMA table_info(predictions_history)").fetchall()]
@@ -3760,7 +3856,7 @@ def api_progress_metrics(
 
     since_ts = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     # include id + fixture_id so we can pick the latest row per fixture
@@ -3884,7 +3980,7 @@ def api_progress_roi(
     since_ts = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
 
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
         # We ALSO select the primary key id so we can pick the latest row per fixture
         cur.execute(
@@ -4093,7 +4189,7 @@ def api_history(
     try:
         ensure_predictions_db()
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
         cur.execute(
             """
@@ -4186,7 +4282,7 @@ def api_pnl_history(
     ensure_predictions_db()
 
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
         cur.execute(
             """
@@ -4305,7 +4401,7 @@ def api_roi_by_league(
     """
     ensure_predictions_db()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     edge_filter = ""
@@ -4361,7 +4457,7 @@ def api_pnl_debug(
     - Only rows with actual_result IS NOT NULL
     """
     ensure_predictions_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
     cur.execute(
         """
@@ -4432,7 +4528,7 @@ def api_predictions_sanity(
     """
     ensure_predictions_db()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
     cur.execute(
         """
@@ -4520,7 +4616,7 @@ def debug_fixture(
     ensure_predictions_db()
 
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
         cur.execute(
             """
@@ -4722,7 +4818,7 @@ def debug_pending_results(
     """
     ensure_predictions_db()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
     cur.execute(
         """
@@ -4783,7 +4879,7 @@ def api_recent_results(
     ensure_predictions_db()
 
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
         # Get all finished predictions for this league, newest first
         cur.execute(
@@ -4888,7 +4984,7 @@ def api_update_results(
     """
     ensure_predictions_db()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
     cur.execute(
         """
@@ -4908,7 +5004,7 @@ def api_update_results(
 
     updated = 0
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     for fx_id in pending_ids:
