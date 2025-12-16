@@ -1,6 +1,29 @@
 // static/js/status.js
 // Lightweight status widget that only hits /health (no external odds/fixtures calls)
 
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+async function fetchWithRetry(url, retries = 1) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetchWithRetry(url);
+      if ([502, 503, 504].includes(res.status) && attempt < retries) {
+        await sleep(500 * (attempt + 1));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (attempt < retries) {
+        await sleep(500 * (attempt + 1));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+
 async function updateApiStatus() {
   const dot = document.getElementById("api-dot");
   const text = document.getElementById("api-text");
@@ -8,7 +31,7 @@ async function updateApiStatus() {
   if (!dot || !text) return;
 
   try {
-    const res = await fetch("http://127.0.0.1:8000/health");
+    const res = await fetch(window.location.origin.replace(/\/$/, "") + "/health");
 
     if (!res.ok) {
       // Backend up but returned error

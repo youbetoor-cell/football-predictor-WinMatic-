@@ -769,6 +769,45 @@
   </main>
 
   <script>
+    // ---------------------------
+    // WinMatic helper: fetch w/ timeout + retry (Render cold starts can cause 502/504)
+    // ---------------------------
+    function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+    async function fetchWithRetry(url, options = {}, retries = 2, timeoutMs = 25000) {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const controller = new AbortController();
+          const t = setTimeout(() => controller.abort(), timeoutMs);
+          const res = await fetchWithRetry(url, { ...options, signal: controller.signal });
+          clearTimeout(t);
+
+          // retry on transient gateway / overload / quota hiccups
+          if ([429, 502, 503, 504].includes(res.status) && attempt < retries) {
+            await sleep(600 * (attempt + 1));
+            continue;
+          }
+
+          return res;
+        } catch (err) {
+          if (attempt < retries) {
+            await sleep(600 * (attempt + 1));
+            continue;
+          }
+          throw err;
+        }
+      }
+    }
+
+    async function readErrorBody(res) {
+      try {
+        const txt = await res.text();
+        return (txt || "").slice(0, 200);
+      } catch {
+        return "";
+      }
+    }
+
     // ---- CONFIG: leagues to show ----
     const LEAGUES = [
       { id: 39,  name: "Premier League",        short: "ENG" },
@@ -949,7 +988,7 @@
       for (const league of LEAGUES) {
         const url = `/predict/by-date?league=${league.id}&from_date=${dateStr}&to_date=${dateStr}`;
         try {
-          const resp = await fetch(url);
+          const resp = await fetchWithRetry(url);
           if (!resp.ok) {
             console.warn("Failed for league", league.id, "status", resp.status);
             continue;
