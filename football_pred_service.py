@@ -257,7 +257,9 @@ def db_cursor(conn):
     return _CursorWrapper(conn.cursor(), USE_POSTGRES)
 
 def require_admin(
-    x_admin_token: str | None = Header(None, alias="X-Admin-Token")
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    token: str | None = Query(None),
+    admin_token: str | None = Query(None, alias="admin_token"),
 ) -> None:
     """
     Simple admin guard:
@@ -265,25 +267,29 @@ def require_admin(
     - If ADMIN_TOKEN is NOT set:
         -> do nothing (useful for local/dev)
     - If ADMIN_TOKEN IS set:
-        -> require matching X-Admin-Token header
+        -> require matching token, passed either:
+            * Header: X-Admin-Token: <token>
+            * Query:  ?token=<token>   (browser-friendly)
+            * Query:  ?admin_token=<token>
     """
     # Dev mode: no ADMIN_TOKEN configured -> don't enforce anything
     if not ADMIN_TOKEN:
         return
 
-    # Prod mode: ADMIN_TOKEN set -> header required
-    if x_admin_token is None:
+    provided = x_admin_token or token or admin_token
+
+    # Prod mode: ADMIN_TOKEN set -> token required
+    if not provided:
         raise HTTPException(
             status_code=401,
-            detail="X-Admin-Token header required.",
+            detail="Admin token required. Provide X-Admin-Token header or ?token=... query parameter.",
         )
 
-    if x_admin_token != ADMIN_TOKEN:
+    if provided != ADMIN_TOKEN:
         raise HTTPException(
             status_code=401,
             detail="Invalid admin token.",
         )
-
 
 DEFAULT_SEASONS = [2018, 2019, 2020, 2021, 2022, 2023, 2024,2025]
 MAX_DATE_RANGE_DAYS = 14
