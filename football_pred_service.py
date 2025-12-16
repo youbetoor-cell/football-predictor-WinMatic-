@@ -311,6 +311,7 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
 
 
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production").strip().lower()
 # ============================================================
 # DATABASE BACKEND (SQLite locally, Postgres on Render when DATABASE_URL is set)
 # ============================================================
@@ -375,35 +376,34 @@ def require_admin(
     token: str | None = Query(None),
     admin_token: str | None = Query(None, alias="admin_token"),
 ) -> None:
-    """
-    Simple admin guard:
+    """Admin guard.
 
-    - If ADMIN_TOKEN is NOT set:
-        -> do nothing (useful for local/dev)
+    Behavior:
+    - If ADMIN_TOKEN is NOT set -> allow (useful for local/dev)
     - If ADMIN_TOKEN IS set:
-        -> require matching token, passed either:
-            * Header: X-Admin-Token: <token>
-            * Query:  ?token=<token>   (browser-friendly)
-            * Query:  ?admin_token=<token>
+        * In production (ENVIRONMENT=production/prod): accept ONLY the header
+          (prevents leaking tokens via URLs, browser history, referrers).
+        * In non-production: accept header OR ?token= / ?admin_token= for convenience.
+
+    In production, failures return 404 to avoid advertising admin/debug routes.
     """
-    # Dev mode: no ADMIN_TOKEN configured -> don't enforce anything
+
     if not ADMIN_TOKEN:
         return
 
-    provided = x_admin_token or token or admin_token
+    env_is_prod = ENVIRONMENT in ("production", "prod")
 
-    # Prod mode: ADMIN_TOKEN set -> token required
-    if not provided:
-        raise HTTPException(
-            status_code=401,
-            detail="Admin token required. Provide X-Admin-Token header or ?token=... query parameter.",
-        )
+    provided = x_admin_token
+    if not env_is_prod:
+        provided = provided or token or admin_token
 
-    if provided != ADMIN_TOKEN:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid admin token.",
-        )
+    if not provided or provided != ADMIN_TOKEN:
+        if env_is_prod:
+            raise HTTPException(status_code=404, detail="Not found")
+        if not provided:
+            raise HTTPException(status_code=401, detail="Admin token required (use X-Admin-Token header).")
+        raise HTTPException(status_code=401, detail="Invalid admin token.")
+
 
 DEFAULT_SEASONS = [2018, 2019, 2020, 2021, 2022, 2023, 2024,2025]
 MAX_DATE_RANGE_DAYS = 14
