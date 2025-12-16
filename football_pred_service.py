@@ -278,6 +278,27 @@ ODDS_CACHE_ENABLED = os.getenv("ODDS_CACHE_ENABLED", "1").strip() not in ("0", "
 ODDS_CACHE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_TTL_SECONDS", "21600"))
 ODDS_CACHE_NEGATIVE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_NEGATIVE_TTL_SECONDS", "1800"))
 
+# Simple in-process cache stats (since service boot). Helpful for debugging.
+import threading
+_ODDS_STATS_LOCK = threading.Lock()
+ODDS_CACHE_HITS = 0
+ODDS_CACHE_MISSES = 0
+ODDS_CACHE_STORES = 0
+ODDS_CACHE_NEGATIVE_STORES = 0
+def _odds_stat_inc(field: str) -> None:
+    global ODDS_CACHE_HITS, ODDS_CACHE_MISSES, ODDS_CACHE_STORES, ODDS_CACHE_NEGATIVE_STORES
+    with _ODDS_STATS_LOCK:
+        if field == "hit":
+            ODDS_CACHE_HITS += 1
+        elif field == "miss":
+            ODDS_CACHE_MISSES += 1
+        elif field == "store":
+            ODDS_CACHE_STORES += 1
+        elif field == "neg_store":
+            ODDS_CACHE_NEGATIVE_STORES += 1
+
+
+
 os.makedirs("data", exist_ok=True)
 
 
@@ -756,6 +777,8 @@ def odds_cache_get_1x2(fixture_id: int) -> Optional[Dict[str, float]]:
     """
     Return cached 1X2 odds dict if present and not expired.
     Returns None when not cached, expired, or negative-cached (no odds).
+
+    Updates in-process cache stats (hits/misses) for debugging.
     """
     if not ODDS_CACHE_ENABLED:
         return None
@@ -771,6 +794,7 @@ def odds_cache_get_1x2(fixture_id: int) -> Optional[Dict[str, float]]:
         )
         row = cur.fetchone()
         if not row:
+            _odds_stat_inc("miss")
             return None
 
         odds_home, odds_draw, odds_away, expires_at = row
@@ -779,10 +803,17 @@ def odds_cache_get_1x2(fixture_id: int) -> Optional[Dict[str, float]]:
             # Expired -> remove row
             try:
                 cur.execute("DELETE FROM odds_cache WHERE fixture_id = ?", (int(fixture_id),))
-                conn.commit()
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
             except Exception:
                 pass
+            _odds_stat_inc("miss")
             return None
+
+        # We served from cache (even if it's a negative-cache row).
+        _odds_stat_inc("hit")
 
         # Negative cache (no odds stored)
         if odds_home is None or odds_draw is None or odds_away is None:
@@ -808,6 +839,7 @@ def odds_cache_set_1x2(
     Upsert odds into cache.
 
     If odds is None, stores a negative-cache entry (NULL odds) to avoid repeated calls.
+    Updates in-process cache stats (stores) for debugging.
     """
     if not ODDS_CACHE_ENABLED:
         return
@@ -836,11 +868,18 @@ def odds_cache_set_1x2(
                 odds_draw=excluded.odds_draw,
                 odds_away=excluded.odds_away,
                 raw_json=excluded.raw_json
-            """
-            ,
+            """,
             (int(fixture_id), int(league) if league is not None else None, fetched_at, expires_at, oh, odr, oa, raw_json),
         )
-        conn.commit()
+        try:
+            conn.commit()
+        except Exception:
+            pass
+
+        if odds is None:
+            _odds_stat_inc("neg_store")
+        else:
+            _odds_stat_inc("store")
     finally:
         try:
             if conn is not None:
@@ -2906,6 +2945,117 @@ def _fetch_and_cache_logo(team_id: int) -> Optional[bytes]:
     except Exception as e:
         logger.warning("[LOGO] fetch failed for team_id=%s: %s", team_id, e)
     return None
+
+@app.get("/debug/odds-cache", dependencies=[Depends(require_admin)])
+def debug_odds_cache():
+    """Admin-only: show odds cache size + hit/miss counters."""
+    ensure_odds_cache_db()
+    info: dict[str, Any] = {
+        "enabled": bool(ODDS_CACHE_ENABLED),
+        "ttl_seconds": int(ODDS_CACHE_TTL_SECONDS),
+        "negative_ttl_seconds": int(ODDS_CACHE_NEGATIVE_TTL_SECONDS),
+        "now_utc": _utc_now_iso(),
+    }
+
+    if not ODDS_CACHE_ENABLED:
+        info["rows"] = 0
+        return info
+
+    conn = None
+    try:
+        conn = db_connect()
+        cur = db_cursor(conn)
+
+        cur.execute("SELECT COUNT(*) FROM odds_cache")
+        info["rows"] = int(cur.fetchone()[0] or 0)
+
+        cur.execute("SELECT MIN(fetched_at), MAX(fetched_at), MIN(expires_at), MAX(expires_at) FROM odds_cache")
+        mn_f, mx_f, mn_e, mx_e = cur.fetchone() or (None, None, None, None)
+        info["fetched_at_min"] = mn_f
+        info["fetched_at_max"] = mx_f
+        info["expires_at_min"] = mn_e
+        info["expires_at_max"] = mx_e
+
+        now_iso = info["now_utc"]
+        cur.execute("SELECT COUNT(*) FROM odds_cache WHERE expires_at <= ?", (now_iso,))
+        info["expired_rows"] = int(cur.fetchone()[0] or 0)
+    except Exception as e:
+        info["error"] = str(e)
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+
+    # In-process counters
+    with _ODDS_STATS_LOCK:
+        info["hits_since_boot"] = int(ODDS_CACHE_HITS)
+        info["misses_since_boot"] = int(ODDS_CACHE_MISSES)
+        info["stores_since_boot"] = int(ODDS_CACHE_STORES)
+        info["negative_stores_since_boot"] = int(ODDS_CACHE_NEGATIVE_STORES)
+
+    return info
+
+
+def _fetch_rows_as_dicts(cur) -> list[dict[str, Any]]:
+    cols = [d[0] for d in (cur.description or [])]
+    out = []
+    for row in (cur.fetchall() or []):
+        out.append({cols[i]: row[i] for i in range(len(cols))})
+    return out
+
+
+@app.get("/admin/export-history", dependencies=[Depends(require_admin)])
+def admin_export_history(league: Optional[int] = None, limit: int = 5000):
+    """Admin-only export of predictions_history as JSON (for backups on free tiers)."""
+    limit = max(1, min(int(limit), 20000))
+    conn = None
+    try:
+        conn = db_connect()
+        cur = db_cursor(conn)
+
+        if league is None:
+            cur.execute("SELECT * FROM predictions_history ORDER BY id DESC LIMIT ?", (limit,))
+        else:
+            cur.execute("SELECT * FROM predictions_history WHERE league = ? ORDER BY id DESC LIMIT ?", (int(league), limit))
+
+        rows = _fetch_rows_as_dicts(cur)
+        return {"exported_utc": _utc_now_iso(), "table": "predictions_history", "league": league, "count": len(rows), "rows": rows}
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+
+
+@app.get("/admin/export-odds-cache", dependencies=[Depends(require_admin)])
+def admin_export_odds_cache(league: Optional[int] = None, limit: int = 10000):
+    """Admin-only export of odds_cache as JSON (for backups on free tiers)."""
+    limit = max(1, min(int(limit), 50000))
+    ensure_odds_cache_db()
+
+    conn = None
+    try:
+        conn = db_connect()
+        cur = db_cursor(conn)
+
+        if league is None:
+            cur.execute("SELECT * FROM odds_cache ORDER BY fetched_at DESC LIMIT ?", (limit,))
+        else:
+            cur.execute("SELECT * FROM odds_cache WHERE league = ? ORDER BY fetched_at DESC LIMIT ?", (int(league), limit))
+
+        rows = _fetch_rows_as_dicts(cur)
+        return {"exported_utc": _utc_now_iso(), "table": "odds_cache", "league": league, "count": len(rows), "rows": rows}
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+
+
 
 @app.get("/team-logo/default.png")
 def team_logo_default():
