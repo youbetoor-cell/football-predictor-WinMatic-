@@ -90,24 +90,108 @@ def ensure_predictions_db() -> None:
                 """
                 CREATE TABLE IF NOT EXISTS predictions_history (
                     id BIGSERIAL PRIMARY KEY,
-                    fixture_id BIGINT NOT NULL,
                     league INTEGER NOT NULL,
+                    fixture_id INTEGER NOT NULL,
+                    kickoff_utc TEXT NOT NULL,
                     home_team TEXT,
                     away_team TEXT,
-                    kickoff_utc TEXT NOT NULL,
+
+                    -- legacy prediction columns (v1)
                     model_home_p DOUBLE PRECISION,
                     model_draw_p DOUBLE PRECISION,
                     model_away_p DOUBLE PRECISION,
                     predicted_side TEXT,
                     edge_value DOUBLE PRECISION,
                     actual_result TEXT,
-                    payload TEXT NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text),
+                    payload TEXT,
+                    created_at TEXT DEFAULT (CURRENT_TIMESTAMP::text),
+
                     UNIQUE(league, fixture_id, kickoff_utc)
                 );
                 """
             )
             conn.commit()
+
+            # --- Postgres: widen schema to be compatible with newer "value-log" deployments ---
+            # Some earlier deployments created predictions_history with columns like:
+            # created_utc, xg_home/xg_away, raw_*, cal_*, odds_*, ev_*, mode, meta_json
+            # If you migrated that table into a new DB, the API must not crash due to missing columns.
+            try:
+                cur.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'predictions_history'
+                    """
+                )
+                existing_cols = {r[0] for r in cur.fetchall()}
+
+                expected_cols = {
+                    # v1 (legacy)
+                    "league": "INTEGER",
+                    "fixture_id": "INTEGER",
+                    "kickoff_utc": "TEXT",
+                    "home_team": "TEXT",
+                    "away_team": "TEXT",
+                    "model_home_p": "DOUBLE PRECISION",
+                    "model_draw_p": "DOUBLE PRECISION",
+                    "model_away_p": "DOUBLE PRECISION",
+                    "predicted_side": "TEXT",
+                    "edge_value": "DOUBLE PRECISION",
+                    "actual_result": "TEXT",
+                    "payload": "TEXT",
+                    "created_at": "TEXT",
+
+                    # v2 ("value-log") columns
+                    "created_utc": "TEXT",
+                    "xg_home": "DOUBLE PRECISION",
+                    "xg_away": "DOUBLE PRECISION",
+                    "raw_home": "DOUBLE PRECISION",
+                    "raw_draw": "DOUBLE PRECISION",
+                    "raw_away": "DOUBLE PRECISION",
+                    "cal_home": "DOUBLE PRECISION",
+                    "cal_draw": "DOUBLE PRECISION",
+                    "cal_away": "DOUBLE PRECISION",
+                    "odds_home": "DOUBLE PRECISION",
+                    "odds_draw": "DOUBLE PRECISION",
+                    "odds_away": "DOUBLE PRECISION",
+                    "ev_home": "DOUBLE PRECISION",
+                    "ev_draw": "DOUBLE PRECISION",
+                    "ev_away": "DOUBLE PRECISION",
+                    "mode": "TEXT",
+                    "meta_json": "TEXT",
+                }
+
+                for col, ctype in expected_cols.items():
+                    if col not in existing_cols:
+                        try:
+                            cur.execute(f"ALTER TABLE predictions_history ADD COLUMN {col} {ctype};")
+                        except Exception:
+                            pass
+
+                # Ensure the ON CONFLICT(...) clauses work (requires a unique constraint/index).
+                # If duplicates exist, this may fail; we swallow the error to avoid boot failure.
+                try:
+                    cur.execute(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS predictions_history_uniq ON predictions_history (league, fixture_id, kickoff_utc);"
+                    )
+                except Exception:
+                    pass
+                try:
+                    cur.execute(
+                        "CREATE INDEX IF NOT EXISTS predictions_history_league_idx ON predictions_history (league);"
+                    )
+                except Exception:
+                    pass
+
+                conn.commit()
+            except Exception:
+                # Never prevent boot because of a schema maintenance edge case
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
             cur.close()
             conn.close()
             return
