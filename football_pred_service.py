@@ -405,6 +405,28 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 # ============================================================
+# PATHS & ENV (added: fixes NameError for ART / API_BASE / API_FOOTBALL_KEY)
+# ============================================================
+
+# Where to store artifacts/cache on disk.
+ART = os.getenv("ARTIFACTS_DIR", "artifacts").strip() or "artifacts"
+os.makedirs(ART, exist_ok=True)
+
+# Snapshots directory (used by cache/snapshot helpers)
+SNAPSHOT_DIR = os.path.join(ART, "snapshots")
+os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+
+# API cache file (JSON)
+API_CACHE_FILE = os.path.join(ART, "api_cache.json")
+
+# API-FOOTBALL config (base URL + key)
+# Render env usually provides API_FOOTBALL_BASE_URL + API_FOOTBALL_KEY.
+API_FOOTBALL_BASE_URL = os.getenv("API_FOOTBALL_BASE_URL", "https://v3.football.api-sports.io").strip()
+API_BASE = API_FOOTBALL_BASE_URL or "https://v3.football.api-sports.io"
+API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY", "").strip()
+
+
+# ============================================================
 # API CACHE HELPERS
 # ============================================================
 
