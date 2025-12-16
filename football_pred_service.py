@@ -269,6 +269,15 @@ CACHE_ONLY_MODE = os.getenv("WINMATIC_CACHE_ONLY", "0") == "1"
 API_QUOTA_EXHAUSTED = False  # becomes True after daily limit is hit
 
 DB_PATH = os.path.join("data", "predictions_history.db")
+
+# ============================================================
+# ODDS CACHE (reduces API calls / improves speed & reliability)
+# ============================================================
+ODDS_CACHE_ENABLED = os.getenv("ODDS_CACHE_ENABLED", "1").strip() not in ("0", "false", "False")
+# Default: 6 hours. Cache 'no odds' results for 30 minutes to avoid hammering the odds endpoint.
+ODDS_CACHE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_TTL_SECONDS", "21600"))
+ODDS_CACHE_NEGATIVE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_NEGATIVE_TTL_SECONDS", "1800"))
+
 os.makedirs("data", exist_ok=True)
 
 
@@ -689,6 +698,157 @@ def current_season() -> int:
 # HISTORY DB
 # ============================================================
 
+
+def _utc_now_iso() -> str:
+    # ISO 8601 sortable string (good for text comparisons)
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _utc_plus_seconds_iso(seconds: int) -> str:
+    return (datetime.utcnow() + timedelta(seconds=int(seconds))).replace(microsecond=0).isoformat() + "Z"
+
+
+def ensure_odds_cache_db() -> None:
+    """
+    Ensure the odds_cache table exists.
+
+    Stores 1X2 odds per fixture_id to reduce API-FOOTBALL calls.
+    Works for both SQLite and Postgres.
+    """
+    if not ODDS_CACHE_ENABLED:
+        return
+
+    conn = None
+    try:
+        conn = db_connect()
+        cur = db_cursor(conn)
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS odds_cache (
+                fixture_id BIGINT PRIMARY KEY,
+                league INTEGER,
+                fetched_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                odds_home DOUBLE PRECISION,
+                odds_draw DOUBLE PRECISION,
+                odds_away DOUBLE PRECISION,
+                raw_json TEXT
+            );
+            """
+        )
+        try:
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_odds_cache_expires ON odds_cache (expires_at);")
+        except Exception:
+            # Index creation isn't critical
+            pass
+
+        conn.commit()
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+
+
+def odds_cache_get_1x2(fixture_id: int) -> Optional[Dict[str, float]]:
+    """
+    Return cached 1X2 odds dict if present and not expired.
+    Returns None when not cached, expired, or negative-cached (no odds).
+    """
+    if not ODDS_CACHE_ENABLED:
+        return None
+
+    conn = None
+    try:
+        conn = db_connect()
+        cur = db_cursor(conn)
+
+        cur.execute(
+            "SELECT odds_home, odds_draw, odds_away, expires_at FROM odds_cache WHERE fixture_id = ?",
+            (int(fixture_id),),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        odds_home, odds_draw, odds_away, expires_at = row
+        now_iso = _utc_now_iso()
+        if expires_at and str(expires_at) <= now_iso:
+            # Expired -> remove row
+            try:
+                cur.execute("DELETE FROM odds_cache WHERE fixture_id = ?", (int(fixture_id),))
+                conn.commit()
+            except Exception:
+                pass
+            return None
+
+        # Negative cache (no odds stored)
+        if odds_home is None or odds_draw is None or odds_away is None:
+            return None
+
+        return {"home": float(odds_home), "draw": float(odds_draw), "away": float(odds_away)}
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+
+
+def odds_cache_set_1x2(
+    fixture_id: int,
+    league: Optional[int],
+    odds: Optional[Dict[str, float]],
+    raw_json: Optional[str],
+    ttl_seconds: int,
+) -> None:
+    """
+    Upsert odds into cache.
+
+    If odds is None, stores a negative-cache entry (NULL odds) to avoid repeated calls.
+    """
+    if not ODDS_CACHE_ENABLED:
+        return
+
+    conn = None
+    try:
+        conn = db_connect()
+        cur = db_cursor(conn)
+
+        fetched_at = _utc_now_iso()
+        expires_at = _utc_plus_seconds_iso(ttl_seconds)
+
+        oh = odds.get("home") if odds else None
+        odr = odds.get("draw") if odds else None
+        oa = odds.get("away") if odds else None
+
+        cur.execute(
+            """
+            INSERT INTO odds_cache (fixture_id, league, fetched_at, expires_at, odds_home, odds_draw, odds_away, raw_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (fixture_id) DO UPDATE SET
+                league=excluded.league,
+                fetched_at=excluded.fetched_at,
+                expires_at=excluded.expires_at,
+                odds_home=excluded.odds_home,
+                odds_draw=excluded.odds_draw,
+                odds_away=excluded.odds_away,
+                raw_json=excluded.raw_json
+            """
+            ,
+            (int(fixture_id), int(league) if league is not None else None, fetched_at, expires_at, oh, odr, oa, raw_json),
+        )
+        conn.commit()
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+
+
 def init_history_db() -> None:
     """
     Backwards-compatible init hook.
@@ -696,6 +856,7 @@ def init_history_db() -> None:
     We now use ensure_predictions_db() which supports both SQLite and Postgres.
     """
     ensure_predictions_db()
+    ensure_odds_cache_db()
     logger.info("[DB] predictions_history ready (postgres=%s)", USE_POSTGRES)
 
 
@@ -2293,22 +2454,62 @@ def extract_match_winner_odds(data: Dict[str, Any]) -> Optional[Dict[str, float]
     return None
 
 
-def fetch_1x2_odds_for_fixture(fixture_id: int) -> Optional[Dict[str, float]]:
+def fetch_1x2_odds_for_fixture(fixture_id: int, league: Optional[int] = None) -> Optional[Dict[str, float]]:
     """
     Call API-FOOTBALL /odds for a single fixture and return 1X2 odds.
+
+    Now includes a small DB-backed cache (works on SQLite and Postgres):
+    - If odds are cached and not expired -> returns instantly (no API call)
+    - If odds are missing -> caches that miss for a short time (negative cache)
     """
+    # 1) Cache hit?
     try:
-        data = api_get("/odds", {"fixture": fixture_id})
+        cached = odds_cache_get_1x2(int(fixture_id))
+        if cached:
+            return cached
+    except Exception as e:
+        logger.debug("[ODDS] cache get failed fixture=%s: %s", fixture_id, e)
+
+    # 2) Call the API
+    try:
+        data = api_get("/odds", {"fixture": int(fixture_id)})
     except HTTPException as e:
         logger.warning("[ODDS] HTTP error fixture=%s: %s", fixture_id, e.detail)
+        # short negative cache, so we don't spam /odds if the API is failing
+        try:
+            odds_cache_set_1x2(int(fixture_id), league, None, None, ODDS_CACHE_NEGATIVE_TTL_SECONDS)
+        except Exception:
+            pass
         return None
     except Exception as e:
         logger.warning("[ODDS] error fixture=%s: %s", fixture_id, e)
+        try:
+            odds_cache_set_1x2(int(fixture_id), league, None, None, ODDS_CACHE_NEGATIVE_TTL_SECONDS)
+        except Exception:
+            pass
         return None
 
     odds = extract_match_winner_odds(data)
+    raw_json = None
+    try:
+        raw_json = json.dumps(data, ensure_ascii=False)
+    except Exception:
+        raw_json = None
+
     if not odds:
         logger.info("[ODDS] no 1X2 odds for fixture=%s", fixture_id)
+        try:
+            odds_cache_set_1x2(int(fixture_id), league, None, raw_json, ODDS_CACHE_NEGATIVE_TTL_SECONDS)
+        except Exception:
+            pass
+        return None
+
+    # 3) Cache store
+    try:
+        odds_cache_set_1x2(int(fixture_id), league, odds, raw_json, ODDS_CACHE_TTL_SECONDS)
+    except Exception as e:
+        logger.debug("[ODDS] cache set failed fixture=%s: %s", fixture_id, e)
+
     return odds
 
 import math
@@ -3328,7 +3529,7 @@ def api_value_upcoming(
 
 
         # This calls api_get("/odds", {"fixture": fixture_id}) under the hood
-        odds = fetch_1x2_odds_for_fixture(int(fixture_id))
+        odds = fetch_1x2_odds_for_fixture(int(fixture_id), league=league)
         odds_calls += 1
 
         if not odds:
