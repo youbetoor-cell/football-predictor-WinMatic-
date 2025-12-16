@@ -201,7 +201,7 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 # DATABASE BACKEND (SQLite locally, Postgres on Render when DATABASE_URL is set)
 # ============================================================
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-USE_POSTGRES = DATABASE_URL.lower().startswith("postgres")
+USE_POSTGRES = DATABASE_URL.lower().startswith(("postgres://", "postgresql://"))
 
 try:
     import psycopg2  # type: ignore
