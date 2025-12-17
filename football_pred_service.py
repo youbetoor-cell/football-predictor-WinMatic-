@@ -3086,9 +3086,59 @@ def team_logo(team_id: int):
         return FileResponse(default_path, media_type="image/png", headers=headers)
     return Response(content=base64.b64decode(_DEFAULT_PNG_B64), media_type="image/png", headers=headers)
 
+from fastapi import Query
+import time
+import os
+
 @app.get("/health")
-def health():
-    return {"ok": True, "ts": datetime.utcnow().isoformat()}
+def health(
+    deep: int = Query(0, ge=0, le=1),
+    league: int | None = Query(None),
+):
+    info = {
+        "ok": True,
+        "ts": int(time.time()),
+        "environment": os.getenv("ENVIRONMENT", "").strip() or "dev",
+        "api_football_key_set": bool(os.getenv("API_FOOTBALL_KEY", "").strip()),
+        "database_url_set": bool(os.getenv("DATABASE_URL", "").strip()),
+    }
+
+    if deep == 1:
+        # DB connectivity
+        try:
+            conn = db_connect()
+            cur = conn.cursor()
+            cur.execute("SELECT 1;")
+            cur.fetchone()
+            info["db_ok"] = True
+        except Exception as e:
+            info["db_ok"] = False
+            info["ok"] = False
+            info["db_error"] = str(e)[:200]
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # Optional model files check
+        if league is not None:
+            try:
+                model_path = os.path.join(ART, f"model_{int(league)}.joblib")
+                meta_path = os.path.join(ART, f"meta_{int(league)}.json")
+                cal_path = os.path.join(ART, f"calibration_{int(league)}.json")
+                info["league_check"] = int(league)
+                info["model_exists"] = os.path.exists(model_path)
+                info["meta_exists"] = os.path.exists(meta_path)
+                info["calibration_exists"] = os.path.exists(cal_path)
+                if not (info["model_exists"] and info["meta_exists"]):
+                    info["ok"] = False
+            except Exception as e:
+                info["ok"] = False
+                info["model_check_error"] = str(e)[:200]
+
+    return info
+
 
 # ============================================================
 # Pydantic
