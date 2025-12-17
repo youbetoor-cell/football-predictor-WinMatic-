@@ -71,79 +71,33 @@ def _norm_result_label(value):
 
 def ensure_predictions_db() -> None:
     """
-    Ensure the predictions_history table exists with the columns used by the API.
-
-    - If DATABASE_URL is set (starts with 'postgres'), we use Postgres.
-    - Otherwise we use local SQLite at DB_PATH.
-
+    Make sure the predictions_history table exists and has all columns
+    used by the API (fixture_id, league, teams, probs, result, etc.).
     Safe to call many times.
     """
     try:
-        if USE_POSTGRES:
-            if psycopg2 is None:
-                raise RuntimeError("DATABASE_URL is set but psycopg2 is not installed. Add psycopg2-binary to requirements.txt")
-
-            conn = db_connect()
-            cur = db_cursor(conn)
-
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS predictions_history (
-                    id BIGSERIAL PRIMARY KEY,
-                    fixture_id BIGINT NOT NULL,
-                    league INTEGER NOT NULL,
-                    home_team TEXT,
-                    away_team TEXT,
-                    kickoff_utc TEXT NOT NULL,
-                    model_home_p DOUBLE PRECISION,
-                    model_draw_p DOUBLE PRECISION,
-                    model_away_p DOUBLE PRECISION,
-                    predicted_side TEXT,
-                    edge_value DOUBLE PRECISION,
-                    actual_result TEXT,
-                    payload TEXT NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text),
-                    UNIQUE(league, fixture_id, kickoff_utc)
-                );
-                """
-            )
-            conn.commit()
-            cur.close()
-            conn.close()
-            return
-
-        # SQLite path
+        # Make sure the folder for the DB exists
         db_dir = os.path.dirname(DB_PATH) or "."
         os.makedirs(db_dir, exist_ok=True)
 
-        conn = db_connect()
-        cur = db_cursor(conn)
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
 
+        # 1) Create the table if it doesn't exist at all.
+        #    We start with an id, then we'll add/ensure all other columns.
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS predictions_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fixture_id INTEGER NOT NULL,
-                league INTEGER NOT NULL,
-                home_team TEXT,
-                away_team TEXT,
-                kickoff_utc TEXT NOT NULL,
-                model_home_p REAL,
-                model_draw_p REAL,
-                model_away_p REAL,
-                predicted_side TEXT,
-                edge_value REAL,
-                actual_result TEXT,
-                payload TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                UNIQUE(league, fixture_id, kickoff_utc)
+                id INTEGER PRIMARY KEY AUTOINCREMENT
             );
             """
         )
 
+        # 2) See what columns we currently have
         cur.execute("PRAGMA table_info(predictions_history);")
         existing_cols = {row[1] for row in cur.fetchall()}
 
+        # 3) Columns we want to be sure exist
         expected_cols = {
             "fixture_id": "INTEGER",
             "league": "INTEGER",
@@ -156,31 +110,55 @@ def ensure_predictions_db() -> None:
             "predicted_side": "TEXT",
             "edge_value": "REAL",
             "actual_result": "TEXT",
+            # optional JSON payload field for backwards compatibility
             "payload": "TEXT",
-            "created_at": "TEXT",
         }
 
-        for col, ctype in expected_cols.items():
-            if col not in existing_cols:
-                try:
-                    cur.execute(f"ALTER TABLE predictions_history ADD COLUMN {col} {ctype};")
-                except Exception:
-                    pass
+        # 4) Add any missing columns
+        for name, coltype in expected_cols.items():
+            if name not in existing_cols:
+                cur.execute(
+                    f"ALTER TABLE predictions_history "
+                    f"ADD COLUMN {name} {coltype}"
+                )
 
+        conn.commit()
+    except Exception as e:
+        # Don't crash the app, just log a warning
         try:
-            cur.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_unique ON predictions_history(league, fixture_id, kickoff_utc);"
-            )
+            logger.warning("[DB] ensure_predictions_db failed: %s", e)
+        except Exception:
+            # logger might not exist yet at import time in some setups
+            print("[DB] ensure_predictions_db failed:", e)
+    finally:
+        try:
+            conn.close()
         except Exception:
             pass
 
-        conn.commit()
-        conn.close()
-
-    except Exception as e:
-        logger.warning("[DB] ensure_predictions_db failed: %s", e)
 
 
+# ============================================================
+# CONFIG
+# ============================================================
+
+load_dotenv()
+
+API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
+
+if not API_FOOTBALL_KEY:
+    raise RuntimeError("API_FOOTBALL_KEY environment variable is not set")
+
+API_BASE = "https://v3.football.api-sports.io"
+
+ART = "artifacts"
+os.makedirs(ART, exist_ok=True)
+
+SNAPSHOT_DIR = os.path.join(ART, "snapshots")
+os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+
+API_CACHE_FILE = os.path.join(ART, "api_cache.json")
+API_DISK_CACHE_FILE = os.path.join(ART, "api_disk_cache.json")
 CACHE_ONLY_MODE = os.getenv("WINMATIC_CACHE_ONLY", "0") == "1"
 API_QUOTA_EXHAUSTED = False  # becomes True after daily limit is hit
 
@@ -195,66 +173,6 @@ DEFAULT_LEAGUE = 39  # Premier League
 # ============================================================
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
-
-
-# ============================================================
-# DATABASE BACKEND (SQLite locally, Postgres on Render when DATABASE_URL is set)
-# ============================================================
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-USE_POSTGRES = DATABASE_URL.lower().startswith(("postgres://", "postgresql://"))
-
-try:
-    import psycopg2  # type: ignore
-except Exception:
-    psycopg2 = None  # type: ignore
-
-
-def _pg_url_with_ssl(url: str) -> str:
-    """
-    Render Postgres URLs sometimes require SSL. If sslmode isn't specified, add it.
-    Safe for internal URLs too.
-    """
-    if not url:
-        return url
-    if "sslmode=" in url:
-        return url
-    return url + ("&" if "?" in url else "?") + "sslmode=require"
-
-
-class _CursorWrapper:
-    def __init__(self, cur, is_postgres: bool):
-        self._cur = cur
-        self._is_pg = is_postgres
-
-    def execute(self, query: str, params=None):
-        if self._is_pg:
-            q = query.replace("?", "%s").replace("datetime('now')", "CURRENT_TIMESTAMP")
-            return self._cur.execute(q, params)
-        return self._cur.execute(query, params or ())
-
-    def executemany(self, query: str, seq_of_params):
-        if self._is_pg:
-            q = query.replace("?", "%s").replace("datetime('now')", "CURRENT_TIMESTAMP")
-            return self._cur.executemany(q, seq_of_params)
-        return self._cur.executemany(query, seq_of_params)
-
-    def __getattr__(self, name):
-        return getattr(self._cur, name)
-
-
-def db_connect():
-    """
-    Return a DB connection to either SQLite (default) or Postgres (if DATABASE_URL is set).
-    """
-    if USE_POSTGRES:
-        if psycopg2 is None:
-            raise RuntimeError("DATABASE_URL is set but psycopg2 is not installed. Add psycopg2-binary to requirements.txt")
-        return psycopg2.connect(_pg_url_with_ssl(DATABASE_URL))
-    return sqlite3.connect(DB_PATH)
-
-
-def db_cursor(conn):
-    return _CursorWrapper(conn.cursor(), USE_POSTGRES)
 
 def require_admin(
     x_admin_token: str | None = Header(None, alias="X-Admin-Token")
@@ -436,37 +354,30 @@ def is_cache_only_mode() -> bool:
 
 
 def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    """Call API-FOOTBALL with cache + quota protection + small retry.
-
-    Returns the API-FOOTBALL JSON dict (usually contains key 'response').
-
-    Behavior:
-      - If cache-only mode is enabled, we NEVER call the live API and only serve cached responses.
-      - If the API key is missing OR quota is exhausted, we try cache first, then raise.
-      - Retries a few transient statuses (429/502/503/504) with exponential backoff.
-    """
+    """Call API-FOOTBALL with cache + daily-quota protection."""
     global API_QUOTA_EXHAUSTED
 
-    def try_cache(reason: str) -> Optional[Dict[str, Any]]:
-        cached = cached_api_response(path, params)
+    # 🧩 Developer mode: skip all live API calls
+    if is_cache_only_mode():
+        cached = try_cache(path, params, reason="cache-only-mode")
         if cached is not None:
-            logger.info("[API CACHE HIT] served=%s reason=%s", path, reason)
-        return cached
-
-    # ✅ Cache-only mode (either flag)
-    if is_cache_only_mode() or CACHE_ONLY_MODE:
-        cached = try_cache("cache-only-mode")
-        if cached is not None:
+            logger.info("[API CACHE MODE] served=%s reason=cache-only-mode", path)
             return cached
         raise HTTPException(
             status_code=503,
-            detail="Cache-only mode enabled but no cached data for this request."
+            detail="Cache-only mode active: no live API requests allowed."
         )
+
+    def try_cache(reason: str) -> Optional[Dict[str, Any]]:
+        cached = cached_api_response(path, params)
+        if cached:
+            logger.info("[API CACHE MODE] served=%s reason=%s", path, reason)
+        return cached
 
     # --- Handle missing key -------------------------------------------------
     if not API_FOOTBALL_KEY:
         cached = try_cache("missing-key")
-        if cached is not None:
+        if cached:
             return cached
         raise HTTPException(
             status_code=500,
@@ -476,96 +387,55 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
     # --- Stop if daily quota already hit ------------------------------------
     if API_QUOTA_EXHAUSTED:
         cached = try_cache("quota-exhausted")
-        if cached is not None:
+        if cached:
             return cached
         raise HTTPException(
             status_code=429,
             detail="API-FOOTBALL daily request limit already reached (quota exhausted)."
         )
 
+    # --- Cache-only mode toggle ---------------------------------------------
+    if CACHE_ONLY_MODE:
+        cached = try_cache("cache-only-mode")
+        if cached:
+            return cached
+        raise HTTPException(
+            status_code=503,
+            detail="Cache-only mode enabled but no cached data for request."
+        )
+
     headers = {"x-apisports-key": API_FOOTBALL_KEY}
     url = f"{API_BASE}{path}"
     logger.info("[API CALL] %s %s", url, params)
 
-    # Retry knobs (safe defaults)
-    timeout_s = float(os.getenv("API_TIMEOUT_SECONDS", "15"))
-    retries = int(os.getenv("API_MAX_RETRIES", "2"))
-    backoff_s = float(os.getenv("API_RETRY_BACKOFF_SECONDS", "1.0"))
-
-    last_err: Exception | None = None
-    resp = None
-    data: Dict[str, Any] | None = None
-
-    for attempt in range(retries + 1):
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=timeout_s)
-
-            # Retry common transient gateway / rate-limit errors
-            if resp.status_code in (429, 502, 503, 504) and attempt < retries:
-                sleep_s = backoff_s * (2 ** attempt)
-                logger.warning(
-                    "[API RETRY] status=%s attempt=%s/%s sleep=%.2fs %s",
-                    resp.status_code, attempt + 1, retries, sleep_s, url
-                )
-                time.sleep(sleep_s)
-                continue
-
-            # Parse JSON
-            try:
-                data = resp.json()
-            except Exception as e:
-                last_err = e
-                logger.warning("[API ERROR] JSON parse failed: %s", e)
-                cached = try_cache("json-parse-error")
-                if cached is not None:
-                    return cached
-                raise HTTPException(status_code=502, detail=f"API JSON parse failed: {e}")
-
-            break  # got a response and parsed JSON
-
-        except (requests.Timeout, requests.ConnectionError) as e:
-            last_err = e
-            if attempt < retries:
-                sleep_s = backoff_s * (2 ** attempt)
-                logger.warning(
-                    "[API RETRY] network attempt=%s/%s sleep=%.2fs err=%s",
-                    attempt + 1, retries, sleep_s, e
-                )
-                time.sleep(sleep_s)
-                continue
-
-            cached = try_cache("network-error")
-            if cached is not None:
-                return cached
-            raise HTTPException(status_code=503, detail=f"API request failed: {e}")
-
-        except Exception as e:
-            last_err = e
-            cached = try_cache("network-error")
-            if cached is not None:
-                return cached
-            raise HTTPException(status_code=503, detail=f"API request failed: {e}")
-
-    if resp is None or data is None:
+    # --- Perform the request ------------------------------------------------
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=15)
+        data = resp.json()
+    except Exception as e:
+        logger.warning("[API ERROR] %s", e)
         cached = try_cache("network-error")
-        if cached is not None:
+        if cached:
             return cached
-        raise HTTPException(status_code=503, detail=f"API request failed: {last_err}")
+        raise HTTPException(status_code=502, detail=str(e))
 
     # --- Non-200 status codes -----------------------------------------------
     if resp.status_code != 200:
         cached = try_cache(f"http-{resp.status_code}")
-        if cached is not None:
+        if cached:
             return cached
-        raise HTTPException(status_code=resp.status_code, detail=f"API-FOOTBALL error: {data}")
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=f"API-FOOTBALL error: {data}"
+        )
 
     # --- API-level errors (daily limit etc.) --------------------------------
-    if isinstance(data, dict) and data.get("errors"):
-        logger.error("[API ERRORS] %s", data.get("errors"))
+    if "errors" in data and data["errors"]:
+        logger.error("[API ERRORS] %s", data["errors"])
 
         # Detect “request limit” messages
         try:
-            errs = data.get("errors")
+            errs = data["errors"]
             msg = ""
             if isinstance(errs, dict) and "requests" in errs:
                 msg = str(errs["requests"])
@@ -575,18 +445,47 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
                 msg = str(errs)
 
             lower_msg = msg.lower()
-            if "request limit" in lower_msg or ("limit" in lower_msg and "request" in lower_msg):
+            if "request limit" in lower_msg or (
+                "limit" in lower_msg and "request" in lower_msg
+            ):
                 API_QUOTA_EXHAUSTED = True
-                logger.warning("[API QUOTA] Daily request limit reached. API_QUOTA_EXHAUSTED=True")
+                logger.warning(
+                    "[API QUOTA] Daily request limit reached. "
+                    "API_QUOTA_EXHAUSTED set to True."
+                )
         except Exception:
             pass
 
         cached = try_cache("api-error")
-        if cached is not None:
+        if cached:
             return cached
-        raise HTTPException(status_code=502, detail=f"API-FOOTBALL error: {data.get('errors')}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"API-FOOTBALL error: {data['errors']}"
+        )
+
+    # --- Happy path ---------------------------------------------------------
+    return data
+
+
+    if resp.status_code != 200:
+            cached = try_cache(f"http-{resp.status_code}")
+            if cached:
+                return cached
+            raise HTTPException(status_code=resp.status_code, detail=f"API-FOOTBALL error: {data}")
+
+    if "errors" in data and data["errors"]:
+            logger.error("[API ERRORS] %s", data["errors"])
+            cached = try_cache("api-error")
+            if cached:
+                return cached
+            raise HTTPException(status_code=502, detail=f"API-FOOTBALL error: {data['errors']}")
 
     return data
+
+    raise HTTPException(status_code=502, detail="API-FOOTBALL retries exhausted")
+
+    
 
 def current_season() -> int:
     now = datetime.now(timezone.utc)
@@ -597,21 +496,27 @@ def current_season() -> int:
 # ============================================================
 
 def init_history_db() -> None:
-    """
-    Backwards-compatible init hook.
+    os.makedirs(ART, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS predictions_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            league INTEGER NOT NULL,
+            fixture_id INTEGER NOT NULL,
+            kickoff_utc TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(league, fixture_id, kickoff_utc)
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+    logger.info("[DB] history.db ready")
 
-    We now use ensure_predictions_db() which supports both SQLite and Postgres.
-    """
-    ensure_predictions_db()
-    logger.info("[DB] predictions_history ready (postgres=%s)", USE_POSTGRES)
-
-
-# Initialize DB once at import-time. If the DB is temporarily unavailable, do not crash the API.
-try:
-    init_history_db()
-except Exception as e:
-    logger.warning("[DB] init failed (service will still start): %s", e)
-
+init_history_db()
 
 def record_predictions_history(league: int, fixtures: list[dict]) -> None:
     """
@@ -625,8 +530,8 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
 
     conn = None
     try:
-        conn = db_connect()
-        cur = db_cursor(conn)
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
 
         # Ensure unique key exists (needed for ON CONFLICT)
         try:
@@ -2504,55 +2409,28 @@ app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
 @app.get("/debug/db")
 def debug_db():
-    """
-    Quick DB sanity check (safe to expose; does not reveal secrets).
-    """
+    import os
+    import sqlite3
     from pathlib import Path
-    info: dict[str, Any] = {
+
+    p = Path(DB_PATH)
+    info = {
         "cwd": os.getcwd(),
-        "use_postgres": bool(USE_POSTGRES),
-        "database_url_set": bool(DATABASE_URL),
+        "db_path": DB_PATH,
+        "db_abs": str(p.resolve()),
+        "exists": p.exists(),
     }
 
-    if not USE_POSTGRES:
-        p = Path(DB_PATH)
-        info.update(
-            {
-                "db_kind": "sqlite",
-                "db_path": DB_PATH,
-                "db_abs": str(p.resolve()),
-                "exists": p.exists(),
-            }
-        )
-        try:
-            conn = db_connect()
-            cur = conn.cursor()
-            cur.execute("PRAGMA table_info(predictions_history);")
-            info["predictions_history_cols"] = [row[1] for row in cur.fetchall()]
-            conn.close()
-        except Exception as e:
-            info["error"] = f"{e}"
-        return info
-
-    # Postgres
-    info["db_kind"] = "postgres"
     try:
-        conn = db_connect()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'predictions_history'
-            ORDER BY ordinal_position
-            """
-        )
-        info["predictions_history_cols"] = [r[0] for r in cur.fetchall()]
-        cur.execute("SELECT COUNT(*) FROM predictions_history")
-        info["predictions_history_rows"] = int(cur.fetchone()[0])
-        conn.close()
+        con = sqlite3.connect(DB_PATH)
+        try:
+            cols = [r[1] for r in con.execute("PRAGMA table_info(predictions_history)").fetchall()]
+            info["predictions_history_cols"] = cols
+        finally:
+            con.close()
     except Exception as e:
-        info["error"] = f"{e}"
+        info["error"] = repr(e)
+
     return info
 
 
@@ -2643,8 +2521,57 @@ def team_logo(team_id: int):
     return Response(content=base64.b64decode(_DEFAULT_PNG_B64), media_type="image/png", headers=headers)
 
 @app.get("/health")
-def health():
-    return {"ok": True, "ts": datetime.utcnow().isoformat()}
+def health(
+    deep: int = Query(0, ge=0, le=1),
+    league: int | None = Query(None),
+):
+    """
+    Fast by default. If deep=1, also checks DB connectivity and (optionally) model files.
+    Never returns secrets.
+    """
+    info = {
+        "ok": True,
+        "ts": int(time.time()),
+        "environment": os.getenv("ENVIRONMENT", "").strip() or "dev",
+        "api_football_key_set": bool(os.getenv("API_FOOTBALL_KEY", "").strip()),
+        "database_url_set": bool(os.getenv("DATABASE_URL", "").strip()),
+    }
+
+    if int(deep) == 1:
+        # DB connectivity check
+        try:
+            conn = db_connect()
+            cur = conn.cursor()
+            cur.execute("SELECT 1;")
+            cur.fetchone()
+            info["db_ok"] = True
+        except Exception as e:
+            info["db_ok"] = False
+            info["ok"] = False
+            info["db_error"] = str(e)[:200]
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # Optional model/calibration file checks
+        if league is not None:
+            try:
+                model_path = os.path.join(ART, f"model_{int(league)}.joblib")
+                meta_path = os.path.join(ART, f"meta_{int(league)}.json")
+                cal_path = os.path.join(ART, f"calibration_{int(league)}.json")
+                info["league_check"] = int(league)
+                info["model_exists"] = os.path.exists(model_path)
+                info["meta_exists"] = os.path.exists(meta_path)
+                info["calibration_exists"] = os.path.exists(cal_path)
+                if not (info["model_exists"] and info["meta_exists"]):
+                    info["ok"] = False
+            except Exception as e:
+                info["ok"] = False
+                info["model_check_error"] = str(e)[:200]
+
+    return info
 
 # ============================================================
 # Pydantic
@@ -2809,11 +2736,11 @@ def api_predict_upcoming(
     league: int = Query(DEFAULT_LEAGUE),
     days_ahead: int = Query(7, ge=1, le=14),
 ):
+    # Load model (or snapshot if model not available)
     try:
         model, meta = load_model_and_meta(league)
-    except HTTPException:
-        # Fall back to snapshot if model not available
-        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead)
+    except Exception as e:
+        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead, label="upcoming")
         if snapshot:
             return {
                 "ok": True,
@@ -2821,15 +2748,33 @@ def api_predict_upcoming(
                 "fixtures": snapshot,
                 "source": "snapshot",
                 "snapshot_file": os.path.basename(snap_path) if snap_path else None,
+                "detail": f"Model unavailable: {str(e)[:200]}",
             }
+        # keep original behavior for missing model: surface error
         raise
 
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days_ahead)
     season = current_season()
 
-    data = api_get("/fixtures", {"league": league, "season": season, "next": 50})
-    fixtures = data.get("response", []) or []
+    # Fetch fixtures (fallback to snapshot on API errors)
+    try:
+        data = api_get("/fixtures", {"league": league, "season": season, "next": 50})
+        fixtures = data.get("response", []) or []
+    except Exception as e:
+        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead, label="upcoming")
+        if snapshot:
+            return {
+                "ok": True,
+                "count": len(snapshot),
+                "fixtures": snapshot,
+                "source": "snapshot",
+                "snapshot_file": os.path.basename(snap_path) if snap_path else None,
+                "detail": f"Live API failed: {str(e)[:200]}",
+            }
+        raise
+
+    # Fallback to cached fixtures if API returned none
     if not fixtures:
         cached_fixtures = cached_upcoming_fixtures(league, season)
         if cached_fixtures:
@@ -2839,18 +2784,23 @@ def api_predict_upcoming(
 
     results: List[Dict[str, Any]] = []
     if fixtures:
-        results = build_predictions_for_fixtures(
-            fixtures=fixtures,
-            model=model,
-            meta=meta,
-            league=league,
-            season=season,
-            window_start=now,
-            window_end=end,
-        )
+        try:
+            results = build_predictions_for_fixtures(
+                fixtures=fixtures,
+                model=model,
+                meta=meta,
+                league=league,
+                season=season,
+                window_start=now,
+                window_end=end,
+            )
+        except Exception as e:
+            logger.exception("[PREDICT UPCOMING] build_predictions failed league=%s err=%s", league, e)
+            results = []
 
+    # Snapshot fallback if nothing to return
     if not results:
-        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead)
+        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead, label="upcoming")
         if snapshot:
             return {
                 "ok": True,
@@ -2866,12 +2816,31 @@ def api_predict_upcoming(
             "detail": "No fixtures available. Train the model or provide cached data.",
         }
 
-    # 👉 Add reasoning to each result, keeping your existing structure
+    # Add reasoning per fixture (never fail the whole request)
     for p in results:
-        p["reasoning"] = build_reasoning_for_prediction(p, meta)
+        try:
+            p["reasoning"] = build_reasoning_for_prediction(p, meta)
+        except Exception as e:
+            p["reasoning"] = None
+            p["reasoning_error"] = str(e)[:200]
 
-    # Save to history (now including reasoning)
-    record_predictions_history(league, results)
+    # Save snapshot (best effort)
+    try:
+        save_snapshot_predictions(
+            league=league,
+            days_ahead=days_ahead,
+            fixtures=results,
+            label="upcoming",
+            extra={"source": "model"},
+        )
+    except Exception:
+        pass
+
+    # Save to history (best effort - don't 500)
+    try:
+        record_predictions_history(league, results)
+    except Exception as e:
+        logger.warning("[DB] Failed to record history: %s", e)
 
     return {
         "ok": True,
@@ -3450,8 +3419,8 @@ def api_results_sync(
     now = datetime.now(timezone.utc)
     since = (now - timedelta(days=lookback_days)).isoformat()
 
-    conn = db_connect()
-    cur = db_cursor(conn)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
     # candidates: finished by time, missing actual_result
     cur.execute(
@@ -3513,8 +3482,8 @@ def api_results_sync(
                 updated += 1
                 continue
 
-            conn = db_connect()
-            cur = db_cursor(conn)
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
             cur.execute(
                 """
                 UPDATE predictions_history
@@ -3781,21 +3750,10 @@ def api_backtest_1x2(
         if write_db and not dry_run:
             try:
                 ensure_predictions_db()
-                conn = db_connect()
-                cur = db_cursor(conn)
+                conn = sqlite3.connect(DB_PATH)
+                cur = conn.cursor()
 
-                if USE_POSTGRES:
-                    cur.execute(
-                        """
-                        SELECT column_name
-                        FROM information_schema.columns
-                        WHERE table_schema='public' AND table_name='predictions_history'
-                        ORDER BY ordinal_position
-                        """
-                    )
-                    cols = [r[0] for r in cur.fetchall()]
-                else:
-                    cols = [r[1] for r in cur.execute("PRAGMA table_info(predictions_history)").fetchall()]
+                cols = [r[1] for r in cur.execute("PRAGMA table_info(predictions_history)").fetchall()]
                 # build dynamic upsert only with columns that exist
                 insert_cols = []
                 insert_vals = []
@@ -3892,8 +3850,8 @@ def api_progress_metrics(
 
     since_ts = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
 
-    conn = db_connect()
-    cur = db_cursor(conn)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
     # include id + fixture_id so we can pick the latest row per fixture
     cur.execute(
@@ -4016,8 +3974,8 @@ def api_progress_roi(
     since_ts = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
 
     try:
-        conn = db_connect()
-        cur = db_cursor(conn)
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
         # We ALSO select the primary key id so we can pick the latest row per fixture
         cur.execute(
             """
@@ -4225,8 +4183,8 @@ def api_history(
     try:
         ensure_predictions_db()
 
-        conn = db_connect()
-        cur = db_cursor(conn)
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT
@@ -4318,8 +4276,8 @@ def api_pnl_history(
     ensure_predictions_db()
 
     try:
-        conn = db_connect()
-        cur = db_cursor(conn)
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT
@@ -4437,8 +4395,8 @@ def api_roi_by_league(
     """
     ensure_predictions_db()
 
-    conn = db_connect()
-    cur = db_cursor(conn)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
     edge_filter = ""
     params = []
@@ -4493,8 +4451,8 @@ def api_pnl_debug(
     - Only rows with actual_result IS NOT NULL
     """
     ensure_predictions_db()
-    conn = db_connect()
-    cur = db_cursor(conn)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
     cur.execute(
         """
         SELECT
@@ -4564,8 +4522,8 @@ def api_predictions_sanity(
     """
     ensure_predictions_db()
 
-    conn = db_connect()
-    cur = db_cursor(conn)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
     cur.execute(
         """
         SELECT
@@ -4652,8 +4610,8 @@ def debug_fixture(
     ensure_predictions_db()
 
     try:
-        conn = db_connect()
-        cur = db_cursor(conn)
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT
@@ -4854,8 +4812,8 @@ def debug_pending_results(
     """
     ensure_predictions_db()
 
-    conn = db_connect()
-    cur = db_cursor(conn)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
     cur.execute(
         """
         SELECT
@@ -4915,8 +4873,8 @@ def api_recent_results(
     ensure_predictions_db()
 
     try:
-        conn = db_connect()
-        cur = db_cursor(conn)
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
         # Get all finished predictions for this league, newest first
         cur.execute(
             """
@@ -5020,8 +4978,8 @@ def api_update_results(
     """
     ensure_predictions_db()
 
-    conn = db_connect()
-    cur = db_cursor(conn)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
     cur.execute(
         """
         SELECT DISTINCT fixture_id
@@ -5040,8 +4998,8 @@ def api_update_results(
 
     updated = 0
 
-    conn = db_connect()
-    cur = db_cursor(conn)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
     for fx_id in pending_ids:
         if updated >= max_updates:
