@@ -2520,15 +2520,16 @@ def team_logo(team_id: int):
         return FileResponse(default_path, media_type="image/png", headers=headers)
     return Response(content=base64.b64decode(_DEFAULT_PNG_B64), media_type="image/png", headers=headers)
 
+from fastapi import Query
+import time
+import os
+import sqlite3
+
 @app.get("/health")
 def health(
     deep: int = Query(0, ge=0, le=1),
     league: int | None = Query(None),
 ):
-    """
-    Fast by default. If deep=1, also checks DB connectivity and (optionally) model files.
-    Never returns secrets.
-    """
     info = {
         "ok": True,
         "ts": int(time.time()),
@@ -2538,33 +2539,46 @@ def health(
     }
 
     if int(deep) == 1:
-        # DB connectivity check
+        # DB connectivity (direct, no helper functions)
         try:
-            conn = db_connect()
-            cur = conn.cursor()
-            cur.execute("SELECT 1;")
-            cur.fetchone()
+            if USE_POSTGRES:
+                if psycopg2 is None:
+                    raise RuntimeError("USE_POSTGRES is true but psycopg2 is not installed")
+                conn = psycopg2.connect(_pg_url_with_ssl(DATABASE_URL))
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT 1;")
+                    cur.fetchone()
+                finally:
+                    conn.close()
+            else:
+                conn = sqlite3.connect(DB_PATH)
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT 1;")
+                    cur.fetchone()
+                finally:
+                    conn.close()
+
             info["db_ok"] = True
         except Exception as e:
             info["db_ok"] = False
             info["ok"] = False
             info["db_error"] = str(e)[:200]
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
 
         # Optional model/calibration file checks
         if league is not None:
             try:
-                model_path = os.path.join(ART, f"model_{int(league)}.joblib")
-                meta_path = os.path.join(ART, f"meta_{int(league)}.json")
-                cal_path = os.path.join(ART, f"calibration_{int(league)}.json")
-                info["league_check"] = int(league)
+                league_i = int(league)
+                model_path = os.path.join(ART, f"model_{league_i}.joblib")
+                meta_path = os.path.join(ART, f"meta_{league_i}.json")
+                cal_path = os.path.join(ART, f"calibration_{league_i}.json")
+
+                info["league_check"] = league_i
                 info["model_exists"] = os.path.exists(model_path)
                 info["meta_exists"] = os.path.exists(meta_path)
                 info["calibration_exists"] = os.path.exists(cal_path)
+
                 if not (info["model_exists"] and info["meta_exists"]):
                     info["ok"] = False
             except Exception as e:
@@ -2572,6 +2586,7 @@ def health(
                 info["model_check_error"] = str(e)[:200]
 
     return info
+
 
 # ============================================================
 # Pydantic
