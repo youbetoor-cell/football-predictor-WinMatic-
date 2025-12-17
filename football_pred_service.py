@@ -446,6 +446,14 @@ os.makedirs(ART, exist_ok=True)
 SNAPSHOT_DIR = os.path.join(ART, "snapshots")
 os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
+# --- Reliability knobs (Render free tier + API stability) ---
+API_TIMEOUT_SECONDS = float(os.getenv("API_TIMEOUT_SECONDS", "12") or 12)
+API_MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "2") or 2)
+API_RETRY_BACKOFF_SECONDS = float(os.getenv("API_RETRY_BACKOFF_SECONDS", "0.8") or 0.8)
+
+SNAPSHOT_KEEP_PER_PREFIX = int(os.getenv("SNAPSHOT_KEEP_PER_PREFIX", "12") or 12)
+
+
 # API cache file (JSON)
 API_CACHE_FILE = os.path.join(ART, "api_cache.json")
 
@@ -566,6 +574,60 @@ def load_snapshot_predictions(league: int, days_ahead: int = 7, label: str = "up
             logger.warning("Failed to load snapshot %s: %s", path, exc)
     return [], None
 
+def save_snapshot_predictions(
+    league: int,
+    days_ahead: int,
+    fixtures: List[Dict[str, Any]],
+    label: str = "upcoming",
+    extra: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """
+    Writes a snapshot JSON file so we can serve something even if API is down.
+    Returns snapshot path or None if it fails.
+    """
+    if not fixtures:
+        return None
+
+    try:
+        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        fname = f"{label}_{int(league)}_{int(days_ahead)}_{ts}.json"
+        path = os.path.join(SNAPSHOT_DIR, fname)
+        tmp = path + ".tmp"
+
+        payload = {
+            "created_utc": datetime.utcnow().isoformat() + "Z",
+            "label": label,
+            "league": int(league),
+            "days_ahead": int(days_ahead),
+            "fixtures": fixtures,
+        }
+        if isinstance(extra, dict) and extra:
+            payload["extra"] = extra
+
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+
+        os.replace(tmp, path)
+
+        # cleanup: keep only last N snapshots per prefix
+        prefix = f"{label}_{int(league)}_{int(days_ahead)}_"
+        files = _list_snapshot_files(prefix)
+        if len(files) > SNAPSHOT_KEEP_PER_PREFIX:
+            # files are sorted newest-first by _list_snapshot_files
+            for old in files[SNAPSHOT_KEEP_PER_PREFIX:]:
+                try:
+                    os.remove(old)
+                except Exception:
+                    pass
+
+        logger.info("[SNAPSHOT SAVE] label=%s league=%s days=%s file=%s fixtures=%s",
+                    label, league, days_ahead, os.path.basename(path), len(fixtures))
+        return path
+    except Exception as exc:
+        logger.warning("[SNAPSHOT SAVE] failed: %s", exc)
+        return None
+
+
 def is_cache_only_mode() -> bool:
     """
     Returns True if we're running in developer cache-only mode.
@@ -634,8 +696,59 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
 
     # --- Perform the request ------------------------------------------------
     try:
-        resp = requests.get(url, headers=headers, params=params, timeout=15)
-        data = resp.json()
+            timeout = API_TIMEOUT_SECONDS
+    retries = API_MAX_RETRIES
+
+    last_exc = None
+    resp = None
+    data = None
+
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+
+            # retry common transient gateway / rate-limit errors
+            if resp.status_code in (429, 502, 503, 504) and attempt < retries:
+                sleep_s = API_RETRY_BACKOFF_SECONDS * (2 ** attempt)
+                logger.warning("[API RETRY] status=%s attempt=%s/%s sleep=%.2fs %s",
+                               resp.status_code, attempt + 1, retries, sleep_s, url)
+                time.sleep(sleep_s)
+                continue
+
+            data = resp.json()
+            break
+
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last_exc = e
+            if attempt < retries:
+                sleep_s = API_RETRY_BACKOFF_SECONDS * (2 ** attempt)
+                logger.warning("[API RETRY] network attempt=%s/%s sleep=%.2fs err=%s",
+                               attempt + 1, retries, sleep_s, e)
+                time.sleep(sleep_s)
+                continue
+
+            logger.warning("[API ERROR] %s", e)
+            cached = try_cache("network-error")
+            if cached:
+                return cached
+            raise HTTPException(status_code=503, detail=f"API request failed: {e}")
+
+        except Exception as e:
+            # unexpected JSON parse or other error
+            last_exc = e
+            logger.warning("[API ERROR] %s", e)
+            cached = try_cache("network-error")
+            if cached:
+                return cached
+            raise HTTPException(status_code=503, detail=f"API request failed: {e}")
+
+    # If we somehow never got a response
+    if resp is None or data is None:
+        cached = try_cache("network-error")
+        if cached:
+            return cached
+        raise HTTPException(status_code=503, detail=f"API request failed: {last_exc}")
+
     except Exception as e:
         logger.warning("[API ERROR] %s", e)
         cached = try_cache("network-error")
@@ -3355,7 +3468,22 @@ def api_predict_upcoming(
     end = now + timedelta(days=days_ahead)
     season = current_season()
 
-    data = api_get("/fixtures", {"league": league, "season": season, "next": 50})
+        try:
+        data = api_get("/fixtures", {"league": league, "season": season, "next": 50})
+    except HTTPException as e:
+        # If API is down/rate-limited, serve last good snapshot
+        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead, label="upcoming")
+        if snapshot:
+            return {
+                "ok": True,
+                "count": len(snapshot),
+                "fixtures": snapshot,
+                "source": "snapshot",
+                "snapshot_file": os.path.basename(snap_path) if snap_path else None,
+                "detail": f"Live API failed: {getattr(e, 'detail', 'error')}",
+            }
+        raise
+
     fixtures = data.get("response", []) or []
     if not fixtures:
         cached_fixtures = cached_upcoming_fixtures(league, season)
@@ -3386,6 +3514,9 @@ def api_predict_upcoming(
                 "source": "snapshot",
                 "snapshot_file": os.path.basename(snap_path) if snap_path else None,
             }
+        # Save snapshot (best effort, never crash)
+        save_snapshot_predictions(league=league, days_ahead=days_ahead, fixtures=results, label="upcoming", extra={"source": "model"})
+    
         return {
             "ok": False,
             "count": 0,
@@ -3425,12 +3556,32 @@ def api_value_bets(
     mode=profit    -> returns only 'sane' +EV bets (EV>0, p>=min_prob, p/market<=max_ratio)
     """
 
-    resp = api_value_upcoming(
-        league=league,
-        days_ahead=days_ahead,
-        min_edge=min_edge,
-        limit=limit,
-    )
+        try:
+        resp = api_value_upcoming(
+            league=league,
+            days_ahead=days_ahead,
+            min_edge=min_edge,
+            limit=limit,
+        )
+    except HTTPException as e:
+        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead, label="value")
+        if snapshot:
+            return {
+                "ok": True,
+                "count": len(snapshot),
+                "fixtures": snapshot,
+                "source": "snapshot",
+                "snapshot_file": os.path.basename(snap_path) if snap_path else None,
+                "detail": f"Live API failed: {getattr(e, 'detail', 'error')}",
+            }
+        raise
+
+    # Save snapshot for value-bets (best effort)
+    try:
+        save_snapshot_predictions(league=league, days_ahead=days_ahead, fixtures=resp.get("fixtures") or [], label="value",
+                                  extra={"mode": mode, "source": resp.get("source")})
+    except Exception:
+        pass
 
     # Safety: never return None
     if not isinstance(resp, dict):
