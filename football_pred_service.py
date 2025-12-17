@@ -2612,29 +2612,62 @@ def poisson_1x2_probs(lam_home: float, lam_away: float, max_goals: int = 10) -> 
 # ----------------------------
 _CAL_CACHE = {}  # {league: dict}
 
+def _default_calibration(league: int) -> dict:
+    # Neutral calibration (does nothing)
+    return {"league": int(league), "temperature": 1.0, "draw_mult": 1.0}
+
 def load_1x2_calibration(league: int) -> dict:
     """
-    Loads artifacts/calibration_<league>.json if present.
-    Returns {} if missing/unreadable.
+    Loads {ART}/calibration_<league>.json if present.
+    Always returns a valid calibration dict with keys:
+      - temperature
+      - draw_mult
+    If missing/broken: returns neutral defaults (never crashes).
     Cached in-process so we don't hit disk per request.
     """
     global _CAL_CACHE
+    league = int(league)
+
     if league in _CAL_CACHE:
-        return _CAL_CACHE[league] or {}
+        return _CAL_CACHE[league]
+
+    cal = _default_calibration(league)
 
     try:
-        path = Path("artifacts") / f"calibration_{int(league)}.json"
-        if not path.exists():
-            _CAL_CACHE[league] = {}
-            return {}
-        cal = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(cal, dict):
-            cal = {}
-        _CAL_CACHE[league] = cal
-        return cal
-    except Exception:
-        _CAL_CACHE[league] = {}
-        return {}
+        path = Path(ART) / f"calibration_{league}.json"
+
+        if path.exists():
+            raw = json.loads(path.read_text(encoding="utf-8"))
+
+            if isinstance(raw, dict):
+                # Support expected keys
+                if "temperature" in raw:
+                    cal["temperature"] = float(raw.get("temperature", 1.0) or 1.0)
+                if "draw_mult" in raw:
+                    cal["draw_mult"] = float(raw.get("draw_mult", 1.0) or 1.0)
+
+                # Optional aliases (if you ever used different naming)
+                if "T" in raw and "temperature" not in raw:
+                    cal["temperature"] = float(raw.get("T", 1.0) or 1.0)
+                if "dm" in raw and "draw_mult" not in raw:
+                    cal["draw_mult"] = float(raw.get("dm", 1.0) or 1.0)
+
+                # Safety clamps
+                if not (cal["temperature"] > 0):
+                    cal["temperature"] = 1.0
+                if not (cal["draw_mult"] > 0):
+                    cal["draw_mult"] = 1.0
+
+    except Exception as e:
+        # Never fail requests due to calibration parsing issues
+        try:
+            logger.warning("[CAL] failed to load calibration league=%s err=%s", league, str(e))
+        except Exception:
+            pass
+
+    _CAL_CACHE[league] = cal
+    return cal
+
 
 def apply_1x2_calibration(probs: dict, cal: dict) -> dict:
     """
