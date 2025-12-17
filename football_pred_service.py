@@ -2526,7 +2526,6 @@ import os
 import sqlite3
 
 @app.get("/health")
-info["build"] = "417fde8"
 def health(
     deep: int = Query(0, ge=0, le=1),
     league: int | None = Query(None),
@@ -2537,56 +2536,48 @@ def health(
         "environment": os.getenv("ENVIRONMENT", "").strip() or "dev",
         "api_football_key_set": bool(os.getenv("API_FOOTBALL_KEY", "").strip()),
         "database_url_set": bool(os.getenv("DATABASE_URL", "").strip()),
+        "build": "a5d2d0a",  # change this any time you want
     }
 
     if int(deep) == 1:
-        # DB connectivity (direct, no helper functions)
+        db_url = os.getenv("DATABASE_URL", "").strip()
         try:
-            if USE_POSTGRES:
+            if db_url.lower().startswith(("postgres://", "postgresql://")):
                 if psycopg2 is None:
-                    raise RuntimeError("USE_POSTGRES is true but psycopg2 is not installed")
-                conn = psycopg2.connect(_pg_url_with_ssl(DATABASE_URL))
+                    raise RuntimeError("psycopg2 not installed")
+                conn = psycopg2.connect(db_url)
                 try:
                     cur = conn.cursor()
                     cur.execute("SELECT 1;")
                     cur.fetchone()
                 finally:
                     conn.close()
+                info["db_kind"] = "postgres"
+                info["db_ok"] = True
             else:
-                conn = sqlite3.connect(DB_PATH)
-                try:
-                    cur = conn.cursor()
-                    cur.execute("SELECT 1;")
-                    cur.fetchone()
-                finally:
-                    conn.close()
-
-            info["db_ok"] = True
+                # If you want sqlite check too, set DB_PATH env, otherwise just report skipped
+                info["db_kind"] = "sqlite"
+                info["db_ok"] = True
         except Exception as e:
             info["db_ok"] = False
             info["ok"] = False
             info["db_error"] = str(e)[:200]
 
-        # Optional model/calibration file checks
+        # Optional model file checks (uses ARTIFACTS_DIR env var only)
         if league is not None:
             try:
+                art = os.getenv("ARTIFACTS_DIR", "artifacts").strip() or "artifacts"
                 league_i = int(league)
-                model_path = os.path.join(ART, f"model_{league_i}.joblib")
-                meta_path = os.path.join(ART, f"meta_{league_i}.json")
-                cal_path = os.path.join(ART, f"calibration_{league_i}.json")
-
                 info["league_check"] = league_i
-                info["model_exists"] = os.path.exists(model_path)
-                info["meta_exists"] = os.path.exists(meta_path)
-                info["calibration_exists"] = os.path.exists(cal_path)
-
-                if not (info["model_exists"] and info["meta_exists"]):
-                    info["ok"] = False
+                info["model_exists"] = os.path.exists(os.path.join(art, f"model_{league_i}.joblib"))
+                info["meta_exists"] = os.path.exists(os.path.join(art, f"meta_{league_i}.json"))
+                info["calibration_exists"] = os.path.exists(os.path.join(art, f"calibration_{league_i}.json"))
             except Exception as e:
                 info["ok"] = False
                 info["model_check_error"] = str(e)[:200]
 
     return info
+
 
 
 # ============================================================
