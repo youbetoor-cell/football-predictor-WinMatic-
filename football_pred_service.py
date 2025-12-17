@@ -90,108 +90,24 @@ def ensure_predictions_db() -> None:
                 """
                 CREATE TABLE IF NOT EXISTS predictions_history (
                     id BIGSERIAL PRIMARY KEY,
+                    fixture_id BIGINT NOT NULL,
                     league INTEGER NOT NULL,
-                    fixture_id INTEGER NOT NULL,
-                    kickoff_utc TEXT NOT NULL,
                     home_team TEXT,
                     away_team TEXT,
-
-                    -- legacy prediction columns (v1)
+                    kickoff_utc TEXT NOT NULL,
                     model_home_p DOUBLE PRECISION,
                     model_draw_p DOUBLE PRECISION,
                     model_away_p DOUBLE PRECISION,
                     predicted_side TEXT,
                     edge_value DOUBLE PRECISION,
                     actual_result TEXT,
-                    payload TEXT,
-                    created_at TEXT DEFAULT (CURRENT_TIMESTAMP::text),
-
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text),
                     UNIQUE(league, fixture_id, kickoff_utc)
                 );
                 """
             )
             conn.commit()
-
-            # --- Postgres: widen schema to be compatible with newer "value-log" deployments ---
-            # Some earlier deployments created predictions_history with columns like:
-            # created_utc, xg_home/xg_away, raw_*, cal_*, odds_*, ev_*, mode, meta_json
-            # If you migrated that table into a new DB, the API must not crash due to missing columns.
-            try:
-                cur.execute(
-                    """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public' AND table_name = 'predictions_history'
-                    """
-                )
-                existing_cols = {r[0] for r in cur.fetchall()}
-
-                expected_cols = {
-                    # v1 (legacy)
-                    "league": "INTEGER",
-                    "fixture_id": "INTEGER",
-                    "kickoff_utc": "TEXT",
-                    "home_team": "TEXT",
-                    "away_team": "TEXT",
-                    "model_home_p": "DOUBLE PRECISION",
-                    "model_draw_p": "DOUBLE PRECISION",
-                    "model_away_p": "DOUBLE PRECISION",
-                    "predicted_side": "TEXT",
-                    "edge_value": "DOUBLE PRECISION",
-                    "actual_result": "TEXT",
-                    "payload": "TEXT",
-                    "created_at": "TEXT",
-
-                    # v2 ("value-log") columns
-                    "created_utc": "TEXT",
-                    "xg_home": "DOUBLE PRECISION",
-                    "xg_away": "DOUBLE PRECISION",
-                    "raw_home": "DOUBLE PRECISION",
-                    "raw_draw": "DOUBLE PRECISION",
-                    "raw_away": "DOUBLE PRECISION",
-                    "cal_home": "DOUBLE PRECISION",
-                    "cal_draw": "DOUBLE PRECISION",
-                    "cal_away": "DOUBLE PRECISION",
-                    "odds_home": "DOUBLE PRECISION",
-                    "odds_draw": "DOUBLE PRECISION",
-                    "odds_away": "DOUBLE PRECISION",
-                    "ev_home": "DOUBLE PRECISION",
-                    "ev_draw": "DOUBLE PRECISION",
-                    "ev_away": "DOUBLE PRECISION",
-                    "mode": "TEXT",
-                    "meta_json": "TEXT",
-                }
-
-                for col, ctype in expected_cols.items():
-                    if col not in existing_cols:
-                        try:
-                            cur.execute(f"ALTER TABLE predictions_history ADD COLUMN {col} {ctype};")
-                        except Exception:
-                            pass
-
-                # Ensure the ON CONFLICT(...) clauses work (requires a unique constraint/index).
-                # If duplicates exist, this may fail; we swallow the error to avoid boot failure.
-                try:
-                    cur.execute(
-                        "CREATE UNIQUE INDEX IF NOT EXISTS predictions_history_uniq ON predictions_history (league, fixture_id, kickoff_utc);"
-                    )
-                except Exception:
-                    pass
-                try:
-                    cur.execute(
-                        "CREATE INDEX IF NOT EXISTS predictions_history_league_idx ON predictions_history (league);"
-                    )
-                except Exception:
-                    pass
-
-                conn.commit()
-            except Exception:
-                # Never prevent boot because of a schema maintenance edge case
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
-
             cur.close()
             conn.close()
             return
@@ -269,36 +185,6 @@ CACHE_ONLY_MODE = os.getenv("WINMATIC_CACHE_ONLY", "0") == "1"
 API_QUOTA_EXHAUSTED = False  # becomes True after daily limit is hit
 
 DB_PATH = os.path.join("data", "predictions_history.db")
-
-# ============================================================
-# ODDS CACHE (reduces API calls / improves speed & reliability)
-# ============================================================
-ODDS_CACHE_ENABLED = os.getenv("ODDS_CACHE_ENABLED", "1").strip() not in ("0", "false", "False")
-# Default: 6 hours. Cache 'no odds' results for 30 minutes to avoid hammering the odds endpoint.
-ODDS_CACHE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_TTL_SECONDS", "21600"))
-ODDS_CACHE_NEGATIVE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_NEGATIVE_TTL_SECONDS", "1800"))
-
-# Simple in-process cache stats (since service boot). Helpful for debugging.
-import threading
-_ODDS_STATS_LOCK = threading.Lock()
-ODDS_CACHE_HITS = 0
-ODDS_CACHE_MISSES = 0
-ODDS_CACHE_STORES = 0
-ODDS_CACHE_NEGATIVE_STORES = 0
-def _odds_stat_inc(field: str) -> None:
-    global ODDS_CACHE_HITS, ODDS_CACHE_MISSES, ODDS_CACHE_STORES, ODDS_CACHE_NEGATIVE_STORES
-    with _ODDS_STATS_LOCK:
-        if field == "hit":
-            ODDS_CACHE_HITS += 1
-        elif field == "miss":
-            ODDS_CACHE_MISSES += 1
-        elif field == "store":
-            ODDS_CACHE_STORES += 1
-        elif field == "neg_store":
-            ODDS_CACHE_NEGATIVE_STORES += 1
-
-
-
 os.makedirs("data", exist_ok=True)
 
 
@@ -311,7 +197,6 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
 
 
-ENVIRONMENT = os.getenv("ENVIRONMENT", "production").strip().lower()
 # ============================================================
 # DATABASE BACKEND (SQLite locally, Postgres on Render when DATABASE_URL is set)
 # ============================================================
@@ -372,37 +257,32 @@ def db_cursor(conn):
     return _CursorWrapper(conn.cursor(), USE_POSTGRES)
 
 def require_admin(
-    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
-    token: str | None = Query(None),
-    admin_token: str | None = Query(None, alias="admin_token"),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token")
 ) -> None:
-    """Admin guard.
-
-    Behavior:
-    - If ADMIN_TOKEN is NOT set -> allow (useful for local/dev)
-    - If ADMIN_TOKEN IS set:
-        * In production (ENVIRONMENT=production/prod): accept ONLY the header
-          (prevents leaking tokens via URLs, browser history, referrers).
-        * In non-production: accept header OR ?token= / ?admin_token= for convenience.
-
-    In production, failures return 404 to avoid advertising admin/debug routes.
     """
+    Simple admin guard:
 
+    - If ADMIN_TOKEN is NOT set:
+        -> do nothing (useful for local/dev)
+    - If ADMIN_TOKEN IS set:
+        -> require matching X-Admin-Token header
+    """
+    # Dev mode: no ADMIN_TOKEN configured -> don't enforce anything
     if not ADMIN_TOKEN:
         return
 
-    env_is_prod = ENVIRONMENT in ("production", "prod")
+    # Prod mode: ADMIN_TOKEN set -> header required
+    if x_admin_token is None:
+        raise HTTPException(
+            status_code=401,
+            detail="X-Admin-Token header required.",
+        )
 
-    provided = x_admin_token
-    if not env_is_prod:
-        provided = provided or token or admin_token
-
-    if not provided or provided != ADMIN_TOKEN:
-        if env_is_prod:
-            raise HTTPException(status_code=404, detail="Not found")
-        if not provided:
-            raise HTTPException(status_code=401, detail="Admin token required (use X-Admin-Token header).")
-        raise HTTPException(status_code=401, detail="Invalid admin token.")
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid admin token.",
+        )
 
 
 DEFAULT_SEASONS = [2018, 2019, 2020, 2021, 2022, 2023, 2024,2025]
@@ -433,36 +313,6 @@ handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 if not logger.handlers:
     logger.addHandler(handler)
-
-# ============================================================
-# PATHS & ENV (added: fixes NameError for ART / API_BASE / API_FOOTBALL_KEY)
-# ============================================================
-
-# Where to store artifacts/cache on disk.
-ART = os.getenv("ARTIFACTS_DIR", "artifacts").strip() or "artifacts"
-os.makedirs(ART, exist_ok=True)
-
-# Snapshots directory (used by cache/snapshot helpers)
-SNAPSHOT_DIR = os.path.join(ART, "snapshots")
-os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-
-# --- Reliability knobs (Render free tier + API stability) ---
-API_TIMEOUT_SECONDS = float(os.getenv("API_TIMEOUT_SECONDS", "12") or 12)
-API_MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "2") or 2)
-API_RETRY_BACKOFF_SECONDS = float(os.getenv("API_RETRY_BACKOFF_SECONDS", "0.8") or 0.8)
-
-SNAPSHOT_KEEP_PER_PREFIX = int(os.getenv("SNAPSHOT_KEEP_PER_PREFIX", "12") or 12)
-
-
-# API cache file (JSON)
-API_CACHE_FILE = os.path.join(ART, "api_cache.json")
-
-# API-FOOTBALL config (base URL + key)
-# Render env usually provides API_FOOTBALL_BASE_URL + API_FOOTBALL_KEY.
-API_FOOTBALL_BASE_URL = os.getenv("API_FOOTBALL_BASE_URL", "https://v3.football.api-sports.io").strip()
-API_BASE = API_FOOTBALL_BASE_URL or "https://v3.football.api-sports.io"
-API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY", "").strip()
-
 
 # ============================================================
 # API CACHE HELPERS
@@ -574,60 +424,6 @@ def load_snapshot_predictions(league: int, days_ahead: int = 7, label: str = "up
             logger.warning("Failed to load snapshot %s: %s", path, exc)
     return [], None
 
-def save_snapshot_predictions(
-    league: int,
-    days_ahead: int,
-    fixtures: List[Dict[str, Any]],
-    label: str = "upcoming",
-    extra: Optional[Dict[str, Any]] = None,
-) -> Optional[str]:
-    """
-    Writes a snapshot JSON file so we can serve something even if API is down.
-    Returns snapshot path or None if it fails.
-    """
-    if not fixtures:
-        return None
-
-    try:
-        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        fname = f"{label}_{int(league)}_{int(days_ahead)}_{ts}.json"
-        path = os.path.join(SNAPSHOT_DIR, fname)
-        tmp = path + ".tmp"
-
-        payload = {
-            "created_utc": datetime.utcnow().isoformat() + "Z",
-            "label": label,
-            "league": int(league),
-            "days_ahead": int(days_ahead),
-            "fixtures": fixtures,
-        }
-        if isinstance(extra, dict) and extra:
-            payload["extra"] = extra
-
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False)
-
-        os.replace(tmp, path)
-
-        # cleanup: keep only last N snapshots per prefix
-        prefix = f"{label}_{int(league)}_{int(days_ahead)}_"
-        files = _list_snapshot_files(prefix)
-        if len(files) > SNAPSHOT_KEEP_PER_PREFIX:
-            # files are sorted newest-first by _list_snapshot_files
-            for old in files[SNAPSHOT_KEEP_PER_PREFIX:]:
-                try:
-                    os.remove(old)
-                except Exception:
-                    pass
-
-        logger.info("[SNAPSHOT SAVE] label=%s league=%s days=%s file=%s fixtures=%s",
-                    label, league, days_ahead, os.path.basename(path), len(fixtures))
-        return path
-    except Exception as exc:
-        logger.warning("[SNAPSHOT SAVE] failed: %s", exc)
-        return None
-
-
 def is_cache_only_mode() -> bool:
     """
     Returns True if we're running in developer cache-only mode.
@@ -640,30 +436,37 @@ def is_cache_only_mode() -> bool:
 
 
 def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    """Call API-FOOTBALL with cache + daily-quota protection."""
-    global API_QUOTA_EXHAUSTED
+    """Call API-FOOTBALL with cache + quota protection + small retry.
 
-    # 🧩 Developer mode: skip all live API calls
-    if is_cache_only_mode():
-        cached = try_cache(path, params, reason="cache-only-mode")
-        if cached is not None:
-            logger.info("[API CACHE MODE] served=%s reason=cache-only-mode", path)
-            return cached
-        raise HTTPException(
-            status_code=503,
-            detail="Cache-only mode active: no live API requests allowed."
-        )
+    Returns the API-FOOTBALL JSON dict (usually contains key 'response').
+
+    Behavior:
+      - If cache-only mode is enabled, we NEVER call the live API and only serve cached responses.
+      - If the API key is missing OR quota is exhausted, we try cache first, then raise.
+      - Retries a few transient statuses (429/502/503/504) with exponential backoff.
+    """
+    global API_QUOTA_EXHAUSTED
 
     def try_cache(reason: str) -> Optional[Dict[str, Any]]:
         cached = cached_api_response(path, params)
-        if cached:
-            logger.info("[API CACHE MODE] served=%s reason=%s", path, reason)
+        if cached is not None:
+            logger.info("[API CACHE HIT] served=%s reason=%s", path, reason)
         return cached
+
+    # ✅ Cache-only mode (either flag)
+    if is_cache_only_mode() or CACHE_ONLY_MODE:
+        cached = try_cache("cache-only-mode")
+        if cached is not None:
+            return cached
+        raise HTTPException(
+            status_code=503,
+            detail="Cache-only mode enabled but no cached data for this request."
+        )
 
     # --- Handle missing key -------------------------------------------------
     if not API_FOOTBALL_KEY:
         cached = try_cache("missing-key")
-        if cached:
+        if cached is not None:
             return cached
         raise HTTPException(
             status_code=500,
@@ -673,106 +476,96 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
     # --- Stop if daily quota already hit ------------------------------------
     if API_QUOTA_EXHAUSTED:
         cached = try_cache("quota-exhausted")
-        if cached:
+        if cached is not None:
             return cached
         raise HTTPException(
             status_code=429,
             detail="API-FOOTBALL daily request limit already reached (quota exhausted)."
         )
 
-    # --- Cache-only mode toggle ---------------------------------------------
-    if CACHE_ONLY_MODE:
-        cached = try_cache("cache-only-mode")
-        if cached:
-            return cached
-        raise HTTPException(
-            status_code=503,
-            detail="Cache-only mode enabled but no cached data for request."
-        )
-
     headers = {"x-apisports-key": API_FOOTBALL_KEY}
     url = f"{API_BASE}{path}"
     logger.info("[API CALL] %s %s", url, params)
 
-    # --- Perform the request ------------------------------------------------
-    try:
-            timeout = API_TIMEOUT_SECONDS
-    retries = API_MAX_RETRIES
+    # Retry knobs (safe defaults)
+    timeout_s = float(os.getenv("API_TIMEOUT_SECONDS", "15"))
+    retries = int(os.getenv("API_MAX_RETRIES", "2"))
+    backoff_s = float(os.getenv("API_RETRY_BACKOFF_SECONDS", "1.0"))
 
-    last_exc = None
+    last_err: Exception | None = None
     resp = None
-    data = None
+    data: Dict[str, Any] | None = None
 
     for attempt in range(retries + 1):
         try:
-            resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+            resp = requests.get(url, headers=headers, params=params, timeout=timeout_s)
 
-            # retry common transient gateway / rate-limit errors
+            # Retry common transient gateway / rate-limit errors
             if resp.status_code in (429, 502, 503, 504) and attempt < retries:
-                sleep_s = API_RETRY_BACKOFF_SECONDS * (2 ** attempt)
-                logger.warning("[API RETRY] status=%s attempt=%s/%s sleep=%.2fs %s",
-                               resp.status_code, attempt + 1, retries, sleep_s, url)
+                sleep_s = backoff_s * (2 ** attempt)
+                logger.warning(
+                    "[API RETRY] status=%s attempt=%s/%s sleep=%.2fs %s",
+                    resp.status_code, attempt + 1, retries, sleep_s, url
+                )
                 time.sleep(sleep_s)
                 continue
 
-            data = resp.json()
-            break
+            # Parse JSON
+            try:
+                data = resp.json()
+            except Exception as e:
+                last_err = e
+                logger.warning("[API ERROR] JSON parse failed: %s", e)
+                cached = try_cache("json-parse-error")
+                if cached is not None:
+                    return cached
+                raise HTTPException(status_code=502, detail=f"API JSON parse failed: {e}")
+
+            break  # got a response and parsed JSON
 
         except (requests.Timeout, requests.ConnectionError) as e:
-            last_exc = e
+            last_err = e
             if attempt < retries:
-                sleep_s = API_RETRY_BACKOFF_SECONDS * (2 ** attempt)
-                logger.warning("[API RETRY] network attempt=%s/%s sleep=%.2fs err=%s",
-                               attempt + 1, retries, sleep_s, e)
+                sleep_s = backoff_s * (2 ** attempt)
+                logger.warning(
+                    "[API RETRY] network attempt=%s/%s sleep=%.2fs err=%s",
+                    attempt + 1, retries, sleep_s, e
+                )
                 time.sleep(sleep_s)
                 continue
 
-            logger.warning("[API ERROR] %s", e)
             cached = try_cache("network-error")
-            if cached:
+            if cached is not None:
                 return cached
             raise HTTPException(status_code=503, detail=f"API request failed: {e}")
 
         except Exception as e:
-            # unexpected JSON parse or other error
-            last_exc = e
-            logger.warning("[API ERROR] %s", e)
+            last_err = e
             cached = try_cache("network-error")
-            if cached:
+            if cached is not None:
                 return cached
             raise HTTPException(status_code=503, detail=f"API request failed: {e}")
 
-    # If we somehow never got a response
     if resp is None or data is None:
         cached = try_cache("network-error")
-        if cached:
+        if cached is not None:
             return cached
-        raise HTTPException(status_code=503, detail=f"API request failed: {last_exc}")
-
-    except Exception as e:
-        logger.warning("[API ERROR] %s", e)
-        cached = try_cache("network-error")
-        if cached:
-            return cached
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=503, detail=f"API request failed: {last_err}")
 
     # --- Non-200 status codes -----------------------------------------------
     if resp.status_code != 200:
         cached = try_cache(f"http-{resp.status_code}")
-        if cached:
+        if cached is not None:
             return cached
-        raise HTTPException(
-            status_code=resp.status_code,
-            detail=f"API-FOOTBALL error: {data}"
-        )
+        raise HTTPException(status_code=resp.status_code, detail=f"API-FOOTBALL error: {data}")
 
     # --- API-level errors (daily limit etc.) --------------------------------
-    if "errors" in data and data["errors"]:
-        logger.error("[API ERRORS] %s", data["errors"])
+    if isinstance(data, dict) and data.get("errors"):
+        logger.error("[API ERRORS] %s", data.get("errors"))
 
         # Detect “request limit” messages
         try:
-            errs = data["errors"]
+            errs = data.get("errors")
             msg = ""
             if isinstance(errs, dict) and "requests" in errs:
                 msg = str(errs["requests"])
@@ -782,47 +575,18 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
                 msg = str(errs)
 
             lower_msg = msg.lower()
-            if "request limit" in lower_msg or (
-                "limit" in lower_msg and "request" in lower_msg
-            ):
+            if "request limit" in lower_msg or ("limit" in lower_msg and "request" in lower_msg):
                 API_QUOTA_EXHAUSTED = True
-                logger.warning(
-                    "[API QUOTA] Daily request limit reached. "
-                    "API_QUOTA_EXHAUSTED set to True."
-                )
+                logger.warning("[API QUOTA] Daily request limit reached. API_QUOTA_EXHAUSTED=True")
         except Exception:
             pass
 
         cached = try_cache("api-error")
-        if cached:
+        if cached is not None:
             return cached
-        raise HTTPException(
-            status_code=502,
-            detail=f"API-FOOTBALL error: {data['errors']}"
-        )
-
-    # --- Happy path ---------------------------------------------------------
-    return data
-
-
-    if resp.status_code != 200:
-            cached = try_cache(f"http-{resp.status_code}")
-            if cached:
-                return cached
-            raise HTTPException(status_code=resp.status_code, detail=f"API-FOOTBALL error: {data}")
-
-    if "errors" in data and data["errors"]:
-            logger.error("[API ERRORS] %s", data["errors"])
-            cached = try_cache("api-error")
-            if cached:
-                return cached
-            raise HTTPException(status_code=502, detail=f"API-FOOTBALL error: {data['errors']}")
+        raise HTTPException(status_code=502, detail=f"API-FOOTBALL error: {data.get('errors')}")
 
     return data
-
-    raise HTTPException(status_code=502, detail="API-FOOTBALL retries exhausted")
-
-    
 
 def current_season() -> int:
     now = datetime.now(timezone.utc)
@@ -832,175 +596,6 @@ def current_season() -> int:
 # HISTORY DB
 # ============================================================
 
-
-def _utc_now_iso() -> str:
-    # ISO 8601 sortable string (good for text comparisons)
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-
-
-def _utc_plus_seconds_iso(seconds: int) -> str:
-    return (datetime.utcnow() + timedelta(seconds=int(seconds))).replace(microsecond=0).isoformat() + "Z"
-
-
-def ensure_odds_cache_db() -> None:
-    """
-    Ensure the odds_cache table exists.
-
-    Stores 1X2 odds per fixture_id to reduce API-FOOTBALL calls.
-    Works for both SQLite and Postgres.
-    """
-    if not ODDS_CACHE_ENABLED:
-        return
-
-    conn = None
-    try:
-        conn = db_connect()
-        cur = db_cursor(conn)
-
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS odds_cache (
-                fixture_id BIGINT PRIMARY KEY,
-                league INTEGER,
-                fetched_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                odds_home DOUBLE PRECISION,
-                odds_draw DOUBLE PRECISION,
-                odds_away DOUBLE PRECISION,
-                raw_json TEXT
-            );
-            """
-        )
-        try:
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_odds_cache_expires ON odds_cache (expires_at);")
-        except Exception:
-            # Index creation isn't critical
-            pass
-
-        conn.commit()
-    finally:
-        try:
-            if conn is not None:
-                conn.close()
-        except Exception:
-            pass
-
-
-def odds_cache_get_1x2(fixture_id: int) -> Optional[Dict[str, float]]:
-    """
-    Return cached 1X2 odds dict if present and not expired.
-    Returns None when not cached, expired, or negative-cached (no odds).
-
-    Updates in-process cache stats (hits/misses) for debugging.
-    """
-    if not ODDS_CACHE_ENABLED:
-        return None
-
-    conn = None
-    try:
-        conn = db_connect()
-        cur = db_cursor(conn)
-
-        cur.execute(
-            "SELECT odds_home, odds_draw, odds_away, expires_at FROM odds_cache WHERE fixture_id = ?",
-            (int(fixture_id),),
-        )
-        row = cur.fetchone()
-        if not row:
-            _odds_stat_inc("miss")
-            return None
-
-        odds_home, odds_draw, odds_away, expires_at = row
-        now_iso = _utc_now_iso()
-        if expires_at and str(expires_at) <= now_iso:
-            # Expired -> remove row
-            try:
-                cur.execute("DELETE FROM odds_cache WHERE fixture_id = ?", (int(fixture_id),))
-                try:
-                    conn.commit()
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            _odds_stat_inc("miss")
-            return None
-
-        # We served from cache (even if it's a negative-cache row).
-        _odds_stat_inc("hit")
-
-        # Negative cache (no odds stored)
-        if odds_home is None or odds_draw is None or odds_away is None:
-            return None
-
-        return {"home": float(odds_home), "draw": float(odds_draw), "away": float(odds_away)}
-    finally:
-        try:
-            if conn is not None:
-                conn.close()
-        except Exception:
-            pass
-
-
-def odds_cache_set_1x2(
-    fixture_id: int,
-    league: Optional[int],
-    odds: Optional[Dict[str, float]],
-    raw_json: Optional[str],
-    ttl_seconds: int,
-) -> None:
-    """
-    Upsert odds into cache.
-
-    If odds is None, stores a negative-cache entry (NULL odds) to avoid repeated calls.
-    Updates in-process cache stats (stores) for debugging.
-    """
-    if not ODDS_CACHE_ENABLED:
-        return
-
-    conn = None
-    try:
-        conn = db_connect()
-        cur = db_cursor(conn)
-
-        fetched_at = _utc_now_iso()
-        expires_at = _utc_plus_seconds_iso(ttl_seconds)
-
-        oh = odds.get("home") if odds else None
-        odr = odds.get("draw") if odds else None
-        oa = odds.get("away") if odds else None
-
-        cur.execute(
-            """
-            INSERT INTO odds_cache (fixture_id, league, fetched_at, expires_at, odds_home, odds_draw, odds_away, raw_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (fixture_id) DO UPDATE SET
-                league=excluded.league,
-                fetched_at=excluded.fetched_at,
-                expires_at=excluded.expires_at,
-                odds_home=excluded.odds_home,
-                odds_draw=excluded.odds_draw,
-                odds_away=excluded.odds_away,
-                raw_json=excluded.raw_json
-            """,
-            (int(fixture_id), int(league) if league is not None else None, fetched_at, expires_at, oh, odr, oa, raw_json),
-        )
-        try:
-            conn.commit()
-        except Exception:
-            pass
-
-        if odds is None:
-            _odds_stat_inc("neg_store")
-        else:
-            _odds_stat_inc("store")
-    finally:
-        try:
-            if conn is not None:
-                conn.close()
-        except Exception:
-            pass
-
-
 def init_history_db() -> None:
     """
     Backwards-compatible init hook.
@@ -1008,7 +603,6 @@ def init_history_db() -> None:
     We now use ensure_predictions_db() which supports both SQLite and Postgres.
     """
     ensure_predictions_db()
-    ensure_odds_cache_db()
     logger.info("[DB] predictions_history ready (postgres=%s)", USE_POSTGRES)
 
 
@@ -2606,62 +2200,22 @@ def extract_match_winner_odds(data: Dict[str, Any]) -> Optional[Dict[str, float]
     return None
 
 
-def fetch_1x2_odds_for_fixture(fixture_id: int, league: Optional[int] = None) -> Optional[Dict[str, float]]:
+def fetch_1x2_odds_for_fixture(fixture_id: int) -> Optional[Dict[str, float]]:
     """
     Call API-FOOTBALL /odds for a single fixture and return 1X2 odds.
-
-    Now includes a small DB-backed cache (works on SQLite and Postgres):
-    - If odds are cached and not expired -> returns instantly (no API call)
-    - If odds are missing -> caches that miss for a short time (negative cache)
     """
-    # 1) Cache hit?
     try:
-        cached = odds_cache_get_1x2(int(fixture_id))
-        if cached:
-            return cached
-    except Exception as e:
-        logger.debug("[ODDS] cache get failed fixture=%s: %s", fixture_id, e)
-
-    # 2) Call the API
-    try:
-        data = api_get("/odds", {"fixture": int(fixture_id)})
+        data = api_get("/odds", {"fixture": fixture_id})
     except HTTPException as e:
         logger.warning("[ODDS] HTTP error fixture=%s: %s", fixture_id, e.detail)
-        # short negative cache, so we don't spam /odds if the API is failing
-        try:
-            odds_cache_set_1x2(int(fixture_id), league, None, None, ODDS_CACHE_NEGATIVE_TTL_SECONDS)
-        except Exception:
-            pass
         return None
     except Exception as e:
         logger.warning("[ODDS] error fixture=%s: %s", fixture_id, e)
-        try:
-            odds_cache_set_1x2(int(fixture_id), league, None, None, ODDS_CACHE_NEGATIVE_TTL_SECONDS)
-        except Exception:
-            pass
         return None
 
     odds = extract_match_winner_odds(data)
-    raw_json = None
-    try:
-        raw_json = json.dumps(data, ensure_ascii=False)
-    except Exception:
-        raw_json = None
-
     if not odds:
         logger.info("[ODDS] no 1X2 odds for fixture=%s", fixture_id)
-        try:
-            odds_cache_set_1x2(int(fixture_id), league, None, raw_json, ODDS_CACHE_NEGATIVE_TTL_SECONDS)
-        except Exception:
-            pass
-        return None
-
-    # 3) Cache store
-    try:
-        odds_cache_set_1x2(int(fixture_id), league, odds, raw_json, ODDS_CACHE_TTL_SECONDS)
-    except Exception as e:
-        logger.debug("[ODDS] cache set failed fixture=%s: %s", fixture_id, e)
-
     return odds
 
 import math
@@ -2725,62 +2279,29 @@ def poisson_1x2_probs(lam_home: float, lam_away: float, max_goals: int = 10) -> 
 # ----------------------------
 _CAL_CACHE = {}  # {league: dict}
 
-def _default_calibration(league: int) -> dict:
-    # Neutral calibration (does nothing)
-    return {"league": int(league), "temperature": 1.0, "draw_mult": 1.0}
-
 def load_1x2_calibration(league: int) -> dict:
     """
-    Loads {ART}/calibration_<league>.json if present.
-    Always returns a valid calibration dict with keys:
-      - temperature
-      - draw_mult
-    If missing/broken: returns neutral defaults (never crashes).
+    Loads artifacts/calibration_<league>.json if present.
+    Returns {} if missing/unreadable.
     Cached in-process so we don't hit disk per request.
     """
     global _CAL_CACHE
-    league = int(league)
-
     if league in _CAL_CACHE:
-        return _CAL_CACHE[league]
-
-    cal = _default_calibration(league)
+        return _CAL_CACHE[league] or {}
 
     try:
-        path = Path(ART) / f"calibration_{league}.json"
-
-        if path.exists():
-            raw = json.loads(path.read_text(encoding="utf-8"))
-
-            if isinstance(raw, dict):
-                # Support expected keys
-                if "temperature" in raw:
-                    cal["temperature"] = float(raw.get("temperature", 1.0) or 1.0)
-                if "draw_mult" in raw:
-                    cal["draw_mult"] = float(raw.get("draw_mult", 1.0) or 1.0)
-
-                # Optional aliases (if you ever used different naming)
-                if "T" in raw and "temperature" not in raw:
-                    cal["temperature"] = float(raw.get("T", 1.0) or 1.0)
-                if "dm" in raw and "draw_mult" not in raw:
-                    cal["draw_mult"] = float(raw.get("dm", 1.0) or 1.0)
-
-                # Safety clamps
-                if not (cal["temperature"] > 0):
-                    cal["temperature"] = 1.0
-                if not (cal["draw_mult"] > 0):
-                    cal["draw_mult"] = 1.0
-
-    except Exception as e:
-        # Never fail requests due to calibration parsing issues
-        try:
-            logger.warning("[CAL] failed to load calibration league=%s err=%s", league, str(e))
-        except Exception:
-            pass
-
-    _CAL_CACHE[league] = cal
-    return cal
-
+        path = Path("artifacts") / f"calibration_{int(league)}.json"
+        if not path.exists():
+            _CAL_CACHE[league] = {}
+            return {}
+        cal = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(cal, dict):
+            cal = {}
+        _CAL_CACHE[league] = cal
+        return cal
+    except Exception:
+        _CAL_CACHE[league] = {}
+        return {}
 
 def apply_1x2_calibration(probs: dict, cal: dict) -> dict:
     """
@@ -2981,7 +2502,7 @@ def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
 
 app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
-@app.get("/debug/db", dependencies=[Depends(require_admin)])
+@app.get("/debug/db")
 def debug_db():
     """
     Quick DB sanity check (safe to expose; does not reveal secrets).
@@ -3092,117 +2613,6 @@ def _fetch_and_cache_logo(team_id: int) -> Optional[bytes]:
         logger.warning("[LOGO] fetch failed for team_id=%s: %s", team_id, e)
     return None
 
-@app.get("/debug/odds-cache", dependencies=[Depends(require_admin)])
-def debug_odds_cache():
-    """Admin-only: show odds cache size + hit/miss counters."""
-    ensure_odds_cache_db()
-    info: dict[str, Any] = {
-        "enabled": bool(ODDS_CACHE_ENABLED),
-        "ttl_seconds": int(ODDS_CACHE_TTL_SECONDS),
-        "negative_ttl_seconds": int(ODDS_CACHE_NEGATIVE_TTL_SECONDS),
-        "now_utc": _utc_now_iso(),
-    }
-
-    if not ODDS_CACHE_ENABLED:
-        info["rows"] = 0
-        return info
-
-    conn = None
-    try:
-        conn = db_connect()
-        cur = db_cursor(conn)
-
-        cur.execute("SELECT COUNT(*) FROM odds_cache")
-        info["rows"] = int(cur.fetchone()[0] or 0)
-
-        cur.execute("SELECT MIN(fetched_at), MAX(fetched_at), MIN(expires_at), MAX(expires_at) FROM odds_cache")
-        mn_f, mx_f, mn_e, mx_e = cur.fetchone() or (None, None, None, None)
-        info["fetched_at_min"] = mn_f
-        info["fetched_at_max"] = mx_f
-        info["expires_at_min"] = mn_e
-        info["expires_at_max"] = mx_e
-
-        now_iso = info["now_utc"]
-        cur.execute("SELECT COUNT(*) FROM odds_cache WHERE expires_at <= ?", (now_iso,))
-        info["expired_rows"] = int(cur.fetchone()[0] or 0)
-    except Exception as e:
-        info["error"] = str(e)
-    finally:
-        try:
-            if conn is not None:
-                conn.close()
-        except Exception:
-            pass
-
-    # In-process counters
-    with _ODDS_STATS_LOCK:
-        info["hits_since_boot"] = int(ODDS_CACHE_HITS)
-        info["misses_since_boot"] = int(ODDS_CACHE_MISSES)
-        info["stores_since_boot"] = int(ODDS_CACHE_STORES)
-        info["negative_stores_since_boot"] = int(ODDS_CACHE_NEGATIVE_STORES)
-
-    return info
-
-
-def _fetch_rows_as_dicts(cur) -> list[dict[str, Any]]:
-    cols = [d[0] for d in (cur.description or [])]
-    out = []
-    for row in (cur.fetchall() or []):
-        out.append({cols[i]: row[i] for i in range(len(cols))})
-    return out
-
-
-@app.get("/admin/export-history", dependencies=[Depends(require_admin)])
-def admin_export_history(league: Optional[int] = None, limit: int = 5000):
-    """Admin-only export of predictions_history as JSON (for backups on free tiers)."""
-    limit = max(1, min(int(limit), 20000))
-    conn = None
-    try:
-        conn = db_connect()
-        cur = db_cursor(conn)
-
-        if league is None:
-            cur.execute("SELECT * FROM predictions_history ORDER BY id DESC LIMIT ?", (limit,))
-        else:
-            cur.execute("SELECT * FROM predictions_history WHERE league = ? ORDER BY id DESC LIMIT ?", (int(league), limit))
-
-        rows = _fetch_rows_as_dicts(cur)
-        return {"exported_utc": _utc_now_iso(), "table": "predictions_history", "league": league, "count": len(rows), "rows": rows}
-    finally:
-        try:
-            if conn is not None:
-                conn.close()
-        except Exception:
-            pass
-
-
-@app.get("/admin/export-odds-cache", dependencies=[Depends(require_admin)])
-def admin_export_odds_cache(league: Optional[int] = None, limit: int = 10000):
-    """Admin-only export of odds_cache as JSON (for backups on free tiers)."""
-    limit = max(1, min(int(limit), 50000))
-    ensure_odds_cache_db()
-
-    conn = None
-    try:
-        conn = db_connect()
-        cur = db_cursor(conn)
-
-        if league is None:
-            cur.execute("SELECT * FROM odds_cache ORDER BY fetched_at DESC LIMIT ?", (limit,))
-        else:
-            cur.execute("SELECT * FROM odds_cache WHERE league = ? ORDER BY fetched_at DESC LIMIT ?", (int(league), limit))
-
-        rows = _fetch_rows_as_dicts(cur)
-        return {"exported_utc": _utc_now_iso(), "table": "odds_cache", "league": league, "count": len(rows), "rows": rows}
-    finally:
-        try:
-            if conn is not None:
-                conn.close()
-        except Exception:
-            pass
-
-
-
 @app.get("/team-logo/default.png")
 def team_logo_default():
     path = os.path.join(LOGO_DIR, "default.png")
@@ -3232,59 +2642,9 @@ def team_logo(team_id: int):
         return FileResponse(default_path, media_type="image/png", headers=headers)
     return Response(content=base64.b64decode(_DEFAULT_PNG_B64), media_type="image/png", headers=headers)
 
-from fastapi import Query
-import time
-import os
-
 @app.get("/health")
-def health(
-    deep: int = Query(0, ge=0, le=1),
-    league: int | None = Query(None),
-):
-    info = {
-        "ok": True,
-        "ts": int(time.time()),
-        "environment": os.getenv("ENVIRONMENT", "").strip() or "dev",
-        "api_football_key_set": bool(os.getenv("API_FOOTBALL_KEY", "").strip()),
-        "database_url_set": bool(os.getenv("DATABASE_URL", "").strip()),
-    }
-
-    if deep == 1:
-        # DB connectivity
-        try:
-            conn = db_connect()
-            cur = conn.cursor()
-            cur.execute("SELECT 1;")
-            cur.fetchone()
-            info["db_ok"] = True
-        except Exception as e:
-            info["db_ok"] = False
-            info["ok"] = False
-            info["db_error"] = str(e)[:200]
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-        # Optional model files check
-        if league is not None:
-            try:
-                model_path = os.path.join(ART, f"model_{int(league)}.joblib")
-                meta_path = os.path.join(ART, f"meta_{int(league)}.json")
-                cal_path = os.path.join(ART, f"calibration_{int(league)}.json")
-                info["league_check"] = int(league)
-                info["model_exists"] = os.path.exists(model_path)
-                info["meta_exists"] = os.path.exists(meta_path)
-                info["calibration_exists"] = os.path.exists(cal_path)
-                if not (info["model_exists"] and info["meta_exists"]):
-                    info["ok"] = False
-            except Exception as e:
-                info["ok"] = False
-                info["model_check_error"] = str(e)[:200]
-
-    return info
-
+def health():
+    return {"ok": True, "ts": datetime.utcnow().isoformat()}
 
 # ============================================================
 # Pydantic
@@ -3468,22 +2828,7 @@ def api_predict_upcoming(
     end = now + timedelta(days=days_ahead)
     season = current_season()
 
-        try:
-        data = api_get("/fixtures", {"league": league, "season": season, "next": 50})
-    except HTTPException as e:
-        # If API is down/rate-limited, serve last good snapshot
-        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead, label="upcoming")
-        if snapshot:
-            return {
-                "ok": True,
-                "count": len(snapshot),
-                "fixtures": snapshot,
-                "source": "snapshot",
-                "snapshot_file": os.path.basename(snap_path) if snap_path else None,
-                "detail": f"Live API failed: {getattr(e, 'detail', 'error')}",
-            }
-        raise
-
+    data = api_get("/fixtures", {"league": league, "season": season, "next": 50})
     fixtures = data.get("response", []) or []
     if not fixtures:
         cached_fixtures = cached_upcoming_fixtures(league, season)
@@ -3514,9 +2859,6 @@ def api_predict_upcoming(
                 "source": "snapshot",
                 "snapshot_file": os.path.basename(snap_path) if snap_path else None,
             }
-        # Save snapshot (best effort, never crash)
-        save_snapshot_predictions(league=league, days_ahead=days_ahead, fixtures=results, label="upcoming", extra={"source": "model"})
-    
         return {
             "ok": False,
             "count": 0,
@@ -3556,32 +2898,12 @@ def api_value_bets(
     mode=profit    -> returns only 'sane' +EV bets (EV>0, p>=min_prob, p/market<=max_ratio)
     """
 
-        try:
-        resp = api_value_upcoming(
-            league=league,
-            days_ahead=days_ahead,
-            min_edge=min_edge,
-            limit=limit,
-        )
-    except HTTPException as e:
-        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead, label="value")
-        if snapshot:
-            return {
-                "ok": True,
-                "count": len(snapshot),
-                "fixtures": snapshot,
-                "source": "snapshot",
-                "snapshot_file": os.path.basename(snap_path) if snap_path else None,
-                "detail": f"Live API failed: {getattr(e, 'detail', 'error')}",
-            }
-        raise
-
-    # Save snapshot for value-bets (best effort)
-    try:
-        save_snapshot_predictions(league=league, days_ahead=days_ahead, fixtures=resp.get("fixtures") or [], label="value",
-                                  extra={"mode": mode, "source": resp.get("source")})
-    except Exception:
-        pass
+    resp = api_value_upcoming(
+        league=league,
+        days_ahead=days_ahead,
+        min_edge=min_edge,
+        limit=limit,
+    )
 
     # Safety: never return None
     if not isinstance(resp, dict):
@@ -3913,7 +3235,7 @@ def api_value_upcoming(
 
 
         # This calls api_get("/odds", {"fixture": fixture_id}) under the hood
-        odds = fetch_1x2_odds_for_fixture(int(fixture_id), league=league)
+        odds = fetch_1x2_odds_for_fixture(int(fixture_id))
         odds_calls += 1
 
         if not odds:
@@ -5159,7 +4481,7 @@ def api_roi_by_league(
 
     return {"ok": True, "leagues": leagues, "min_edge": min_edge}
 
-@app.get("/metrics/pnl-debug", dependencies=[Depends(require_admin)])
+@app.get("/metrics/pnl-debug")
 def api_pnl_debug(
     league: int = Query(39),
     limit: int = Query(20, description="How many rows to inspect"),
@@ -5304,7 +4626,7 @@ def api_predictions_sanity(
 
       
 
-@app.get("/debug/fixture/{fixture_id}", dependencies=[Depends(require_admin)])
+@app.get("/debug/fixture/{fixture_id}")
 def debug_fixture(
     fixture_id: int = ApiPath(..., description="Fixture ID (as stored in predictions_history)"),
     league: int = Query(DEFAULT_LEAGUE, description="League ID, e.g. 39 = Premier League"),
@@ -5498,7 +4820,7 @@ def get_fixture_logos(fixture_id: int) -> Tuple[Optional[str], Optional[str]]:
 
     return home.get("logo"), away.get("logo")
 
-@app.get("/debug/leagues", dependencies=[Depends(require_admin)])
+@app.get("/debug/leagues")
 def debug_leagues():
     """
     TEMP: list all current-season leagues from API-FOOTBALL
@@ -5521,7 +4843,7 @@ def debug_leagues():
     out.sort(key=lambda x: ((x["country"] or ""), (x["name"] or "")))
     return out
 
-@app.get("/debug/pending-results", dependencies=[Depends(require_admin)])
+@app.get("/debug/pending-results")
 def debug_pending_results(
     league: int = Query(39, description="League ID, e.g. 39 = Premier League"),
     limit: int = Query(50, description="How many pending fixtures to show"),
