@@ -42,6 +42,13 @@ from sklearn.multioutput import MultiOutputRegressor
 from sklearn.calibration import calibration_curve
 from functools import lru_cache
 
+# Postgres driver (optional)
+try:
+    import psycopg2  # type: ignore
+except Exception:
+    psycopg2 = None
+
+
 
 # ==========================================
 # 🧩 Ensure predictions_history table exists
