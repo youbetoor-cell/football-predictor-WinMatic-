@@ -2526,6 +2526,7 @@ import os
 import sqlite3
 
 @app.get("/health")
+info["build"] = "417fde8"
 def health(
     deep: int = Query(0, ge=0, le=1),
     league: int | None = Query(None),
