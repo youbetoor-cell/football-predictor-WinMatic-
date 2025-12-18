@@ -289,7 +289,26 @@ def _env_int(name: str, default: int) -> int:
     except Exception:
         return int(default)
 
-ODDS_CACHE_TTL_SECONDS = _env_int("ODDS_CACHE_TTL_SECONDS", 21600)  # 6 hours
+import re  # <-- make sure this import exists near the top with other imports
+
+def env_int(name: str, default: int) -> int:
+    """
+    Safe env int reader.
+    Accepts values like "21600", "21600 (6 hours)", " 21600 ", etc.
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    s = str(raw).strip()
+    if not s:
+        return default
+    m = re.search(r"-?\d+", s)
+    return int(m.group(0)) if m else default
+
+ODDS_CACHE_TTL_SECONDS = env_int("ODDS_CACHE_TTL_SECONDS", 21600)        # 6h
+ODDS_CACHE_NEG_TTL_SECONDS = env_int("ODDS_CACHE_NEG_TTL_SECONDS", 1800) # 30m
+ODDS_CACHE_MAX_ROWS = env_int("ODDS_CACHE_MAX_ROWS", 50000)
+
 
 ODDS_CACHE_NEGATIVE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_NEGATIVE_TTL_SECONDS", "1800"))
 
@@ -3140,6 +3159,36 @@ def debug_odds_cache(limit: int = Query(20, ge=1, le=200)):
                 conn.close()
         except Exception:
             pass
+
+@app.get("/debug/odds/{fixture_id}", dependencies=[Depends(require_admin)])
+def debug_odds(fixture_id: int):
+    """
+    Admin: fetch odds for a single fixture and show cache before/after.
+    """
+    out = {"fixture_id": int(fixture_id)}
+
+    # cache before
+    try:
+        out["cache_before"] = odds_cache_get_1x2(int(fixture_id))
+    except Exception as e:
+        out["cache_before_error"] = str(e)
+
+    # live fetch (this function already writes to cache in your code)
+    try:
+        odds = fetch_1x2_odds_for_fixture(int(fixture_id))
+        out["odds"] = odds
+    except Exception as e:
+        out["odds_error"] = str(e)
+        out["odds"] = None
+
+    # cache after
+    try:
+        out["cache_after"] = odds_cache_get_1x2(int(fixture_id))
+    except Exception as e:
+        out["cache_after_error"] = str(e)
+
+    return {"ok": True, **out}
+
 
 @app.get("/admin/export-history", dependencies=[Depends(require_admin)])
 def admin_export_history(league: Optional[int] = None, limit: int = 5000):
