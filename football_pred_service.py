@@ -730,71 +730,134 @@ def _utc_plus_seconds_iso(seconds: int) -> str:
 
 
 def ensure_odds_cache_db() -> None:
-    """
-    Ensure the odds_cache table exists.
-
-    Stores 1X2 odds per fixture_id to reduce API-FOOTBALL calls.
-    Works for both SQLite and Postgres.
-    """
-    if not ODDS_CACHE_ENABLED:
-        return
-
+    """Create odds_cache table (and add missing columns) for both Postgres and SQLite."""
     conn = None
     try:
         conn = db_connect()
-        cur = db_cursor(conn)
+        cur = conn.cursor()
 
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS odds_cache (
-                fixture_id BIGINT PRIMARY KEY,
-                league INTEGER,
-                fetched_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                odds_home DOUBLE PRECISION,
-                odds_draw DOUBLE PRECISION,
-                odds_away DOUBLE PRECISION,
-                raw_json TEXT
-            );
-            """
-        )
-        # Best-effort schema upgrades for older deployments
-        try:
-            if USE_POSTGRES:
-                # Add newer optional columns if missing (safe no-ops if present)
-                cur.execute("ALTER TABLE odds_cache ADD COLUMN IF NOT EXISTS kickoff_utc TEXT;")
-                cur.execute("ALTER TABLE odds_cache ADD COLUMN IF NOT EXISTS updated_utc TIMESTAMP;")
-                # Keep compatibility with older cache columns too
-                cur.execute("ALTER TABLE odds_cache ADD COLUMN IF NOT EXISTS fetched_at TEXT;")
-                cur.execute("ALTER TABLE odds_cache ADD COLUMN IF NOT EXISTS expires_at TEXT;")
-            else:
+        if USE_POSTGRES:
+            # Create table (idempotent)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS odds_cache (
+                  fixture_id BIGINT PRIMARY KEY,
+                  league INT,
+                  kickoff_utc TEXT,
+                  odds_home DOUBLE PRECISION,
+                  odds_draw DOUBLE PRECISION,
+                  odds_away DOUBLE PRECISION,
+                  updated_utc TIMESTAMP,
+                  expires_at TIMESTAMP
+                );
+                """
+            )
+            conn.commit()
+
+            # Add any missing columns (older tables might be missing some fields)
+            try:
+                cur.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='odds_cache';
+                    """
+                )
+                cols = {r[0] for r in cur.fetchall()}
+            except Exception:
+                cols = set()
+
+            expected = {
+                "league": "INT",
+                "kickoff_utc": "TEXT",
+                "odds_home": "DOUBLE PRECISION",
+                "odds_draw": "DOUBLE PRECISION",
+                "odds_away": "DOUBLE PRECISION",
+                "updated_utc": "TIMESTAMP",
+                "expires_at": "TIMESTAMP",
+            }
+            for col, coltype in expected.items():
+                if col not in cols:
+                    try:
+                        cur.execute(f"ALTER TABLE odds_cache ADD COLUMN {col} {coltype};")
+                        conn.commit()
+                    except Exception:
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+
+            # Helpful indexes / cleanup helpers
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_odds_cache_expires ON odds_cache (expires_at);")
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+        else:
+            # SQLite schema
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS odds_cache (
+                  fixture_id INTEGER PRIMARY KEY,
+                  league INTEGER,
+                  kickoff_utc TEXT,
+                  odds_home REAL,
+                  odds_draw REAL,
+                  odds_away REAL,
+                  updated_utc TEXT,
+                  expires_at TEXT
+                );
+                """
+            )
+            conn.commit()
+
+            # Add any missing columns (older db files might be missing some fields)
+            try:
                 cur.execute("PRAGMA table_info(odds_cache);")
-                cols = {row[1] for row in (cur.fetchall() or [])}
-                def _add(col: str, typ: str) -> None:
-                    if col not in cols:
-                        cur.execute(f"ALTER TABLE odds_cache ADD COLUMN {col} {typ};")
-                _add("kickoff_utc", "TEXT")
-                _add("updated_utc", "TEXT")
-                _add("fetched_at", "TEXT")
-                _add("expires_at", "TEXT")
-        except Exception:
-            pass
+                cols = {row[1] for row in cur.fetchall()}
+            except Exception:
+                cols = set()
 
+            expected = {
+                "league": "INTEGER",
+                "kickoff_utc": "TEXT",
+                "odds_home": "REAL",
+                "odds_draw": "REAL",
+                "odds_away": "REAL",
+                "updated_utc": "TEXT",
+                "expires_at": "TEXT",
+            }
+            for col, coltype in expected.items():
+                if col not in cols:
+                    try:
+                        cur.execute(f"ALTER TABLE odds_cache ADD COLUMN {col} {coltype};")
+                    except Exception:
+                        pass
+            conn.commit()
+
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_odds_cache_expires ON odds_cache (expires_at);")
+                conn.commit()
+            except Exception:
+                pass
+
+        logger.info("[DB] odds_cache ready (postgres=%s)", USE_POSTGRES)
+
+    except Exception as e:
         try:
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_odds_cache_expires ON odds_cache (expires_at);")
+            logger.warning("[DB] ensure_odds_cache_db failed: %s", e)
         except Exception:
-            # Index creation isn't critical
-            pass
-
-        conn.commit()
+            print("[DB] ensure_odds_cache_db failed:", e)
     finally:
         try:
             if conn is not None:
                 conn.close()
         except Exception:
             pass
-
-
 def odds_cache_get_1x2(fixture_id: int) -> Optional[Dict[str, float]]:
     """
     Return cached 1X2 odds dict if present and not expired.
