@@ -2433,6 +2433,173 @@ def debug_db():
 
     return info
 
+# ============================================================
+# Debug helpers (admin-only)
+# ============================================================
+
+from typing import Optional
+from fastapi import Query
+
+@app.get("/debug/routes", dependencies=[Depends(require_admin)])
+def debug_routes():
+    """
+    List registered routes (useful to confirm what is deployed).
+    """
+    out = []
+    for r in app.router.routes:
+        path = getattr(r, "path", None)
+        if not path:
+            continue
+        methods = sorted(list(getattr(r, "methods", []) or []))
+        name = getattr(r, "name", None)
+        out.append({"path": path, "methods": methods, "name": name})
+    out.sort(key=lambda x: x["path"])
+    return {"count": len(out), "routes": out}
+
+
+@app.get("/debug/odds-cache", dependencies=[Depends(require_admin)])
+def debug_odds_cache(
+    fixture_id: Optional[int] = Query(None),
+    league: Optional[int] = Query(None),
+    limit: int = Query(20, ge=1, le=200),
+):
+    """
+    Inspect odds_cache table (works for both sqlite and postgres).
+    - If fixture_id is provided, returns that row (if any).
+    - Otherwise returns recent rows (optionally filtered by league).
+    """
+
+    # Reuse your existing globals if present; otherwise fall back safely.
+    DATABASE_URL = globals().get("DATABASE_URL", os.getenv("DATABASE_URL", "").strip())
+    USE_POSTGRES = globals().get("USE_POSTGRES", DATABASE_URL.lower().startswith("postgres"))
+    DB_PATH = globals().get("DB_PATH", os.getenv("DB_PATH", "data/predictions_history.db"))
+
+    def _connect():
+        if USE_POSTGRES:
+            import psycopg2
+            return psycopg2.connect(DATABASE_URL)
+        import sqlite3
+        return sqlite3.connect(DB_PATH)
+
+    def _table_exists(conn) -> bool:
+        cur = conn.cursor()
+        if USE_POSTGRES:
+            cur.execute("SELECT to_regclass('public.odds_cache');")
+            return cur.fetchone()[0] is not None
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='odds_cache';")
+        return cur.fetchone() is not None
+
+    conn = _connect()
+    try:
+        if not _table_exists(conn):
+            return {"ok": False, "detail": "odds_cache table not found (not created yet)"}
+
+        cur = conn.cursor()
+
+        # Count
+        cur.execute("SELECT COUNT(*) FROM odds_cache;")
+        total = cur.fetchone()[0]
+
+        # Fetch rows
+        rows = []
+        if fixture_id is not None:
+            if USE_POSTGRES:
+                cur.execute(
+                    """
+                    SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
+                    FROM odds_cache
+                    WHERE fixture_id = %s
+                    """,
+                    (int(fixture_id),),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
+                    FROM odds_cache
+                    WHERE fixture_id = ?
+                    """,
+                    (int(fixture_id),),
+                )
+            one = cur.fetchone()
+            if one:
+                rows = [one]
+        else:
+            if league is not None:
+                if USE_POSTGRES:
+                    cur.execute(
+                        """
+                        SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
+                        FROM odds_cache
+                        WHERE league = %s
+                        ORDER BY updated_utc DESC NULLS LAST
+                        LIMIT %s
+                        """,
+                        (int(league), int(limit)),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
+                        FROM odds_cache
+                        WHERE league = ?
+                        ORDER BY updated_utc DESC
+                        LIMIT ?
+                        """,
+                        (int(league), int(limit)),
+                    )
+            else:
+                if USE_POSTGRES:
+                    cur.execute(
+                        """
+                        SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
+                        FROM odds_cache
+                        ORDER BY updated_utc DESC NULLS LAST
+                        LIMIT %s
+                        """,
+                        (int(limit),),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
+                        FROM odds_cache
+                        ORDER BY updated_utc DESC
+                        LIMIT ?
+                        """,
+                        (int(limit),),
+                    )
+
+            rows = cur.fetchall() or []
+
+        # Normalize into dicts
+        out_rows = []
+        for r in rows:
+            out_rows.append(
+                {
+                    "fixture_id": r[0],
+                    "league": r[1],
+                    "kickoff_utc": r[2],
+                    "odds_home": r[3],
+                    "odds_draw": r[4],
+                    "odds_away": r[5],
+                    "updated_utc": str(r[6]) if r[6] is not None else None,
+                }
+            )
+
+        return {
+            "ok": True,
+            "db_kind": "postgres" if USE_POSTGRES else "sqlite",
+            "total_rows": int(total),
+            "returned": len(out_rows),
+            "rows": out_rows,
+        }
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 
 app.add_middleware(
     CORSMiddleware,
