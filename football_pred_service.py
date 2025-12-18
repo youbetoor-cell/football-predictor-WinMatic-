@@ -492,29 +492,103 @@ def current_season() -> int:
     return now.year if now.month >= 7 else now.year - 1
 
 # ============================================================
-# HISTORY DB
+# HISTORY DB (Postgres preferred; SQLite fallback)
 # ============================================================
 
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+USE_POSTGRES = DATABASE_URL.lower().startswith("postgres")
+DB_PATH = os.getenv("DB_PATH", "data/predictions_history.db")
+
+def _db_connect():
+    """
+    Returns a connection to Postgres (if DATABASE_URL set) otherwise SQLite.
+    """
+    if USE_POSTGRES:
+        import psycopg2
+        return psycopg2.connect(DATABASE_URL)
+    import sqlite3
+    # ensure folder exists for sqlite
+    db_dir = os.path.dirname(DB_PATH) or "."
+    os.makedirs(db_dir, exist_ok=True)
+    return sqlite3.connect(DB_PATH)
+
 def init_history_db() -> None:
-    os.makedirs(ART, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS predictions_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            league INTEGER NOT NULL,
-            fixture_id INTEGER NOT NULL,
-            kickoff_utc TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            UNIQUE(league, fixture_id, kickoff_utc)
-        );
-        """
-    )
-    conn.commit()
-    conn.close()
-    logger.info("[DB] history.db ready")
+    """
+    Create/ensure tables used by the app.
+    - predictions_history: stores prediction payloads
+    - odds_cache: stores cached 1X2 odds per fixture
+    """
+    try:
+        os.makedirs(ART, exist_ok=True)
+        conn = _db_connect()
+        cur = conn.cursor()
+
+        if USE_POSTGRES:
+            # predictions_history (Postgres)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS predictions_history (
+                  id BIGSERIAL PRIMARY KEY,
+                  league INT NOT NULL,
+                  fixture_id BIGINT NOT NULL,
+                  kickoff_utc TEXT NOT NULL,
+                  payload TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  UNIQUE (league, fixture_id, kickoff_utc)
+                );
+                """
+            )
+
+            # odds_cache (Postgres)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS odds_cache (
+                  fixture_id BIGINT PRIMARY KEY,
+                  league INT,
+                  kickoff_utc TEXT,
+                  odds_home DOUBLE PRECISION,
+                  odds_draw DOUBLE PRECISION,
+                  odds_away DOUBLE PRECISION,
+                  updated_utc TIMESTAMP
+                );
+                """
+            )
+        else:
+            # predictions_history (SQLite)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS predictions_history (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  league INTEGER NOT NULL,
+                  fixture_id INTEGER NOT NULL,
+                  kickoff_utc TEXT NOT NULL,
+                  payload TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  UNIQUE(league, fixture_id, kickoff_utc)
+                );
+                """
+            )
+
+            # odds_cache (SQLite)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS odds_cache (
+                  fixture_id INTEGER PRIMARY KEY,
+                  league INTEGER,
+                  kickoff_utc TEXT,
+                  odds_home REAL,
+                  odds_draw REAL,
+                  odds_away REAL,
+                  updated_utc TEXT
+                );
+                """
+            )
+
+        conn.commit()
+        conn.close()
+        logger.info("[DB] predictions_history + odds_cache ready (postgres=%s)", USE_POSTGRES)
+    except Exception as e:
+        logger.exception("[DB] init_history_db failed: %s", e)
 
 init_history_db()
 
@@ -522,59 +596,61 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
     """
     Persist prediction payloads for later analysis.
 
-    Upserts on (league, fixture_id, kickoff_utc) so we don't create duplicates,
-    and never writes blank created_at.
+    Upserts on (league, fixture_id, kickoff_utc) so we don't create duplicates.
     """
     if not fixtures:
         return
 
     conn = None
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _db_connect()
         cur = conn.cursor()
 
-        # Ensure unique key exists (needed for ON CONFLICT)
-        try:
-            cur.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_history_key "
-                "ON predictions_history (league, fixture_id, kickoff_utc);"
-            )
-        except Exception as e:
-            logger.warning("[DB] Could not ensure unique index: %s", e)
-
         rows: list[tuple] = []
+        now_iso = datetime.utcnow().isoformat()
+
         for f in fixtures:
             fixture_id = f.get("fixture_id") or (f.get("fixture") or {}).get("id")
             kickoff_utc = f.get("kickoff_utc") or (f.get("fixture") or {}).get("date")
             if fixture_id is None or kickoff_utc is None:
                 continue
-
             payload = json.dumps(f, ensure_ascii=False)
-            rows.append((int(league), int(fixture_id), str(kickoff_utc), payload))
+            rows.append((int(league), int(fixture_id), str(kickoff_utc), payload, now_iso))
 
         if not rows:
             return
 
-        cur.executemany(
-            """
-            INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
-            VALUES (?, ?, ?, ?, datetime('now'))
-            ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
-              payload = excluded.payload,
-              created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)
-            """,
-            rows,
-        )
-        conn.commit()
+        if USE_POSTGRES:
+            cur.executemany(
+                """
+                INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (league, fixture_id, kickoff_utc)
+                DO UPDATE SET payload = EXCLUDED.payload;
+                """,
+                rows,
+            )
+        else:
+            cur.executemany(
+                """
+                INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(league, fixture_id, kickoff_utc)
+                DO UPDATE SET payload=excluded.payload;
+                """,
+                rows,
+            )
 
+        conn.commit()
     except Exception as e:
-        logger.warning("Failed to record history: %s", e)
+        logger.warning("[DB] record_predictions_history failed: %s", e)
     finally:
-        if conn is not None:
-            try:
+        try:
+            if conn:
                 conn.close()
-            except Exception:
-                pass
+        except Exception:
+            pass
+
 
 def model_paths(league_id: int) -> Tuple[str, str]:
     model_path = os.path.join(ART, f"model_{league_id}.joblib")
