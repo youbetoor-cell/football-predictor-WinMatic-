@@ -93,22 +93,7 @@ def ensure_predictions_db() -> None:
             """
         )
 
-        
-        # Also create odds_cache table (used for caching bookmaker odds)
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS odds_cache (
-                fixture_id INTEGER PRIMARY KEY,
-                league INTEGER,
-                kickoff_utc TEXT,
-                odds_home REAL,
-                odds_draw REAL,
-                odds_away REAL,
-                updated_utc TEXT
-            );
-            """
-        )
-# 2) See what columns we currently have
+        # 2) See what columns we currently have
         cur.execute("PRAGMA table_info(predictions_history);")
         existing_cols = {row[1] for row in cur.fetchall()}
 
@@ -179,17 +164,17 @@ API_QUOTA_EXHAUSTED = False  # becomes True after daily limit is hit
 
 DB_PATH = os.path.join("data", "predictions_history.db")
 
-# ----------------------------
-# Odds caching (SQLite)
-# ----------------------------
-ODDS_CACHE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_TTL_SECONDS", "21600") or 21600)  # 6h default
+# ============================================================
+# ODDS CACHE (SQLite) — reduces API calls dramatically
+# ============================================================
+ODDS_CACHE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_TTL_SECONDS", "21600") or 21600)  # 6 hours
 
 def get_cached_odds_sqlite(fixture_id: int) -> Optional[Dict[str, float]]:
-    """Return cached 1X2 odds for fixture if present and not stale."""
     try:
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
 
+        # table might not exist yet (avoid crashing)
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='odds_cache';")
         if not cur.fetchone():
             conn.close()
@@ -208,6 +193,7 @@ def get_cached_odds_sqlite(fixture_id: int) -> Optional[Dict[str, float]]:
         if not updated:
             return None
 
+        # TTL check
         try:
             updated_dt = datetime.fromisoformat(str(updated).replace("Z", "+00:00")).replace(tzinfo=None)
         except Exception:
@@ -217,15 +203,14 @@ def get_cached_odds_sqlite(fixture_id: int) -> Optional[Dict[str, float]]:
         if age > ODDS_CACHE_TTL_SECONDS:
             return None
 
-        if oh is None or od is None or oa is None:
-            return None
-
-        return {"home": float(oh), "draw": float(od), "away": float(oa)}
+        if oh is not None and od is not None and oa is not None:
+            return {"home": float(oh), "draw": float(od), "away": float(oa)}
+        return None
     except Exception:
         return None
 
+
 def set_cached_odds_sqlite(fixture_id: int, league: int, kickoff_utc: str, odds: Dict[str, float]) -> None:
-    """Upsert 1X2 odds into sqlite cache. Never raises."""
     try:
         oh = float(odds.get("home")) if odds and odds.get("home") else None
         od = float(odds.get("draw")) if odds and odds.get("draw") else None
@@ -236,6 +221,7 @@ def set_cached_odds_sqlite(fixture_id: int, league: int, kickoff_utc: str, odds:
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
 
+        # ensure table exists (in case init didn't run for some reason)
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS odds_cache (
@@ -259,7 +245,7 @@ def set_cached_odds_sqlite(fixture_id: int, league: int, kickoff_utc: str, odds:
             ,
             (
                 int(fixture_id),
-                int(league or 0),
+                int(league),
                 str(kickoff_utc or ""),
                 float(oh),
                 float(od),
@@ -273,7 +259,6 @@ def set_cached_odds_sqlite(fixture_id: int, league: int, kickoff_utc: str, odds:
     except Exception:
         return
 
-
 os.makedirs("data", exist_ok=True)
 
 
@@ -282,6 +267,7 @@ DEFAULT_LEAGUE = 39  # Premier League
 # ============================================================
 # ADMIN TOKEN (simple protection for sensitive endpoints)
 # ============================================================
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
 
@@ -623,6 +609,25 @@ def init_history_db() -> None:
         );
         """
     )
+    # Odds cache table (used by /value/* to avoid repeated odds calls)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS odds_cache (
+            fixture_id INTEGER PRIMARY KEY,
+            league INTEGER,
+            kickoff_utc TEXT,
+            odds_home REAL,
+            odds_draw REAL,
+            odds_away REAL,
+            updated_utc TEXT
+        );
+        """
+    )
+    try:
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_odds_cache_updated ON odds_cache(updated_utc);")
+    except Exception:
+        pass
+
     conn.commit()
     conn.close()
     logger.info("[DB] history.db ready")
@@ -2216,27 +2221,30 @@ def extract_match_winner_odds(data: Dict[str, Any]) -> Optional[Dict[str, float]
     return None
 
 
-
 def fetch_1x2_odds_for_fixture(fixture_id: int) -> Optional[Dict[str, float]]:
-    """Fetch 1X2 odds for fixture. Uses a small SQLite cache to reduce API calls."""
+    # 1) cache lookup
     cached = get_cached_odds_sqlite(fixture_id)
     if cached:
         return cached
 
-    data = api_get("/odds", {"fixture": fixture_id})
-    resp = data.get("response") or []
-    if not resp:
+    """
+    Call API-FOOTBALL /odds for a single fixture and return 1X2 odds.
+    """
+    try:
+        data = api_get("/odds", {"fixture": fixture_id})
+    except HTTPException as e:
+        logger.warning("[ODDS] HTTP error fixture=%s: %s", fixture_id, e.detail)
+        return None
+    except Exception as e:
+        logger.warning("[ODDS] error fixture=%s: %s", fixture_id, e)
         return None
 
-    odds = extract_1x2_odds(resp)
-
-    if odds:
-        try:
-            set_cached_odds_sqlite(fixture_id, 0, "", odds)
-        except Exception:
-            pass
-
+    odds = extract_match_winner_odds(data)
+    if not odds:
+        logger.info("[ODDS] no 1X2 odds for fixture=%s", fixture_id)
     return odds
+
+import math
 
 def poisson_1x2_probs(lam_home: float, lam_away: float, max_goals: int = 10) -> dict:
     """
@@ -2520,7 +2528,69 @@ def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
 
 app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
-@app.get("/debug/db")
+
+
+# ============================================================
+# ADMIN DEBUG ENDPOINTS (require X-Admin-Token)
+# ============================================================
+
+@app.get("/debug/routes", dependencies=[Depends(require_admin)])
+def debug_routes():
+    # Return a compact list so you can confirm what the service actually exposes
+    try:
+        items = []
+        for r in app.routes:
+            path = getattr(r, "path", None)
+            methods = sorted(list(getattr(r, "methods", []) or []))
+            name = getattr(r, "name", None)
+            if path:
+                items.append({"path": path, "methods": methods, "name": name})
+        return {"ok": True, "count": len(items), "routes": items}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/debug/odds-cache", dependencies=[Depends(require_admin)])
+def debug_odds_cache(limit: int = Query(20, ge=1, le=200)):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+
+        # table might not exist yet
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='odds_cache';")
+        if not cur.fetchone():
+            conn.close()
+            return {"ok": True, "count": 0, "items": [], "note": "odds_cache table missing"}
+
+        cur.execute(
+            """
+            SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
+            FROM odds_cache
+            ORDER BY updated_utc DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        )
+        rows = cur.fetchall()
+        conn.close()
+
+        items = []
+        for row in rows:
+            items.append(
+                {
+                    "fixture_id": row[0],
+                    "league": row[1],
+                    "kickoff_utc": row[2],
+                    "odds": {"home": row[3], "draw": row[4], "away": row[5]},
+                    "updated_utc": row[6],
+                }
+            )
+
+        return {"ok": True, "count": len(items), "items": items}
+    except Exception as e:
+        # Important: never crash this endpoint, always return JSON
+        return {"ok": False, "error": str(e)}
+@app.get("/debug/db", dependencies=[Depends(require_admin)])
 def debug_db():
     import os
     import sqlite3
@@ -2557,64 +2627,6 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Root → /static/index.html
-
-@app.get("/debug/routes", dependencies=[Depends(require_admin)])
-def debug_routes():
-    """List registered routes (admin only)."""
-    try:
-        items = []
-        for r in app.routes:
-            path = getattr(r, "path", None)
-            methods = sorted(list(getattr(r, "methods", []) or []))
-            name = getattr(r, "name", None)
-            if path:
-                items.append({"path": path, "methods": methods, "name": name})
-        items.sort(key=lambda x: x["path"])
-        return {"ok": True, "count": len(items), "routes": items}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-@app.get("/debug/odds-cache", dependencies=[Depends(require_admin)])
-def debug_odds_cache(limit: int = Query(20, ge=1, le=200)):
-    """Inspect cached odds. Never crashes (admin only)."""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='odds_cache';")
-        if not cur.fetchone():
-            conn.close()
-            return {"ok": True, "count": 0, "items": [], "note": "odds_cache table missing"}
-
-        cur.execute(
-            """
-            SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
-            FROM odds_cache
-            ORDER BY updated_utc DESC
-            LIMIT ?
-            """
-            ,
-            (int(limit),),
-        )
-        rows = cur.fetchall()
-        conn.close()
-
-        items = []
-        for row in rows:
-            items.append(
-                {
-                    "fixture_id": row[0],
-                    "league": row[1],
-                    "kickoff_utc": row[2],
-                    "odds": {"home": row[3], "draw": row[4], "away": row[5]},
-                    "updated_utc": row[6],
-                }
-            )
-        return {"ok": True, "count": len(items), "items": items}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
 @app.get("/")
 def root():
     return RedirectResponse(url="/static/index.html")
