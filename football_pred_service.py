@@ -2575,20 +2575,25 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Root → /static/index.html
 @app.get("/debug/routes", dependencies=[Depends(require_admin)])
 def debug_routes():
-    """
-    Lists registered routes (so you can confirm /debug/odds-cache exists).
-    """
+    items = []
     try:
-        routes = []
         for r in app.routes:
-            path = getattr(r, "path", "")
-            methods = sorted(list(getattr(r, "methods", []) or []))
-            name = getattr(r, "name", "")
-            routes.append({"path": path, "methods": methods, "name": name})
-        routes.sort(key=lambda x: x["path"])
-        return {"ok": True, "count": len(routes), "routes": routes}
+            path = getattr(r, "path", None)
+            methods = getattr(r, "methods", None)
+            name = getattr(r, "name", None)
+            if path:
+                items.append(
+                    {
+                        "path": path,
+                        "methods": sorted(list(methods)) if methods else None,
+                        "name": name,
+                    }
+                )
+        items.sort(key=lambda x: (x["path"] or ""))
+        return {"ok": True, "count": len(items), "routes": items}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e), "routes": items}
+
 
 
 @app.get("/debug/odds-cache", dependencies=[Depends(require_admin)])
