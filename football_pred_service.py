@@ -522,6 +522,22 @@ def init_history_db() -> None:
         );
         """
     )
+    
+    # Odds cache table (SQLite)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS odds_cache (
+            fixture_id INTEGER PRIMARY KEY,
+            league INTEGER,
+            kickoff_utc TEXT,
+            odds_home REAL,
+            odds_draw REAL,
+            odds_away REAL,
+            updated_utc TEXT
+        );
+        """
+    )
+
 
     # Odds cache table (new)
     cur.execute(
@@ -2230,12 +2246,17 @@ def set_cached_odds(
     except Exception:
         return
 
+
 def fetch_1x2_odds_for_fixture(fixture_id: int) -> Optional[Dict[str, float]]:
     """
     Fetch 1X2 odds for one fixture.
 
     Uses local DB cache first (odds_cache), then falls back to API-FOOTBALL /odds.
     """
+        cached = get_cached_odds_sqlite(fixture_id)
+    if cached:
+        return cached
+
     # 1) cache hit (fast)
     cached = get_cached_odds(fixture_id)
     if cached:
@@ -2644,22 +2665,16 @@ def _fetch_and_cache_logo(team_id: int) -> Optional[bytes]:
 
 @app.get("/debug/routes", dependencies=[Depends(require_admin)])
 def debug_routes():
-    """List registered routes (admin only)."""
-    try:
-        routes = []
-        for r in getattr(app, "routes", []) or []:
-            try:
-                methods = sorted(list(getattr(r, "methods", []) or []))
-                path = getattr(r, "path", None)
-                name = getattr(r, "name", None)
-                if path:
-                    routes.append({"path": path, "methods": methods, "name": name})
-            except Exception:
-                continue
-        routes.sort(key=lambda x: x.get("path") or "")
-        return {"ok": True, "count": len(routes), "routes": routes}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    routes = []
+    for r in app.routes:
+        path = getattr(r, "path", None)
+        methods = sorted(list(getattr(r, "methods", []) or []))
+        name = getattr(r, "name", None)
+        if path:
+            routes.append({"path": path, "methods": methods, "name": name})
+    routes.sort(key=lambda x: x["path"])
+    return {"ok": True, "count": len(routes), "routes": routes}
+
 
 @app.get("/debug/odds-cache", dependencies=[Depends(require_admin)])
 def debug_odds_cache(limit: int = Query(20, ge=1, le=200), fixture_id: Optional[int] = Query(None)):
