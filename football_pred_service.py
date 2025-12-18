@@ -2407,6 +2407,11 @@ def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
 
 app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
+@app.get("/debug/routes")
+def _debug_routes_public():
+    return {"ok": True, "note": "routes endpoint exists"}
+
+
 @app.get("/debug/db")
 def debug_db():
     import os
