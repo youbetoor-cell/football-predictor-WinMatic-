@@ -275,7 +275,22 @@ DB_PATH = os.path.join("data", "predictions_history.db")
 # ============================================================
 ODDS_CACHE_ENABLED = os.getenv("ODDS_CACHE_ENABLED", "1").strip() not in ("0", "false", "False")
 # Default: 6 hours. Cache 'no odds' results for 30 minutes to avoid hammering the odds endpoint.
-ODDS_CACHE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_TTL_SECONDS", "21600"))
+import re
+
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name, "") or "").strip()
+    if not raw:
+        return int(default)
+    m = re.search(r"-?\d+", raw)  # grab first integer in the string
+    if not m:
+        return int(default)
+    try:
+        return int(m.group(0))
+    except Exception:
+        return int(default)
+
+ODDS_CACHE_TTL_SECONDS = _env_int("ODDS_CACHE_TTL_SECONDS", 21600)  # 6 hours
+
 ODDS_CACHE_NEGATIVE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_NEGATIVE_TTL_SECONDS", "1800"))
 
 # Simple in-process cache stats (since service boot). Helpful for debugging.
