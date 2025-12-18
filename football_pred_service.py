@@ -2410,6 +2410,11 @@ def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
 
 app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
+@app.get("/version")
+def version():
+    return {"version": "odds-cache-v1", "git": "c3e9aee"}
+
+
 @app.get("/debug/db")
 def debug_db():
     import os
