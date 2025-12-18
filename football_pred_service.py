@@ -42,13 +42,6 @@ from sklearn.multioutput import MultiOutputRegressor
 from sklearn.calibration import calibration_curve
 from functools import lru_cache
 
-# Postgres driver (optional)
-try:
-    import psycopg2  # type: ignore
-except Exception:
-    psycopg2 = None
-
-
 
 # ==========================================
 # 🧩 Ensure predictions_history table exists
@@ -182,33 +175,36 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
 
 def require_admin(
-    x_admin_token: str | None = Header(None, alias="X-Admin-Token")
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    token: str | None = Query(None),
+    admin_token: str | None = Query(None, alias="admin_token"),
 ) -> None:
-    """
-    Simple admin guard:
+    """Admin guard.
 
-    - If ADMIN_TOKEN is NOT set:
-        -> do nothing (useful for local/dev)
+    - If ADMIN_TOKEN is NOT set -> allow (useful for local/dev).
     - If ADMIN_TOKEN IS set:
-        -> require matching X-Admin-Token header
+        * In production (ENVIRONMENT=production/prod): accept ONLY the X-Admin-Token header
+          (prevents leaking tokens via URLs, browser history, referrers).
+        * In non-production: accept header OR ?token= / ?admin_token= for convenience.
+
+    In production, failures return 404 to avoid advertising admin/debug routes.
     """
-    # Dev mode: no ADMIN_TOKEN configured -> don't enforce anything
+    # If no admin token configured, don't block anything (dev/local).
     if not ADMIN_TOKEN:
         return
 
-    # Prod mode: ADMIN_TOKEN set -> header required
-    if x_admin_token is None:
-        raise HTTPException(
-            status_code=401,
-            detail="X-Admin-Token header required.",
-        )
+    env_is_prod = ENVIRONMENT in ("production", "prod")
 
-    if x_admin_token != ADMIN_TOKEN:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid admin token.",
-        )
+    provided = x_admin_token
+    if not env_is_prod:
+        provided = provided or token or admin_token
 
+    if not provided or provided != ADMIN_TOKEN:
+        if env_is_prod:
+            raise HTTPException(status_code=404, detail="Not found")
+        if not provided:
+            raise HTTPException(status_code=401, detail="Admin token required (use X-Admin-Token header).")
+        raise HTTPException(status_code=401, detail="Invalid admin token.")
 
 DEFAULT_SEASONS = [2018, 2019, 2020, 2021, 2022, 2023, 2024,2025]
 MAX_DATE_RANGE_DAYS = 14
@@ -2527,25 +2523,9 @@ def team_logo(team_id: int):
         return FileResponse(default_path, media_type="image/png", headers=headers)
     return Response(content=base64.b64decode(_DEFAULT_PNG_B64), media_type="image/png", headers=headers)
 
-from fastapi import Query
-import time
-import os
-import sqlite3
-
 @app.get("/health")
-def health(
-    deep: int = Query(0, ge=0, le=1),
-    league: int | None = Query(None),
-):
-    # reuse the working implementation
-    return health2(deep=deep, league=league)
-
-
-from fastapi import Query
-import time
-import os
-from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
-
+def health():
+    return {"ok": True, "ts": datetime.utcnow().isoformat()}
 
 # ============================================================
 # Pydantic
@@ -2710,11 +2690,11 @@ def api_predict_upcoming(
     league: int = Query(DEFAULT_LEAGUE),
     days_ahead: int = Query(7, ge=1, le=14),
 ):
-    # Load model (or snapshot if model not available)
     try:
         model, meta = load_model_and_meta(league)
-    except Exception as e:
-        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead, label="upcoming")
+    except HTTPException:
+        # Fall back to snapshot if model not available
+        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead)
         if snapshot:
             return {
                 "ok": True,
@@ -2722,33 +2702,15 @@ def api_predict_upcoming(
                 "fixtures": snapshot,
                 "source": "snapshot",
                 "snapshot_file": os.path.basename(snap_path) if snap_path else None,
-                "detail": f"Model unavailable: {str(e)[:200]}",
             }
-        # keep original behavior for missing model: surface error
         raise
 
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days_ahead)
     season = current_season()
 
-    # Fetch fixtures (fallback to snapshot on API errors)
-    try:
-        data = api_get("/fixtures", {"league": league, "season": season, "next": 50})
-        fixtures = data.get("response", []) or []
-    except Exception as e:
-        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead, label="upcoming")
-        if snapshot:
-            return {
-                "ok": True,
-                "count": len(snapshot),
-                "fixtures": snapshot,
-                "source": "snapshot",
-                "snapshot_file": os.path.basename(snap_path) if snap_path else None,
-                "detail": f"Live API failed: {str(e)[:200]}",
-            }
-        raise
-
-    # Fallback to cached fixtures if API returned none
+    data = api_get("/fixtures", {"league": league, "season": season, "next": 50})
+    fixtures = data.get("response", []) or []
     if not fixtures:
         cached_fixtures = cached_upcoming_fixtures(league, season)
         if cached_fixtures:
@@ -2758,23 +2720,18 @@ def api_predict_upcoming(
 
     results: List[Dict[str, Any]] = []
     if fixtures:
-        try:
-            results = build_predictions_for_fixtures(
-                fixtures=fixtures,
-                model=model,
-                meta=meta,
-                league=league,
-                season=season,
-                window_start=now,
-                window_end=end,
-            )
-        except Exception as e:
-            logger.exception("[PREDICT UPCOMING] build_predictions failed league=%s err=%s", league, e)
-            results = []
+        results = build_predictions_for_fixtures(
+            fixtures=fixtures,
+            model=model,
+            meta=meta,
+            league=league,
+            season=season,
+            window_start=now,
+            window_end=end,
+        )
 
-    # Snapshot fallback if nothing to return
     if not results:
-        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead, label="upcoming")
+        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead)
         if snapshot:
             return {
                 "ok": True,
@@ -2790,31 +2747,12 @@ def api_predict_upcoming(
             "detail": "No fixtures available. Train the model or provide cached data.",
         }
 
-    # Add reasoning per fixture (never fail the whole request)
+    # 👉 Add reasoning to each result, keeping your existing structure
     for p in results:
-        try:
-            p["reasoning"] = build_reasoning_for_prediction(p, meta)
-        except Exception as e:
-            p["reasoning"] = None
-            p["reasoning_error"] = str(e)[:200]
+        p["reasoning"] = build_reasoning_for_prediction(p, meta)
 
-    # Save snapshot (best effort)
-    try:
-        save_snapshot_predictions(
-            league=league,
-            days_ahead=days_ahead,
-            fixtures=results,
-            label="upcoming",
-            extra={"source": "model"},
-        )
-    except Exception:
-        pass
-
-    # Save to history (best effort - don't 500)
-    try:
-        record_predictions_history(league, results)
-    except Exception as e:
-        logger.warning("[DB] Failed to record history: %s", e)
+    # Save to history (now including reasoning)
+    record_predictions_history(league, results)
 
     return {
         "ok": True,
