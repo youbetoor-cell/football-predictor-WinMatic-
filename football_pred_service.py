@@ -492,165 +492,199 @@ def current_season() -> int:
     return now.year if now.month >= 7 else now.year - 1
 
 # ============================================================
-# HISTORY DB (Postgres preferred; SQLite fallback)
+# HISTORY DB
 # ============================================================
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-USE_POSTGRES = DATABASE_URL.lower().startswith("postgres")
-DB_PATH = os.getenv("DB_PATH", "data/predictions_history.db")
-
-def _db_connect():
-    """
-    Returns a connection to Postgres (if DATABASE_URL set) otherwise SQLite.
-    """
-    if USE_POSTGRES:
-        import psycopg2
-        return psycopg2.connect(DATABASE_URL)
-    import sqlite3
-    # ensure folder exists for sqlite
-    db_dir = os.path.dirname(DB_PATH) or "."
-    os.makedirs(db_dir, exist_ok=True)
-    return sqlite3.connect(DB_PATH)
-
 def init_history_db() -> None:
-    """
-    Create/ensure tables used by the app.
-    - predictions_history: stores prediction payloads
-    - odds_cache: stores cached 1X2 odds per fixture
-    """
-    try:
-        os.makedirs(ART, exist_ok=True)
-        conn = _db_connect()
-        cur = conn.cursor()
+    os.makedirs(ART, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS predictions_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            league INTEGER NOT NULL,
+            fixture_id INTEGER NOT NULL,
+            kickoff_utc TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(league, fixture_id, kickoff_utc)
+        );
+        """
+    )
+    # Odds cache table (for 1X2 odds, to reduce API calls)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS odds_cache (
+            fixture_id INTEGER PRIMARY KEY,
+            league INTEGER,
+            kickoff_utc TEXT,
+            odds_home REAL,
+            odds_draw REAL,
+            odds_away REAL,
+            updated_utc TEXT
+        );
+        """
+    )
 
-        if USE_POSTGRES:
-            # predictions_history (Postgres)
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS predictions_history (
-                  id BIGSERIAL PRIMARY KEY,
-                  league INT NOT NULL,
-                  fixture_id BIGINT NOT NULL,
-                  kickoff_utc TEXT NOT NULL,
-                  payload TEXT NOT NULL,
-                  created_at TEXT NOT NULL,
-                  UNIQUE (league, fixture_id, kickoff_utc)
-                );
-                """
-            )
-
-            # odds_cache (Postgres)
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS odds_cache (
-                  fixture_id BIGINT PRIMARY KEY,
-                  league INT,
-                  kickoff_utc TEXT,
-                  odds_home DOUBLE PRECISION,
-                  odds_draw DOUBLE PRECISION,
-                  odds_away DOUBLE PRECISION,
-                  updated_utc TIMESTAMP
-                );
-                """
-            )
-        else:
-            # predictions_history (SQLite)
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS predictions_history (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  league INTEGER NOT NULL,
-                  fixture_id INTEGER NOT NULL,
-                  kickoff_utc TEXT NOT NULL,
-                  payload TEXT NOT NULL,
-                  created_at TEXT NOT NULL,
-                  UNIQUE(league, fixture_id, kickoff_utc)
-                );
-                """
-            )
-
-            # odds_cache (SQLite)
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS odds_cache (
-                  fixture_id INTEGER PRIMARY KEY,
-                  league INTEGER,
-                  kickoff_utc TEXT,
-                  odds_home REAL,
-                  odds_draw REAL,
-                  odds_away REAL,
-                  updated_utc TEXT
-                );
-                """
-            )
-
-        conn.commit()
-        conn.close()
-        logger.info("[DB] predictions_history + odds_cache ready (postgres=%s)", USE_POSTGRES)
-    except Exception as e:
-        logger.exception("[DB] init_history_db failed: %s", e)
+    conn.commit()
+    conn.close()
+    logger.info("[DB] history.db ready")
 
 init_history_db()
+
+# ============================================================
+# ODDS CACHE (SQLite) — reduce /odds API calls
+# ============================================================
+
+ODDS_CACHE_TTL_SECONDS = int(os.getenv("ODDS_CACHE_TTL_SECONDS", "21600") or 21600)  # 6h
+ODDS_CACHE_MAX_ROWS = int(os.getenv("ODDS_CACHE_MAX_ROWS", "50000") or 50000)
+
+def get_cached_odds(fixture_id: int) -> Optional[Dict[str, float]]:
+    """Return cached 1X2 odds for fixture_id if fresh, else None."""
+    try:
+        con = sqlite3.connect(DB_PATH)
+        cur = con.cursor()
+        cur.execute(
+            "SELECT odds_home, odds_draw, odds_away, updated_utc FROM odds_cache WHERE fixture_id=?",
+            (int(fixture_id),),
+        )
+        row = cur.fetchone()
+        con.close()
+
+        if not row:
+            return None
+
+        oh, od, oa, updated = row
+        if not updated:
+            return None
+
+        try:
+            updated_dt = datetime.fromisoformat(str(updated).replace("Z", "+00:00")).replace(tzinfo=None)
+        except Exception:
+            return None
+
+        age = (datetime.utcnow() - updated_dt).total_seconds()
+        if age > ODDS_CACHE_TTL_SECONDS:
+            return None
+
+        if oh is None or od is None or oa is None:
+            return None
+
+        return {"home": float(oh), "draw": float(od), "away": float(oa)}
+    except Exception:
+        return None
+
+def set_cached_odds(
+    fixture_id: int,
+    odds: Dict[str, float],
+    league: Optional[int] = None,
+    kickoff_utc: Optional[str] = None,
+) -> None:
+    """Upsert cached odds for a fixture (best-effort)."""
+    try:
+        oh = float(odds.get("home")) if odds and odds.get("home") else None
+        od = float(odds.get("draw")) if odds and odds.get("draw") else None
+        oa = float(odds.get("away")) if odds and odds.get("away") else None
+        if oh is None or od is None or oa is None:
+            return
+
+        con = sqlite3.connect(DB_PATH)
+        cur = con.cursor()
+        cur.execute(
+            """
+            INSERT OR REPLACE INTO odds_cache
+              (fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc)
+            VALUES (?,?,?,?,?,?,?);
+            """,
+            (
+                int(fixture_id),
+                int(league) if league is not None else None,
+                str(kickoff_utc) if kickoff_utc is not None else None,
+                oh, od, oa,
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        con.commit()
+
+        # keep table from growing forever
+        try:
+            cur.execute(
+                f"""
+                DELETE FROM odds_cache
+                WHERE fixture_id IN (
+                    SELECT fixture_id FROM odds_cache
+                    ORDER BY updated_utc DESC
+                    LIMIT -1 OFFSET {ODDS_CACHE_MAX_ROWS}
+                );
+                """
+            )
+            con.commit()
+        except Exception:
+            pass
+
+        con.close()
+    except Exception:
+        return
+
 
 def record_predictions_history(league: int, fixtures: list[dict]) -> None:
     """
     Persist prediction payloads for later analysis.
 
-    Upserts on (league, fixture_id, kickoff_utc) so we don't create duplicates.
+    Upserts on (league, fixture_id, kickoff_utc) so we don't create duplicates,
+    and never writes blank created_at.
     """
     if not fixtures:
         return
 
     conn = None
     try:
-        conn = _db_connect()
+        conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
 
-        rows: list[tuple] = []
-        now_iso = datetime.utcnow().isoformat()
+        # Ensure unique key exists (needed for ON CONFLICT)
+        try:
+            cur.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_history_key "
+                "ON predictions_history (league, fixture_id, kickoff_utc);"
+            )
+        except Exception as e:
+            logger.warning("[DB] Could not ensure unique index: %s", e)
 
+        rows: list[tuple] = []
         for f in fixtures:
             fixture_id = f.get("fixture_id") or (f.get("fixture") or {}).get("id")
             kickoff_utc = f.get("kickoff_utc") or (f.get("fixture") or {}).get("date")
             if fixture_id is None or kickoff_utc is None:
                 continue
+
             payload = json.dumps(f, ensure_ascii=False)
-            rows.append((int(league), int(fixture_id), str(kickoff_utc), payload, now_iso))
+            rows.append((int(league), int(fixture_id), str(kickoff_utc), payload))
 
         if not rows:
             return
 
-        if USE_POSTGRES:
-            cur.executemany(
-                """
-                INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (league, fixture_id, kickoff_utc)
-                DO UPDATE SET payload = EXCLUDED.payload;
-                """,
-                rows,
-            )
-        else:
-            cur.executemany(
-                """
-                INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(league, fixture_id, kickoff_utc)
-                DO UPDATE SET payload=excluded.payload;
-                """,
-                rows,
-            )
-
+        cur.executemany(
+            """
+            INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
+            VALUES (?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
+              payload = excluded.payload,
+              created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)
+            """,
+            rows,
+        )
         conn.commit()
-    except Exception as e:
-        logger.warning("[DB] record_predictions_history failed: %s", e)
-    finally:
-        try:
-            if conn:
-                conn.close()
-        except Exception:
-            pass
 
+    except Exception as e:
+        logger.warning("Failed to record history: %s", e)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 def model_paths(league_id: int) -> Tuple[str, str]:
     model_path = os.path.join(ART, f"model_{league_id}.joblib")
@@ -2185,6 +2219,11 @@ def fetch_1x2_odds_for_fixture(fixture_id: int) -> Optional[Dict[str, float]]:
     """
     Call API-FOOTBALL /odds for a single fixture and return 1X2 odds.
     """
+    # Odds cache (fast path)
+    cached = get_cached_odds(int(fixture_id))
+    if cached:
+        return cached
+
     try:
         data = api_get("/odds", {"fixture": fixture_id})
     except HTTPException as e:
@@ -2197,6 +2236,12 @@ def fetch_1x2_odds_for_fixture(fixture_id: int) -> Optional[Dict[str, float]]:
     odds = extract_match_winner_odds(data)
     if not odds:
         logger.info("[ODDS] no 1X2 odds for fixture=%s", fixture_id)
+    
+    try:
+        set_cached_odds(int(fixture_id), odds)
+    except Exception:
+        pass
+
     return odds
 
 import math
@@ -2483,11 +2528,6 @@ def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
 
 app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
-@app.get("/debug/routes")
-def _debug_routes_public():
-    return {"ok": True, "note": "routes endpoint exists"}
-
-
 @app.get("/debug/db")
 def debug_db():
     import os
@@ -2514,174 +2554,77 @@ def debug_db():
 
     return info
 
-# ============================================================
-# Debug helpers (admin-only)
-# ============================================================
 
-from typing import Optional
-from fastapi import Query
+
 
 @app.get("/debug/routes", dependencies=[Depends(require_admin)])
 def debug_routes():
-    """
-    List registered routes (useful to confirm what is deployed).
-    """
+    """List registered routes (admin-only)."""
     out = []
-    for r in app.router.routes:
-        path = getattr(r, "path", None)
-        if not path:
-            continue
-        methods = sorted(list(getattr(r, "methods", []) or []))
-        name = getattr(r, "name", None)
-        out.append({"path": path, "methods": methods, "name": name})
-    out.sort(key=lambda x: x["path"])
-    return {"count": len(out), "routes": out}
+    try:
+        for r in app.routes:
+            path = getattr(r, "path", None)
+            methods = sorted(list(getattr(r, "methods", []) or []))
+            name = getattr(r, "name", None)
+            if path:
+                out.append({"path": path, "methods": methods, "name": name})
+        out.sort(key=lambda x: x["path"])
+    except Exception as e:
+        return {"ok": False, "error": str(e), "routes": []}
 
+    return {"ok": True, "count": len(out), "routes": out}
 
 @app.get("/debug/odds-cache", dependencies=[Depends(require_admin)])
-def debug_odds_cache(
-    fixture_id: Optional[int] = Query(None),
-    league: Optional[int] = Query(None),
-    limit: int = Query(20, ge=1, le=200),
-):
-    """
-    Inspect odds_cache table (works for both sqlite and postgres).
-    - If fixture_id is provided, returns that row (if any).
-    - Otherwise returns recent rows (optionally filtered by league).
-    """
-
-    # Reuse your existing globals if present; otherwise fall back safely.
-    DATABASE_URL = globals().get("DATABASE_URL", os.getenv("DATABASE_URL", "").strip())
-    USE_POSTGRES = globals().get("USE_POSTGRES", DATABASE_URL.lower().startswith("postgres"))
-    DB_PATH = globals().get("DB_PATH", os.getenv("DB_PATH", "data/predictions_history.db"))
-
-    def _connect():
-        if USE_POSTGRES:
-            import psycopg2
-            return psycopg2.connect(DATABASE_URL)
-        import sqlite3
-        return sqlite3.connect(DB_PATH)
-
-    def _table_exists(conn) -> bool:
-        cur = conn.cursor()
-        if USE_POSTGRES:
-            cur.execute("SELECT to_regclass('public.odds_cache');")
-            return cur.fetchone()[0] is not None
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='odds_cache';")
-        return cur.fetchone() is not None
-
-    conn = _connect()
+def debug_odds_cache(limit: int = Query(10, ge=1, le=200)):
+    """Inspect odds_cache (admin-only)."""
     try:
-        if not _table_exists(conn):
-            return {"ok": False, "detail": "odds_cache table not found (not created yet)"}
+        con = sqlite3.connect(DB_PATH)
+        cur = con.cursor()
+        # table may not exist if someone deployed before adding it
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS odds_cache (
+                fixture_id INTEGER PRIMARY KEY,
+                league INTEGER,
+                kickoff_utc TEXT,
+                odds_home REAL,
+                odds_draw REAL,
+                odds_away REAL,
+                updated_utc TEXT
+            );
+            """
+        )
+        con.commit()
 
-        cur = conn.cursor()
-
-        # Count
         cur.execute("SELECT COUNT(*) FROM odds_cache;")
-        total = cur.fetchone()[0]
+        total = int(cur.fetchone()[0])
 
-        # Fetch rows
-        rows = []
-        if fixture_id is not None:
-            if USE_POSTGRES:
-                cur.execute(
-                    """
-                    SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
-                    FROM odds_cache
-                    WHERE fixture_id = %s
-                    """,
-                    (int(fixture_id),),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
-                    FROM odds_cache
-                    WHERE fixture_id = ?
-                    """,
-                    (int(fixture_id),),
-                )
-            one = cur.fetchone()
-            if one:
-                rows = [one]
-        else:
-            if league is not None:
-                if USE_POSTGRES:
-                    cur.execute(
-                        """
-                        SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
-                        FROM odds_cache
-                        WHERE league = %s
-                        ORDER BY updated_utc DESC NULLS LAST
-                        LIMIT %s
-                        """,
-                        (int(league), int(limit)),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
-                        FROM odds_cache
-                        WHERE league = ?
-                        ORDER BY updated_utc DESC
-                        LIMIT ?
-                        """,
-                        (int(league), int(limit)),
-                    )
-            else:
-                if USE_POSTGRES:
-                    cur.execute(
-                        """
-                        SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
-                        FROM odds_cache
-                        ORDER BY updated_utc DESC NULLS LAST
-                        LIMIT %s
-                        """,
-                        (int(limit),),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc
-                        FROM odds_cache
-                        ORDER BY updated_utc DESC
-                        LIMIT ?
-                        """,
-                        (int(limit),),
-                    )
+        cur.execute(
+            "SELECT fixture_id, league, kickoff_utc, odds_home, odds_draw, odds_away, updated_utc "
+            "FROM odds_cache ORDER BY updated_utc DESC LIMIT ?;",
+            (int(limit),),
+        )
+        rows = cur.fetchall()
 
-            rows = cur.fetchall() or []
+        cutoff = (datetime.utcnow() - timedelta(seconds=ODDS_CACHE_TTL_SECONDS)).isoformat()
+        cur.execute("SELECT COUNT(*) FROM odds_cache WHERE updated_utc < ?;", (cutoff,))
+        expired = int(cur.fetchone()[0])
 
-        # Normalize into dicts
-        out_rows = []
-        for r in rows:
-            out_rows.append(
-                {
-                    "fixture_id": r[0],
-                    "league": r[1],
-                    "kickoff_utc": r[2],
-                    "odds_home": r[3],
-                    "odds_draw": r[4],
-                    "odds_away": r[5],
-                    "updated_utc": str(r[6]) if r[6] is not None else None,
-                }
-            )
+        con.close()
 
-        return {
-            "ok": True,
-            "db_kind": "postgres" if USE_POSTGRES else "sqlite",
-            "total_rows": int(total),
-            "returned": len(out_rows),
-            "rows": out_rows,
-        }
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        sample = []
+        for fx_id, lg, ko, oh, od, oa, upd in rows:
+            sample.append({
+                "fixture_id": fx_id,
+                "league": lg,
+                "kickoff_utc": ko,
+                "odds": {"home": oh, "draw": od, "away": oa},
+                "updated_utc": upd,
+            })
 
-
+        return {"ok": True, "total": total, "expired": expired, "sample": sample}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True,
