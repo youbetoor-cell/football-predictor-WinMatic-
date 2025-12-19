@@ -7,7 +7,9 @@
 
   <link rel="stylesheet" href="assets/style.css" />
   <script src="assets/landing.js" defer></script>
-  <script src="js/status.js" defer></script>
+  <script src="js/site.js"></script>
+<script src="js/status.js" defer></script>
+<head>
   <meta charset="UTF-8" />
   <title>WinMatic – AI Football Predictions</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -1075,9 +1077,7 @@
   }
 }
 
-  
-.nav-pill{margin-left:12px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.08);font-size:12px;}
-</style>
+  </style>
 </head>
 <body>
   <!-- Desktop: tiny hover strip that reveals the header -->
@@ -1095,7 +1095,6 @@
     </div>
     <div class="topbar-right">
       <nav class="nav">
-        <span id="wm-api-pill" class="nav-pill">API: …</span>
           <a href="index.html" class="nav-item active">Home</a>
         <a href="predictor.html" class="nav-item">Predictions</a>
         <a href="all-matches.html" class="nav-item">All matches (today)</a>
@@ -1283,57 +1282,6 @@
       </div>
     </section>
         <script>
-
-// ---- WinMatic API base helper ----
-// Works when pages are served from Render (/static/*) AND when opened from another host (e.g. GitHub Pages).
-const WM_DEFAULT_API_BASE = "https://football-predictor-winmatic.onrender.com";
-function wmApiBase() {
-  try {
-    const qs = new URLSearchParams(window.location.search);
-    const override = (qs.get("api") || "").trim();
-    if (override) return override.replace(/\/$/, "");
-  } catch (e) {}
-  try {
-    const origin = window.location.origin || "";
-    // If we're already on the API host (Render), use same-origin.
-    if (origin && (origin.includes("onrender.com") || origin.includes("localhost"))) return origin.replace(/\/$/, "");
-  } catch (e) {}
-  return WM_DEFAULT_API_BASE;
-}
-function wmApiUrl(path) {
-  const base = wmApiBase();
-  if (/^https?:\/\//i.test(path)) return path;
-  if (!path.startsWith("/")) path = "/" + path;
-  return base + path;
-}
-async function wmFetchJson(pathOrUrl, opts) {
-  const url = wmApiUrl(pathOrUrl);
-  const res = await fetch(wmApiUrl(url), opts);
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (e) {}
-  if (!res.ok) {
-    const msg = (data && (data.detail || data.error)) ? (data.detail || data.error) : (text || res.statusText);
-    throw new Error(`HTTP ${res.status} ${msg}`.trim());
-  }
-  return data;
-}
-
-// ---- API status pill ----
-(async () => {
-  const pill = document.getElementById("wm-api-pill");
-  if (!pill) return;
-  pill.textContent = "API: checking…";
-  try {
-    const d = await wmFetchJson("/health");
-    pill.textContent = (d && d.ok) ? "API: OK" : "API: issue";
-  } catch (e) {
-    pill.textContent = "API: offline";
-  }
-})();
-
-
-
       // Rotating hero testimonials (one at a time with pop animation)
             const wmTestimonials = [
         {

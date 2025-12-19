@@ -723,43 +723,6 @@
       </div>
     </section>
   </main>
-<script>
-
-// ---- WinMatic API base helper ----
-// Works when pages are served from Render (/static/*) AND when opened from another host (e.g. GitHub Pages).
-const WM_DEFAULT_API_BASE = "https://football-predictor-winmatic.onrender.com";
-function wmApiBase() {
-  try {
-    const qs = new URLSearchParams(window.location.search);
-    const override = (qs.get("api") || "").trim();
-    if (override) return override.replace(/\/$/, "");
-  } catch (e) {}
-  try {
-    const origin = window.location.origin || "";
-    // If we're already on the API host (Render), use same-origin.
-    if (origin && (origin.includes("onrender.com") || origin.includes("localhost"))) return origin.replace(/\/$/, "");
-  } catch (e) {}
-  return WM_DEFAULT_API_BASE;
-}
-function wmApiUrl(path) {
-  const base = wmApiBase();
-  if (/^https?:\/\//i.test(path)) return path;
-  if (!path.startsWith("/")) path = "/" + path;
-  return base + path;
-}
-async function wmFetchJson(pathOrUrl, opts) {
-  const url = wmApiUrl(pathOrUrl);
-  const res = await fetch(wmApiUrl(url), opts);
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (e) {}
-  if (!res.ok) {
-    const msg = (data && (data.detail || data.error)) ? (data.detail || data.error) : (text || res.statusText);
-    throw new Error(`HTTP ${res.status} ${msg}`.trim());
-  }
-  return data;
-}
-
-</script>
+<script src="js/site.js"></script>
 </body>
 </html>

@@ -566,43 +566,6 @@
   </main>
 
   <script>
-
-// ---- WinMatic API base helper ----
-// Works when pages are served from Render (/static/*) AND when opened from another host (e.g. GitHub Pages).
-const WM_DEFAULT_API_BASE = "https://football-predictor-winmatic.onrender.com";
-function wmApiBase() {
-  try {
-    const qs = new URLSearchParams(window.location.search);
-    const override = (qs.get("api") || "").trim();
-    if (override) return override.replace(/\/$/, "");
-  } catch (e) {}
-  try {
-    const origin = window.location.origin || "";
-    // If we're already on the API host (Render), use same-origin.
-    if (origin && (origin.includes("onrender.com") || origin.includes("localhost"))) return origin.replace(/\/$/, "");
-  } catch (e) {}
-  return WM_DEFAULT_API_BASE;
-}
-function wmApiUrl(path) {
-  const base = wmApiBase();
-  if (/^https?:\/\//i.test(path)) return path;
-  if (!path.startsWith("/")) path = "/" + path;
-  return base + path;
-}
-async function wmFetchJson(pathOrUrl, opts) {
-  const url = wmApiUrl(pathOrUrl);
-  const res = await fetch(wmApiUrl(url), opts);
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (e) {}
-  if (!res.ok) {
-    const msg = (data && (data.detail || data.error)) ? (data.detail || data.error) : (text || res.statusText);
-    throw new Error(`HTTP ${res.status} ${msg}`.trim());
-  }
-  return data;
-}
-
-
   (function () {
     var leagueSelect = document.getElementById("results-league-select");
     var gridEl = document.getElementById("results-grid");
@@ -638,7 +601,7 @@ async function wmFetchJson(pathOrUrl, opts) {
 
     function fetchRecent(league) {
       var url = "/results/recent?league=" + league + "&limit=18";
-      return fetch(wmApiUrl(url)).then(function (res) {
+      return fetch(url).then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
       });
@@ -843,5 +806,6 @@ async function wmFetchJson(pathOrUrl, opts) {
     document.addEventListener("DOMContentLoaded", loadResults);
   })();
   </script>
+<script src="js/site.js"></script>
 </body>
 </html>

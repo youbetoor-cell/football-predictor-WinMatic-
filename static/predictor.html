@@ -978,9 +978,7 @@
     .scorer-xg { color:var(--text-softer); font-size:.8rem; }
 
     .empty { font-size:.8rem; color:var(--text-softer); margin-top:4px; }
-  
-.nav-pill{margin-left:12px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.08);font-size:12px;}
-</style>
+  </style>
 </head>
 <body>
   <!-- Desktop: tiny hover strip that reveals the header -->
@@ -998,7 +996,6 @@
     </div>
     <div class="topbar-right">
       <nav class="nav">
-        <span id="wm-api-pill" class="nav-pill">API: …</span>
           <a href="index.html" class="nav-item">Home</a>
         <a href="predictor.html" class="nav-item active">Predictions</a>
         <a href="all-matches.html" class="nav-item">All matches (today)</a>
@@ -1132,57 +1129,6 @@
   </main>
 
   <script>
-
-// ---- WinMatic API base helper ----
-// Works when pages are served from Render (/static/*) AND when opened from another host (e.g. GitHub Pages).
-const WM_DEFAULT_API_BASE = "https://football-predictor-winmatic.onrender.com";
-function wmApiBase() {
-  try {
-    const qs = new URLSearchParams(window.location.search);
-    const override = (qs.get("api") || "").trim();
-    if (override) return override.replace(/\/$/, "");
-  } catch (e) {}
-  try {
-    const origin = window.location.origin || "";
-    // If we're already on the API host (Render), use same-origin.
-    if (origin && (origin.includes("onrender.com") || origin.includes("localhost"))) return origin.replace(/\/$/, "");
-  } catch (e) {}
-  return WM_DEFAULT_API_BASE;
-}
-function wmApiUrl(path) {
-  const base = wmApiBase();
-  if (/^https?:\/\//i.test(path)) return path;
-  if (!path.startsWith("/")) path = "/" + path;
-  return base + path;
-}
-async function wmFetchJson(pathOrUrl, opts) {
-  const url = wmApiUrl(pathOrUrl);
-  const res = await fetch(wmApiUrl(url), opts);
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (e) {}
-  if (!res.ok) {
-    const msg = (data && (data.detail || data.error)) ? (data.detail || data.error) : (text || res.statusText);
-    throw new Error(`HTTP ${res.status} ${msg}`.trim());
-  }
-  return data;
-}
-
-// ---- API status pill ----
-(async () => {
-  const pill = document.getElementById("wm-api-pill");
-  if (!pill) return;
-  pill.textContent = "API: checking…";
-  try {
-    const d = await wmFetchJson("/health");
-    pill.textContent = (d && d.ok) ? "API: OK" : "API: issue";
-  } catch (e) {
-    pill.textContent = "API: offline";
-  }
-})();
-
-
-
     const $ = (id) => document.getElementById(id);
 
     const LEAGUES = [
@@ -1337,7 +1283,7 @@ async function wmFetchJson(pathOrUrl, opts) {
 
     async function fetchModelInfo(){
       try{
-        const res=await fetch(wmApiUrl(`/model-info?league=${encodeURIComponent(currentLeague)}`));
+        const res=await fetch(`/model-info?league=${encodeURIComponent(currentLeague)}`);
         if(!res.ok) return null;
         return await res.json();
       }catch{
@@ -1349,7 +1295,7 @@ async function wmFetchJson(pathOrUrl, opts) {
       const url = `/predict/upcoming?league=${encodeURIComponent(currentLeague)}&days_ahead=${encodeURIComponent(currentDays)}`;
       console.log("Calling predictions URL:", url);
 
-      const res = await fetch(wmApiUrl(url));
+      const res = await fetch(url);
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -1361,7 +1307,7 @@ async function wmFetchJson(pathOrUrl, opts) {
 
     async function fetchValue(){
       const url=`/value/upcoming?league=${encodeURIComponent(currentLeague)}&days_ahead=${encodeURIComponent(currentDays)}`;
-      const res=await fetch(wmApiUrl(url));
+      const res=await fetch(url);
       return res.json();
     }
 
@@ -1441,7 +1387,7 @@ async function wmFetchJson(pathOrUrl, opts) {
 
       const filtered = showOnlyValue
         ? latestPreds.filter(fx => {
-            const v = latestValueMap[String(fx.fixture_id)];
+            const v = latestValueMap[String(WM.fixtureId(fx))];
             const best = v && (v.best_pick || v);
             const edge = getEdgePercent(best);
             return edge!=null && edge >= minEdgePercent;
@@ -1452,14 +1398,14 @@ async function wmFetchJson(pathOrUrl, opts) {
 
       const html = filtered.map((fx, idx) => {
         const preds = fx.predictions || {};
-        const value = latestValueMap[String(fx.fixture_id)];
+        const value = latestValueMap[String(WM.fixtureId(fx))];
         const best = value && (value.best_pick || value);
         const edge = getEdgePercent(best);
 
         if(edge!=null && edge >= minEdgePercent) valueCount++;
 
-        const home = escapeHtml(fx.home_name || "Home");
-        const away = escapeHtml(fx.away_name || "Away");
+        const home = escapeHtml(WM.teamName(fx,"home") || "Home");
+        const away = escapeHtml(WM.teamName(fx,"away") || "Away");
 
         const { dateLabel, timeLabel } = (function(iso){
           const d=new Date(iso);
@@ -1468,7 +1414,7 @@ async function wmFetchJson(pathOrUrl, opts) {
             dateLabel: d.toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"}),
             timeLabel: d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})
           };
-        })(fx.kickoff_utc);
+        })(WM.kickoff(fx));
 
         const ph = preds.home_win_p || 0,
               pd = preds.draw_p || 0,
@@ -1483,8 +1429,8 @@ async function wmFetchJson(pathOrUrl, opts) {
         const sotPair = `${stats.shots_on_target[0].toFixed(2)} – ${stats.shots_on_target[1].toFixed(2)}`;
         const scorelineText = `${(preds.home_goals||0).toFixed(2)} : ${(preds.away_goals||0).toFixed(2)}`;
 
-        const homeLogo = fx.home_logo || `/team-logo/${fx.home_id}.png`;
-        const awayLogo = fx.away_logo || `/team-logo/${fx.away_id}.png`;
+        const homeLogo = WM.teamLogo(fx,"home") || `/team-logo/${fx.home_id}.png`;
+        const awayLogo = WM.teamLogo(fx,"away") || `/team-logo/${fx.away_id}.png`;
         const homeInitial = home.charAt(0)||"H";
         const awayInitial = away.charAt(0)||"A";
 
@@ -1511,7 +1457,7 @@ async function wmFetchJson(pathOrUrl, opts) {
         }).join("");
 
         return `
-        <article class="match-card ${cardClass} ${idx===0?"expanded":""}" style="--card-index:${idx};" data-fixture-id="${fx.fixture_id}">
+        <article class="match-card ${cardClass} ${idx===0?"expanded":""}" style="--card-index:${idx};" data-fixture-id="${WM.fixtureId(fx)}">
           <div class="match-header">
             <div class="match-team match-team-home">
               <div class="team-logo-orb-sm">
@@ -1661,6 +1607,7 @@ async function wmFetchJson(pathOrUrl, opts) {
     });
   </script>
 
-  <script src="js/status.js"></script>
+  <script src="js/site.js"></script>
+<script src="js/status.js"></script>
 </body>
 </html>

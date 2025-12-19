@@ -769,43 +769,6 @@
   </main>
 
   <script>
-
-// ---- WinMatic API base helper ----
-// Works when pages are served from Render (/static/*) AND when opened from another host (e.g. GitHub Pages).
-const WM_DEFAULT_API_BASE = "https://football-predictor-winmatic.onrender.com";
-function wmApiBase() {
-  try {
-    const qs = new URLSearchParams(window.location.search);
-    const override = (qs.get("api") || "").trim();
-    if (override) return override.replace(/\/$/, "");
-  } catch (e) {}
-  try {
-    const origin = window.location.origin || "";
-    // If we're already on the API host (Render), use same-origin.
-    if (origin && (origin.includes("onrender.com") || origin.includes("localhost"))) return origin.replace(/\/$/, "");
-  } catch (e) {}
-  return WM_DEFAULT_API_BASE;
-}
-function wmApiUrl(path) {
-  const base = wmApiBase();
-  if (/^https?:\/\//i.test(path)) return path;
-  if (!path.startsWith("/")) path = "/" + path;
-  return base + path;
-}
-async function wmFetchJson(pathOrUrl, opts) {
-  const url = wmApiUrl(pathOrUrl);
-  const res = await fetch(wmApiUrl(url), opts);
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (e) {}
-  if (!res.ok) {
-    const msg = (data && (data.detail || data.error)) ? (data.detail || data.error) : (text || res.statusText);
-    throw new Error(`HTTP ${res.status} ${msg}`.trim());
-  }
-  return data;
-}
-
-
     // ---- CONFIG: leagues to show ----
     const LEAGUES = [
       { id: 39,  name: "Premier League",        short: "ENG" },
@@ -851,20 +814,20 @@ async function wmFetchJson(pathOrUrl, opts) {
       const p = fx.predictions || fx;
 
       const home =
-        fx.home_name ||
+        WM.teamName(fx,"home") ||
         fx.home_team ||
         fx.home ||
         (fx.teams && fx.teams.home && fx.teams.home.name) ||
         "Home";
       const away =
-        fx.away_name ||
+        WM.teamName(fx,"away") ||
         fx.away_team ||
         fx.away ||
         (fx.teams && fx.teams.away && fx.teams.away.name) ||
         "Away";
 
-      const homeLogo = fx.home_logo || (fx.home_id ? `/team-logo/${fx.home_id}.png` : "");
-      const awayLogo = fx.away_logo || (fx.away_id ? `/team-logo/${fx.away_id}.png` : "");
+      const homeLogo = WM.teamLogo(fx,"home") || (fx.home_id ? `/team-logo/${fx.home_id}.png` : "");
+      const awayLogo = WM.teamLogo(fx,"away") || (fx.away_id ? `/team-logo/${fx.away_id}.png` : "");
       const homeInitial = (home && home.charAt(0)) || "H";
       const awayInitial = (away && away.charAt(0)) || "A";
 
@@ -905,7 +868,7 @@ async function wmFetchJson(pathOrUrl, opts) {
       }
 
       const { date, time } = formatKickoff(
-        fx.kickoff_utc || fx.match_date || fx.date || (fx.fixture && fx.fixture.date)
+        WM.kickoff(fx) || fx.match_date || fx.date || (fx.fixture && fx.fixture.date)
       );
 
       const card = document.createElement("article");
@@ -986,7 +949,7 @@ async function wmFetchJson(pathOrUrl, opts) {
       for (const league of LEAGUES) {
         const url = `/predict/by-date?league=${league.id}&from_date=${dateStr}&to_date=${dateStr}`;
         try {
-          const resp = await fetch(wmApiUrl(url));
+          const resp = await fetch(url);
           if (!resp.ok) {
             console.warn("Failed for league", league.id, "status", resp.status);
             continue;
@@ -995,7 +958,7 @@ async function wmFetchJson(pathOrUrl, opts) {
           const fixtures = data.matches || data.fixtures || [];
           fixtures.forEach((fx, i) => {
             const kickoffRaw =
-              fx.kickoff_utc || fx.match_date || fx.date || (fx.fixture && fx.fixture.date) || (dateStr + "T00:00:00Z");
+              WM.kickoff(fx) || fx.match_date || fx.date || (fx.fixture && fx.fixture.date) || (dateStr + "T00:00:00Z");
             const ts = new Date(kickoffRaw).getTime() || (Date.now() + i);
             collected.push({ ts, league, fx });
           });
@@ -1050,5 +1013,6 @@ async function wmFetchJson(pathOrUrl, opts) {
 
     document.addEventListener("DOMContentLoaded", initAllMatchesPage);
   </script>
+<script src="js/site.js"></script>
 </body>
 </html>
