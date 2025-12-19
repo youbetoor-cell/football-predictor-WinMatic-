@@ -1,95 +1,37 @@
-// static/js/status.js
-// Lightweight status widget that only hits /health (no external odds/fixtures calls)
+/* WinMatic status.js (safe, prod-friendly) */
+(function() {
+  function byId(id) { return document.getElementById(id); }
 
-
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-async function fetchWithRetry(url, retries = 1) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  const DEFAULT_BASE = "https://football-predictor-winmatic.onrender.com";
+  function apiBase() {
     try {
-      const res = await fetchWithRetry(url);
-      if ([502, 503, 504].includes(res.status) && attempt < retries) {
-        await sleep(500 * (attempt + 1));
-        continue;
-      }
-      return res;
-    } catch (err) {
-      if (attempt < retries) {
-        await sleep(500 * (attempt + 1));
-        continue;
-      }
-      throw err;
+      const qs = new URLSearchParams(window.location.search);
+      const override = (qs.get("api") || "").trim();
+      if (override) return override.replace(/\/$/, "");
+    } catch (e) {}
+    try {
+      const origin = window.location.origin || "";
+      if (origin && (origin.includes("onrender.com") || origin.includes("localhost"))) return origin.replace(/\/$/, "");
+    } catch (e) {}
+    return DEFAULT_BASE;
+  }
+
+  async function ping() {
+    const pill = byId("wm-api-pill") || byId("api-status") || byId("apiStatus");
+    if (pill) pill.textContent = "API: checking…";
+    try {
+      const res = await fetch(apiBase() + "/health");
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      if (pill) pill.textContent = (data && data.ok) ? "API: OK" : "API: issue";
+    } catch (e) {
+      if (pill) pill.textContent = "API: offline";
     }
   }
-}
 
-
-async function updateApiStatus() {
-  const dot = document.getElementById("api-dot");
-  const text = document.getElementById("api-text");
-
-  if (!dot || !text) return;
-
-  try {
-    const res = await fetch(window.location.origin.replace(/\/$/, "") + "/health");
-
-    if (!res.ok) {
-      // Backend up but returned error
-      dot.style.backgroundColor = "#ffa000"; // amber
-      text.textContent = "API: error";
-      return;
-    }
-
-    const data = await res.json().catch(() => ({}));
-
-    if (data && data.ok) {
-      dot.style.backgroundColor = "#00c853"; // green
-      text.textContent = "API: online";
-    } else {
-      dot.style.backgroundColor = "#ffa000"; // amber
-      text.textContent = "API: degraded";
-    }
-  } catch (err) {
-    // Server not reachable
-    dot.style.backgroundColor = "#d32f2f"; // red
-    text.textContent = "API: offline";
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", ping);
+  } else {
+    ping();
   }
-}
-
-function initApiStatus() {
-  const existing = document.getElementById("api-status");
-  if (existing) return;
-
-  const container = document.createElement("div");
-  container.id = "api-status";
-  container.style = `
-    position: fixed;
-    top: 10px;
-    right: 20px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    font-weight: 500;
-    color: #333;
-    z-index: 9999;
-  `;
-
-  container.innerHTML = `
-    <span id="api-dot" style="
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background-color: gray;
-      display: inline-block;
-    "></span>
-    <span id="api-text">API: checking...</span>
-  `;
-
-  document.body.appendChild(container);
-
-  // Call ONCE on load (no setInterval)
-  updateApiStatus();
-}
-
-document.addEventListener("DOMContentLoaded", initApiStatus);
+})();

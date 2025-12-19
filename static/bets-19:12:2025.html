@@ -864,42 +864,44 @@
 
   <!-- VALUE SCANNER LOGIC -->
   <script>
+    // ---------------------------
+    // WinMatic helper: fetch w/ timeout + retry (Render cold starts can cause 502/504)
+    // ---------------------------
+    function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-// ---- WinMatic API base helper ----
-// Works when pages are served from Render (/static/*) AND when opened from another host (e.g. GitHub Pages).
-const WM_DEFAULT_API_BASE = "https://football-predictor-winmatic.onrender.com";
-function wmApiBase() {
-  try {
-    const qs = new URLSearchParams(window.location.search);
-    const override = (qs.get("api") || "").trim();
-    if (override) return override.replace(/\/$/, "");
-  } catch (e) {}
-  try {
-    const origin = window.location.origin || "";
-    // If we're already on the API host (Render), use same-origin.
-    if (origin && (origin.includes("onrender.com") || origin.includes("localhost"))) return origin.replace(/\/$/, "");
-  } catch (e) {}
-  return WM_DEFAULT_API_BASE;
-}
-function wmApiUrl(path) {
-  const base = wmApiBase();
-  if (/^https?:\/\//i.test(path)) return path;
-  if (!path.startsWith("/")) path = "/" + path;
-  return base + path;
-}
-async function wmFetchJson(pathOrUrl, opts) {
-  const url = wmApiUrl(pathOrUrl);
-  const res = await fetch(wmApiUrl(url), opts);
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (e) {}
-  if (!res.ok) {
-    const msg = (data && (data.detail || data.error)) ? (data.detail || data.error) : (text || res.statusText);
-    throw new Error(`HTTP ${res.status} ${msg}`.trim());
-  }
-  return data;
-}
+    async function fetchWithRetry(url, options = {}, retries = 2, timeoutMs = 25000) {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const controller = new AbortController();
+          const t = setTimeout(() => controller.abort(), timeoutMs);
+          const res = await fetchWithRetry(url, { ...options, signal: controller.signal });
+          clearTimeout(t);
 
+          // retry on transient gateway / overload / quota hiccups
+          if ([429, 502, 503, 504].includes(res.status) && attempt < retries) {
+            await sleep(600 * (attempt + 1));
+            continue;
+          }
+
+          return res;
+        } catch (err) {
+          if (attempt < retries) {
+            await sleep(600 * (attempt + 1));
+            continue;
+          }
+          throw err;
+        }
+      }
+    }
+
+    async function readErrorBody(res) {
+      try {
+        const txt = await res.text();
+        return (txt || "").slice(0, 200);
+      } catch {
+        return "";
+      }
+    }
 
     const RESULTS_CONTAINER = document.getElementById("results-container");
     const HERO_MIN_EDGE = document.getElementById("hero-min-edge");
@@ -1114,11 +1116,11 @@ async function wmFetchJson(pathOrUrl, opts) {
       HERO_LEAGUE_LABEL.textContent = leagueShortName(league);
       SIDE_META_LABEL.textContent = `Min edge ≥ ${(minEdge * 100).toFixed(0)}%`;
 
-      const url = `/value/upcoming?league=${encodeURIComponent(
+      const url = `/value-bets?league=${encodeURIComponent(
         league
       )}&days_ahead=${encodeURIComponent(
         daysAhead
-      )}&min_edge=${encodeURIComponent(minEdge.toFixed(3))}`;
+      )}&min_edge=${encodeURIComponent(minEdge.toFixed(3))}`&mode=profit&limit=50;
 
       RESULTS_CONTAINER.innerHTML = `
         <div class="empty-state">
@@ -1133,7 +1135,7 @@ async function wmFetchJson(pathOrUrl, opts) {
       STATUS_BADGE.textContent = "Live call in progress…";
 
       try {
-        const resp = await fetch(wmApiUrl(url));
+        const resp = await fetchWithRetry(url);
         const data = await resp.json();
 
         const now = new Date();
@@ -1182,7 +1184,7 @@ async function wmFetchJson(pathOrUrl, opts) {
           </div>
         `;
         RESULTS_TITLE.textContent = "Network error";
-        RESULTS_SUBTITLE.textContent = "Could not reach backend /value/upcoming.";
+        RESULTS_SUBTITLE.textContent = "Could not reach backend /value-bets.";
         STATUS_BADGE.innerHTML = `<span>Network error – check server</span>`;
       }
     }
