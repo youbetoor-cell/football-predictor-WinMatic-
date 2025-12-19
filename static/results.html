@@ -501,7 +501,61 @@
         align-items: flex-start;
       }
     }
-  </style>
+  
+/* ===== WinMatic layout hotfix (desktop + mobile) ===== */
+:root{ --topbar-h:72px; --nav-w:260px; }
+.app-shell{ padding-top: var(--topbar-h); min-height:100vh; }
+.topbar{ height: var(--topbar-h); z-index: 1000; }
+.side-nav{
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  bottom: 0;
+  width: var(--nav-w);
+  overflow-y: auto;
+  z-index: 950;
+  -webkit-overflow-scrolling: touch;
+}
+.app-main{
+  margin-left: var(--nav-w);
+  min-height: calc(100vh - var(--topbar-h));
+}
+.nav-scrim{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 940;
+  display: none;
+}
+body.nav-open .nav-scrim{ display:block; }
+@media (max-width: 980px){
+  :root{ --nav-w: 86vw; }
+  .side-nav{
+    transform: translateX(-110%);
+    transition: transform .18s ease;
+    box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  }
+  body.nav-open .side-nav{ transform: translateX(0); }
+  .app-main{ margin-left: 0 !important; }
+  .topbar{ padding-left: 12px; padding-right: 12px; }
+  .nav-toggle{
+    display: inline-flex !important;
+    align-items:center;
+    justify-content:center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    cursor: pointer;
+    margin-right: 10px;
+  }
+}
+@media (min-width: 981px){
+  .nav-toggle{ display:none !important; }
+}
+
+</style>
 </head>
 <body>
   <!-- Desktop hover strip -->
@@ -566,45 +620,6 @@
   </main>
 
   <script>
-    // ---------------------------
-    // WinMatic helper: fetch w/ timeout + retry (Render cold starts can cause 502/504)
-    // ---------------------------
-    function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-    async function fetchWithRetry(url, options = {}, retries = 2, timeoutMs = 25000) {
-      for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-          const controller = new AbortController();
-          const t = setTimeout(() => controller.abort(), timeoutMs);
-          const res = await fetchWithRetry(url, { ...options, signal: controller.signal });
-          clearTimeout(t);
-
-          // retry on transient gateway / overload / quota hiccups
-          if ([429, 502, 503, 504].includes(res.status) && attempt < retries) {
-            await sleep(600 * (attempt + 1));
-            continue;
-          }
-
-          return res;
-        } catch (err) {
-          if (attempt < retries) {
-            await sleep(600 * (attempt + 1));
-            continue;
-          }
-          throw err;
-        }
-      }
-    }
-
-    async function readErrorBody(res) {
-      try {
-        const txt = await res.text();
-        return (txt || "").slice(0, 200);
-      } catch {
-        return "";
-      }
-    }
-
   (function () {
     var leagueSelect = document.getElementById("results-league-select");
     var gridEl = document.getElementById("results-grid");
@@ -640,7 +655,7 @@
 
     function fetchRecent(league) {
       var url = "/results/recent?league=" + league + "&limit=18";
-      return fetchWithRetry(url).then(function (res) {
+      return fetch(url).then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
       });
@@ -845,5 +860,40 @@
     document.addEventListener("DOMContentLoaded", loadResults);
   })();
   </script>
+<script>
+// ===== WinMatic nav hotfix =====
+(function(){
+  const body=document.body;
+  // scrim
+  let scrim=document.querySelector('.nav-scrim');
+  if(!scrim){
+    scrim=document.createElement('div');
+    scrim.className='nav-scrim';
+    document.body.appendChild(scrim);
+  }
+  scrim.addEventListener('click', ()=> body.classList.remove('nav-open'));
+
+  // add toggle button if missing
+  const topbar=document.querySelector('.topbar .left') || document.querySelector('.topbar') || document.querySelector('header');
+  if(topbar && !document.querySelector('.nav-toggle')){
+    const btn=document.createElement('button');
+    btn.className='nav-toggle';
+    btn.type='button';
+    btn.setAttribute('aria-label','Toggle menu');
+    btn.innerHTML='☰';
+    btn.addEventListener('click', ()=> body.classList.toggle('nav-open'));
+    // put it at the very start of the left cluster if possible
+    if(topbar.classList.contains('left')) topbar.prepend(btn);
+    else topbar.prepend(btn);
+  }
+  // close nav when a link is clicked (mobile)
+  document.addEventListener('click', (e)=>{
+    const a = e.target && e.target.closest ? e.target.closest('a') : null;
+    if(a && a.closest && a.closest('.side-nav') && window.matchMedia('(max-width: 980px)').matches){
+      body.classList.remove('nav-open');
+    }
+  });
+})();
+</script>
 </body>
 </html>

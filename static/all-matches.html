@@ -668,7 +668,61 @@
     }
 
     .empty { font-size:.8rem; color:var(--text-softer); margin-top:4px; }
-  </style>
+  
+/* ===== WinMatic layout hotfix (desktop + mobile) ===== */
+:root{ --topbar-h:72px; --nav-w:260px; }
+.app-shell{ padding-top: var(--topbar-h); min-height:100vh; }
+.topbar{ height: var(--topbar-h); z-index: 1000; }
+.side-nav{
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  bottom: 0;
+  width: var(--nav-w);
+  overflow-y: auto;
+  z-index: 950;
+  -webkit-overflow-scrolling: touch;
+}
+.app-main{
+  margin-left: var(--nav-w);
+  min-height: calc(100vh - var(--topbar-h));
+}
+.nav-scrim{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 940;
+  display: none;
+}
+body.nav-open .nav-scrim{ display:block; }
+@media (max-width: 980px){
+  :root{ --nav-w: 86vw; }
+  .side-nav{
+    transform: translateX(-110%);
+    transition: transform .18s ease;
+    box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  }
+  body.nav-open .side-nav{ transform: translateX(0); }
+  .app-main{ margin-left: 0 !important; }
+  .topbar{ padding-left: 12px; padding-right: 12px; }
+  .nav-toggle{
+    display: inline-flex !important;
+    align-items:center;
+    justify-content:center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    cursor: pointer;
+    margin-right: 10px;
+  }
+}
+@media (min-width: 981px){
+  .nav-toggle{ display:none !important; }
+}
+
+</style>
 </head>
 <body>
   <!-- Desktop: tiny hover strip that reveals the header -->
@@ -769,45 +823,6 @@
   </main>
 
   <script>
-    // ---------------------------
-    // WinMatic helper: fetch w/ timeout + retry (Render cold starts can cause 502/504)
-    // ---------------------------
-    function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-    async function fetchWithRetry(url, options = {}, retries = 2, timeoutMs = 25000) {
-      for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-          const controller = new AbortController();
-          const t = setTimeout(() => controller.abort(), timeoutMs);
-          const res = await fetchWithRetry(url, { ...options, signal: controller.signal });
-          clearTimeout(t);
-
-          // retry on transient gateway / overload / quota hiccups
-          if ([429, 502, 503, 504].includes(res.status) && attempt < retries) {
-            await sleep(600 * (attempt + 1));
-            continue;
-          }
-
-          return res;
-        } catch (err) {
-          if (attempt < retries) {
-            await sleep(600 * (attempt + 1));
-            continue;
-          }
-          throw err;
-        }
-      }
-    }
-
-    async function readErrorBody(res) {
-      try {
-        const txt = await res.text();
-        return (txt || "").slice(0, 200);
-      } catch {
-        return "";
-      }
-    }
-
     // ---- CONFIG: leagues to show ----
     const LEAGUES = [
       { id: 39,  name: "Premier League",        short: "ENG" },
@@ -849,7 +864,34 @@
       return (parts[0][0] + parts[1][0]).toUpperCase();
     }
 
-    function createMatchCard(fx, leagueMeta, index) {
+    
+    function createBasicMatchCard(fx, idx) {
+      const when = fx.kickoff_utc ? new Date(fx.kickoff_utc) : null;
+      const timeLabel = when ? when.toLocaleString([], { weekday:"short", day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }) : "";
+      const leagueName = (fx.league && fx.league.name) ? fx.league.name : (fx.league_name || "League");
+      const home = (fx.home && fx.home.name) ? fx.home.name : (fx.home_name || "Home");
+      const away = (fx.away && fx.away.name) ? fx.away.name : (fx.away_name || "Away");
+      const status = fx.status || "";
+      const el = document.createElement("div");
+      el.className = "match-card basic";
+      el.innerHTML = `
+        <div class="match-head">
+          <div class="meta">
+            <div class="league">${leagueName}</div>
+            <div class="time">${timeLabel}${status ? " • " + status : ""}</div>
+          </div>
+        </div>
+        <div class="teams">
+          <div class="team"><span class="name">${home}</span></div>
+          <div class="vs">vs</div>
+          <div class="team"><span class="name">${away}</span></div>
+        </div>
+        <div class="hint">No model stats for this league yet.</div>
+      `;
+      return el;
+    }
+
+function createMatchCard(fx, leagueMeta, index) {
       const p = fx.predictions || fx;
 
       const home =
@@ -985,26 +1027,48 @@
 
       const collected = [];
 
+      // 1) Grab all fixtures for the date (all leagues)
+      let allFixtures = [];
+      try {
+        const respAll = await fetch(`/matches/today?date=${encodeURIComponent(dateStr)}&limit=2000`);
+        const dataAll = await respAll.json().catch(()=>null);
+        allFixtures = (dataAll && dataAll.ok && dataAll.fixtures) ? dataAll.fixtures : [];
+      } catch (e) {
+        console.warn("Failed to load /matches/today:", e);
+      }
+
+      // Convert to the same "collected" shape used by rendering
+      const byId = new Map();
+      for (const fx of allFixtures) {
+        if (!fx || !fx.fixture_id) continue;
+        byId.set(Number(fx.fixture_id), {
+          ts: Date.parse(fx.kickoff_utc || "") || 0,
+          fx: fx,
+          league: (fx.league && (fx.league.name || fx.league.id)) ? fx.league : { id: fx.league_id, name: fx.league_name },
+          modelled: false,
+        });
+      }
+
+      // 2) Enrich with modelled predictions for tracked leagues (keeps the rich cards)
       for (const league of LEAGUES) {
         const url = `/predict/by-date?league=${league.id}&from_date=${dateStr}&to_date=${dateStr}`;
         try {
-          const resp = await fetchWithRetry(url);
-          if (!resp.ok) {
-            console.warn("Failed for league", league.id, "status", resp.status);
-            continue;
-          }
+          const resp = await fetch(url);
+          if (!resp.ok) continue;
           const data = await resp.json();
-          const fixtures = data.matches || data.fixtures || [];
-          fixtures.forEach((fx, i) => {
-            const kickoffRaw =
-              fx.kickoff_utc || fx.match_date || fx.date || (fx.fixture && fx.fixture.date) || (dateStr + "T00:00:00Z");
-            const ts = new Date(kickoffRaw).getTime() || (Date.now() + i);
-            collected.push({ ts, league, fx });
-          });
-        } catch (err) {
-          console.error("Error loading league", league.id, err);
+          const fixtures = (data && data.fixtures) ? data.fixtures : [];
+          for (const fx of fixtures) {
+            const fid = Number(fx.fixture_id || fx.id || (fx.fixture||{}).id);
+            if (!fid) continue;
+            byId.set(fid, { ts: Date.parse(fx.kickoff_utc || fx.kickoff || "") || 0, fx, league, modelled: true });
+          }
+        } catch (e) {
+          console.warn("Failed for league", league.id, e);
         }
       }
+
+      const collectedArr = Array.from(byId.values());
+      collectedArr.forEach(x=>collected.push(x));
 
       if (!collected.length) {
         statusEl.textContent = "No modelled matches for this date.";
@@ -1016,7 +1080,7 @@
       collected.sort((a, b) => a.ts - b.ts);
 
       collected.forEach((item, idx) => {
-        const card = createMatchCard(item.fx, item.league, idx);
+        const card = item.modelled ? createMatchCard(item.fx, item.league, idx) : createBasicMatchCard(item.fx, idx);
         container.appendChild(card);
       });
 
@@ -1052,5 +1116,40 @@
 
     document.addEventListener("DOMContentLoaded", initAllMatchesPage);
   </script>
+<script>
+// ===== WinMatic nav hotfix =====
+(function(){
+  const body=document.body;
+  // scrim
+  let scrim=document.querySelector('.nav-scrim');
+  if(!scrim){
+    scrim=document.createElement('div');
+    scrim.className='nav-scrim';
+    document.body.appendChild(scrim);
+  }
+  scrim.addEventListener('click', ()=> body.classList.remove('nav-open'));
+
+  // add toggle button if missing
+  const topbar=document.querySelector('.topbar .left') || document.querySelector('.topbar') || document.querySelector('header');
+  if(topbar && !document.querySelector('.nav-toggle')){
+    const btn=document.createElement('button');
+    btn.className='nav-toggle';
+    btn.type='button';
+    btn.setAttribute('aria-label','Toggle menu');
+    btn.innerHTML='☰';
+    btn.addEventListener('click', ()=> body.classList.toggle('nav-open'));
+    // put it at the very start of the left cluster if possible
+    if(topbar.classList.contains('left')) topbar.prepend(btn);
+    else topbar.prepend(btn);
+  }
+  // close nav when a link is clicked (mobile)
+  document.addEventListener('click', (e)=>{
+    const a = e.target && e.target.closest ? e.target.closest('a') : null;
+    if(a && a.closest && a.closest('.side-nav') && window.matchMedia('(max-width: 980px)').matches){
+      body.classList.remove('nav-open');
+    }
+  });
+})();
+</script>
 </body>
 </html>

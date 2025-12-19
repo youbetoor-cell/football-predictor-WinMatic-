@@ -525,7 +525,61 @@
     .faq-a strong {
       color:#bbf7d0;
     }
-  </style>
+  
+/* ===== WinMatic layout hotfix (desktop + mobile) ===== */
+:root{ --topbar-h:72px; --nav-w:260px; }
+.app-shell{ padding-top: var(--topbar-h); min-height:100vh; }
+.topbar{ height: var(--topbar-h); z-index: 1000; }
+.side-nav{
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  bottom: 0;
+  width: var(--nav-w);
+  overflow-y: auto;
+  z-index: 950;
+  -webkit-overflow-scrolling: touch;
+}
+.app-main{
+  margin-left: var(--nav-w);
+  min-height: calc(100vh - var(--topbar-h));
+}
+.nav-scrim{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 940;
+  display: none;
+}
+body.nav-open .nav-scrim{ display:block; }
+@media (max-width: 980px){
+  :root{ --nav-w: 86vw; }
+  .side-nav{
+    transform: translateX(-110%);
+    transition: transform .18s ease;
+    box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  }
+  body.nav-open .side-nav{ transform: translateX(0); }
+  .app-main{ margin-left: 0 !important; }
+  .topbar{ padding-left: 12px; padding-right: 12px; }
+  .nav-toggle{
+    display: inline-flex !important;
+    align-items:center;
+    justify-content:center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    cursor: pointer;
+    margin-right: 10px;
+  }
+}
+@media (min-width: 981px){
+  .nav-toggle{ display:none !important; }
+}
+
+</style>
 </head>
 <body>
   <!-- Desktop: tiny hover strip that reveals the nav links -->
@@ -723,5 +777,40 @@
       </div>
     </section>
   </main>
+<script>
+// ===== WinMatic nav hotfix =====
+(function(){
+  const body=document.body;
+  // scrim
+  let scrim=document.querySelector('.nav-scrim');
+  if(!scrim){
+    scrim=document.createElement('div');
+    scrim.className='nav-scrim';
+    document.body.appendChild(scrim);
+  }
+  scrim.addEventListener('click', ()=> body.classList.remove('nav-open'));
+
+  // add toggle button if missing
+  const topbar=document.querySelector('.topbar .left') || document.querySelector('.topbar') || document.querySelector('header');
+  if(topbar && !document.querySelector('.nav-toggle')){
+    const btn=document.createElement('button');
+    btn.className='nav-toggle';
+    btn.type='button';
+    btn.setAttribute('aria-label','Toggle menu');
+    btn.innerHTML='☰';
+    btn.addEventListener('click', ()=> body.classList.toggle('nav-open'));
+    // put it at the very start of the left cluster if possible
+    if(topbar.classList.contains('left')) topbar.prepend(btn);
+    else topbar.prepend(btn);
+  }
+  // close nav when a link is clicked (mobile)
+  document.addEventListener('click', (e)=>{
+    const a = e.target && e.target.closest ? e.target.closest('a') : null;
+    if(a && a.closest && a.closest('.side-nav') && window.matchMedia('(max-width: 980px)').matches){
+      body.classList.remove('nav-open');
+    }
+  });
+})();
+</script>
 </body>
 </html>
