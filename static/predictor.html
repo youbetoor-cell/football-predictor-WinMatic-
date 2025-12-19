@@ -1131,6 +1131,54 @@
   <script>
     const $ = (id) => document.getElementById(id);
 
+    function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+    // Render free tier cold-start / proxy hiccups can cause transient 502/503/504.
+    async function fetchWithRetry(url, opts = {}, retries = 4){
+      let lastErr = null;
+
+      for(let attempt = 0; attempt <= retries; attempt++){
+        const backoff = 800 * Math.pow(2, attempt); // 0.8s, 1.6s, 3.2s, 6.4s...
+        const controller = new AbortController();
+        const timeoutMs = 25000;
+        const t = setTimeout(() => controller.abort(), timeoutMs);
+
+        try{
+          const res = await fetch(url, { cache: "no-store", ...opts, signal: controller.signal });
+          clearTimeout(t);
+
+          if(res.ok) return res;
+
+          if([502,503,504].includes(res.status) && attempt < retries){
+            await sleep(backoff);
+            continue;
+          }
+
+          return res;
+        }catch(e){
+          clearTimeout(t);
+          lastErr = e;
+          if(attempt < retries){
+            await sleep(backoff);
+            continue;
+          }
+          throw lastErr;
+        }
+      }
+
+      throw lastErr || new Error("fetchWithRetry failed");
+    }
+
+    async function fetchJsonWithRetry(url, opts = {}, retries = 4){
+      const res = await fetchWithRetry(url, opts, retries);
+      if(!res.ok){
+        const text = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status} from ${url}: ${text.slice(0, 200)}`);
+      }
+      return res.json();
+    }
+
+
     const LEAGUES = [
       // 🌍 National team tournaments
       { id: 1,   code: "WC",      name: "World Cup",                 country: "World" },
@@ -1283,10 +1331,12 @@
 
     async function fetchModelInfo(){
       try{
-        const res=await fetch(`/model-info?league=${encodeURIComponent(currentLeague)}`);
-        if(!res.ok) return null;
-        return await res.json();
+        const url = `/model-info?league=${encodeURIComponent(currentLeague)}`;
+        return await fetchJsonWithRetry(url, {}, 3);
       }catch{
+        return null;
+      }
+    }catch{
         return null;
       }
     }
@@ -1295,20 +1345,19 @@
       const url = `/predict/upcoming?league=${encodeURIComponent(currentLeague)}&days_ahead=${encodeURIComponent(currentDays)}`;
       console.log("Calling predictions URL:", url);
 
-      const res = await fetch(url);
+      // Wake the backend first (helps on Render free tier cold starts)
+      try { await fetchWithRetry("/health", {}, 2); } catch {}
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status} from /predict/upcoming: ${text.slice(0, 200)}`);
-      }
+      return fetchJsonWithRetry(url, {}, 4);
+    }
 
       return res.json();
     }
 
     async function fetchValue(){
-      const url=`/value/upcoming?league=${encodeURIComponent(currentLeague)}&days_ahead=${encodeURIComponent(currentDays)}`;
-      const res=await fetch(url);
-      return res.json();
+      const url = `/value/upcoming?league=${encodeURIComponent(currentLeague)}&days_ahead=${encodeURIComponent(currentDays)}`;
+      // /value/upcoming may call odds endpoints and can be slower; give it a couple retries.
+      return fetchJsonWithRetry(url, {}, 4);
     }
 
     function renderAccuracyDonut(metrics){
@@ -1387,7 +1436,7 @@
 
       const filtered = showOnlyValue
         ? latestPreds.filter(fx => {
-            const v = latestValueMap[String(WM.fixtureId(fx))];
+            const v = latestValueMap[String(fx.fixture_id)];
             const best = v && (v.best_pick || v);
             const edge = getEdgePercent(best);
             return edge!=null && edge >= minEdgePercent;
@@ -1398,14 +1447,14 @@
 
       const html = filtered.map((fx, idx) => {
         const preds = fx.predictions || {};
-        const value = latestValueMap[String(WM.fixtureId(fx))];
+        const value = latestValueMap[String(fx.fixture_id)];
         const best = value && (value.best_pick || value);
         const edge = getEdgePercent(best);
 
         if(edge!=null && edge >= minEdgePercent) valueCount++;
 
-        const home = escapeHtml(WM.teamName(fx,"home") || "Home");
-        const away = escapeHtml(WM.teamName(fx,"away") || "Away");
+        const home = escapeHtml(fx.home_name || "Home");
+        const away = escapeHtml(fx.away_name || "Away");
 
         const { dateLabel, timeLabel } = (function(iso){
           const d=new Date(iso);
@@ -1414,7 +1463,7 @@
             dateLabel: d.toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short"}),
             timeLabel: d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})
           };
-        })(WM.kickoff(fx));
+        })(fx.kickoff_utc);
 
         const ph = preds.home_win_p || 0,
               pd = preds.draw_p || 0,
@@ -1429,8 +1478,8 @@
         const sotPair = `${stats.shots_on_target[0].toFixed(2)} – ${stats.shots_on_target[1].toFixed(2)}`;
         const scorelineText = `${(preds.home_goals||0).toFixed(2)} : ${(preds.away_goals||0).toFixed(2)}`;
 
-        const homeLogo = WM.teamLogo(fx,"home") || `/team-logo/${fx.home_id}.png`;
-        const awayLogo = WM.teamLogo(fx,"away") || `/team-logo/${fx.away_id}.png`;
+        const homeLogo = fx.home_logo || `/team-logo/${fx.home_id}.png`;
+        const awayLogo = fx.away_logo || `/team-logo/${fx.away_id}.png`;
         const homeInitial = home.charAt(0)||"H";
         const awayInitial = away.charAt(0)||"A";
 
@@ -1457,7 +1506,7 @@
         }).join("");
 
         return `
-        <article class="match-card ${cardClass} ${idx===0?"expanded":""}" style="--card-index:${idx};" data-fixture-id="${WM.fixtureId(fx)}">
+        <article class="match-card ${cardClass} ${idx===0?"expanded":""}" style="--card-index:${idx};" data-fixture-id="${fx.fixture_id}">
           <div class="match-header">
             <div class="match-team match-team-home">
               <div class="team-logo-orb-sm">
@@ -1607,7 +1656,6 @@
     });
   </script>
 
-  <script src="js/site.js"></script>
-<script src="js/status.js"></script>
+  <script src="js/status.js"></script>
 </body>
 </html>

@@ -769,6 +769,45 @@
   </main>
 
   <script>
+    // ---------------------------
+    // WinMatic helper: fetch w/ timeout + retry (Render cold starts can cause 502/504)
+    // ---------------------------
+    function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+    async function fetchWithRetry(url, options = {}, retries = 2, timeoutMs = 25000) {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const controller = new AbortController();
+          const t = setTimeout(() => controller.abort(), timeoutMs);
+          const res = await fetchWithRetry(url, { ...options, signal: controller.signal });
+          clearTimeout(t);
+
+          // retry on transient gateway / overload / quota hiccups
+          if ([429, 502, 503, 504].includes(res.status) && attempt < retries) {
+            await sleep(600 * (attempt + 1));
+            continue;
+          }
+
+          return res;
+        } catch (err) {
+          if (attempt < retries) {
+            await sleep(600 * (attempt + 1));
+            continue;
+          }
+          throw err;
+        }
+      }
+    }
+
+    async function readErrorBody(res) {
+      try {
+        const txt = await res.text();
+        return (txt || "").slice(0, 200);
+      } catch {
+        return "";
+      }
+    }
+
     // ---- CONFIG: leagues to show ----
     const LEAGUES = [
       { id: 39,  name: "Premier League",        short: "ENG" },
@@ -814,20 +853,20 @@
       const p = fx.predictions || fx;
 
       const home =
-        WM.teamName(fx,"home") ||
+        fx.home_name ||
         fx.home_team ||
         fx.home ||
         (fx.teams && fx.teams.home && fx.teams.home.name) ||
         "Home";
       const away =
-        WM.teamName(fx,"away") ||
+        fx.away_name ||
         fx.away_team ||
         fx.away ||
         (fx.teams && fx.teams.away && fx.teams.away.name) ||
         "Away";
 
-      const homeLogo = WM.teamLogo(fx,"home") || (fx.home_id ? `/team-logo/${fx.home_id}.png` : "");
-      const awayLogo = WM.teamLogo(fx,"away") || (fx.away_id ? `/team-logo/${fx.away_id}.png` : "");
+      const homeLogo = fx.home_logo || (fx.home_id ? `/team-logo/${fx.home_id}.png` : "");
+      const awayLogo = fx.away_logo || (fx.away_id ? `/team-logo/${fx.away_id}.png` : "");
       const homeInitial = (home && home.charAt(0)) || "H";
       const awayInitial = (away && away.charAt(0)) || "A";
 
@@ -868,7 +907,7 @@
       }
 
       const { date, time } = formatKickoff(
-        WM.kickoff(fx) || fx.match_date || fx.date || (fx.fixture && fx.fixture.date)
+        fx.kickoff_utc || fx.match_date || fx.date || (fx.fixture && fx.fixture.date)
       );
 
       const card = document.createElement("article");
@@ -949,7 +988,7 @@
       for (const league of LEAGUES) {
         const url = `/predict/by-date?league=${league.id}&from_date=${dateStr}&to_date=${dateStr}`;
         try {
-          const resp = await fetch(url);
+          const resp = await fetchWithRetry(url);
           if (!resp.ok) {
             console.warn("Failed for league", league.id, "status", resp.status);
             continue;
@@ -958,7 +997,7 @@
           const fixtures = data.matches || data.fixtures || [];
           fixtures.forEach((fx, i) => {
             const kickoffRaw =
-              WM.kickoff(fx) || fx.match_date || fx.date || (fx.fixture && fx.fixture.date) || (dateStr + "T00:00:00Z");
+              fx.kickoff_utc || fx.match_date || fx.date || (fx.fixture && fx.fixture.date) || (dateStr + "T00:00:00Z");
             const ts = new Date(kickoffRaw).getTime() || (Date.now() + i);
             collected.push({ ts, league, fx });
           });
@@ -1013,6 +1052,5 @@
 
     document.addEventListener("DOMContentLoaded", initAllMatchesPage);
   </script>
-<script src="js/site.js"></script>
 </body>
 </html>
