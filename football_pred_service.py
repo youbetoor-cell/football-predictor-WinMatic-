@@ -3755,6 +3755,8 @@ def api_progress_metrics(
 
     # ------ dedupe per fixture: latest row only ------
     latest_by_fixture = {}
+        skipped_no_probs = 0
+        skipped_bad_result = 0
     for (
         row_id,
         fixture_id,
@@ -3781,8 +3783,34 @@ def api_progress_metrics(
     log_losses = []
 
     for (ph, pd, pa, actual) in latest_by_fixture.values():
-        probs = {"home": ph, "draw": pd, "away": pa}
-        predicted = max(probs, key=probs.get)
+        # Coerce/validate probs (rows synced via /results/sync may have NULL model probs)
+try:
+    ph = float(ph) if ph is not None else None
+    pd = float(pd) if pd is not None else None
+    pa = float(pa) if pa is not None else None
+except Exception:
+    skipped_no_probs += 1
+    continue
+
+if ph is None or pd is None or pa is None:
+    skipped_no_probs += 1
+    continue
+
+probs = {"home": ph, "draw": pd, "away": pa}
+
+# Normalize in case they don't sum to 1 (or contain weird values)
+tot = 0.0
+for v in probs.values():
+    if isinstance(v, (int, float)):
+        tot += max(0.0, float(v))
+if tot <= 0:
+    skipped_no_probs += 1
+    continue
+for k in list(probs.keys()):
+    probs[k] = max(0.0, float(probs[k])) / tot
+
+predicted = max(probs, key=probs.get)
+
 
         if predicted == actual:
             correct += 1
