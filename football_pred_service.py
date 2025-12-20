@@ -85,6 +85,45 @@ def _norm_result_label(value):
     return s
 
 
+
+
+def _to_float(value, default: float = 0.0) -> float:
+    """Best-effort float conversion that never throws."""
+    try:
+        if value is None:
+            return float(default)
+        # guard against booleans
+        if isinstance(value, bool):
+            return float(default)
+        x = float(value)
+        # NaN -> default
+        if x != x:
+            return float(default)
+        return x
+    except Exception:
+        return float(default)
+
+
+def _normalize_probs(probs: dict) -> dict:
+    """Return a sanitized probability dict with numeric finite values summing to 1 (or uniform if degenerate)."""
+    if not isinstance(probs, dict):
+        return {"home": 1.0/3.0, "draw": 1.0/3.0, "away": 1.0/3.0}
+    ph = _to_float(probs.get("home"), 0.0)
+    pd = _to_float(probs.get("draw"), 0.0)
+    pa = _to_float(probs.get("away"), 0.0)
+    s = ph + pd + pa
+    if s <= 0.0:
+        return {"home": 1.0/3.0, "draw": 1.0/3.0, "away": 1.0/3.0}
+    return {"home": ph/s, "draw": pd/s, "away": pa/s}
+
+
+def _safe_pick_side(probs: dict, default: str = "draw") -> str:
+    """Argmax over probs that tolerates None/NaN and always returns home/draw/away."""
+    p = _normalize_probs(probs)
+    best = max([("home", p["home"]), ("draw", p["draw"]), ("away", p["away"])], key=lambda t: t[1])[0]
+    return best if best in ("home", "draw", "away") else default
+
+
 def ensure_predictions_db() -> None:
     """
     Make sure the predictions_history table exists and has all columns
@@ -2631,15 +2670,16 @@ def build_predictions_for_fixtures(
         probs = {"home": home_win_p, "draw": draw_p, "away": away_win_p}
 
         cal = load_1x2_calibration(league)
-        probs = apply_1x2_calibration(probs, cal)
+        probs = apply_1x2_calibration(probs, cal) or probs
 
         # keep the scalar vars in sync (optional but nice)
-        home_win_p = float(probs["home"])
-        draw_p     = float(probs["draw"])
-        away_win_p = float(probs["away"])
+        home_win_p = _to_float(probs.get("home"), 0.0)
+        draw_p     = _to_float(probs.get("draw"), 0.0)
+        away_win_p = _to_float(probs.get("away"), 0.0)
 
-        best_side = max(probs, key=probs.get)
-        best_prob = probs[best_side]
+        probs = _normalize_probs(probs)
+        best_side = _safe_pick_side(probs, default="draw")
+        best_prob = _to_float(probs.get(best_side), 0.0)
 
 
 
@@ -3322,7 +3362,7 @@ def api_bet_of_day(
     }
     from datetime import datetime, timedelta
 
-@app.post("/results/sync")
+@app.post("/results/sync", dependencies=[Depends(require_admin)])
 def api_results_sync(
     league: int = Query(39, description="League ID"),
     lookback_days: int = Query(21, ge=1, le=365, description="How far back to look for unfinished predictions"),
@@ -3336,43 +3376,115 @@ def api_results_sync(
       - league matches
       - actual_result is NULL/blank
       - kickoff_utc is in the past (within lookback window)
+
+    Notes:
+    - Works with SQLite-style SQL; _sql_pg_fix() will adapt placeholders for Postgres if you use DATABASE_URL.
+    - Never crashes the whole run; per-fixture errors are collected in the response.
     """
     from datetime import datetime, timedelta, timezone
 
     ensure_predictions_db()
 
     now = datetime.now(timezone.utc)
-    since = (now - timedelta(days=lookback_days)).isoformat()
+    since_ts = (now - timedelta(days=int(lookback_days))).isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
+    scanned = 0
+    updated = 0
+    skipped = 0
+    errors = []
 
-    # candidates: finished by time, missing actual_result
-    cur.execute(
-        """
-        SELECT fixture_id, MAX(kickoff_utc) AS last_kickoff
-        FROM predictions_history
-        WHERE league = ?
-          AND kickoff_utc >= ?
-          AND kickoff_utc < ?
-          AND (actual_result IS NULL OR TRIM(actual_result) = '')
-          AND fixture_id IS NOT NULL
-        GROUP BY fixture_id
-        ORDER BY MAX(kickoff_utc) DESC
-        LIMIT ?
-        """,
-        (league, since, now.isoformat(), max_fixtures),
-    )
-,
-            )
-            conn.commit()
+    # 1) Candidate fixture_ids that are missing actual_result
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            _sql_pg_fix(
+                """
+                SELECT fixture_id, MAX(kickoff_utc) AS last_kickoff
+                FROM predictions_history
+                WHERE league = ?
+                  AND kickoff_utc >= ?
+                  AND kickoff_utc < ?
+                  AND (actual_result IS NULL OR TRIM(actual_result) = '')
+                  AND fixture_id IS NOT NULL
+                GROUP BY fixture_id
+                ORDER BY MAX(kickoff_utc) DESC
+                LIMIT ?
+                """
+            ),
+            (int(league), since_ts, now.isoformat(), int(max_fixtures)),
+        )
+        candidates = [int(r[0]) for r in (cur.fetchall() or []) if r and r[0] is not None]
+    except Exception as e:
+        try:
             conn.close()
+        except Exception:
+            pass
+        return {"ok": False, "league": league, "error": f"DB read failed: {e!r}"}
 
+    # 2) For each fixture_id, fetch final score and update DB
+    for fid in candidates:
+        scanned += 1
+        try:
+            data = api_get("/fixtures", {"id": int(fid)})
+            resp = (data.get("response") or [])
+            fx = resp[0] if resp else None
+            if not fx:
+                skipped += 1
+                continue
+
+            goals = fx.get("goals") or {}
+            hg = goals.get("home")
+            ag = goals.get("away")
+
+            if hg is None or ag is None:
+                skipped += 1
+                continue
+
+            try:
+                hg_i = int(hg)
+                ag_i = int(ag)
+            except Exception:
+                skipped += 1
+                continue
+
+            if hg_i > ag_i:
+                actual = "home"
+            elif ag_i > hg_i:
+                actual = "away"
+            else:
+                actual = "draw"
+
+            if dry_run:
+                updated += 1
+                continue
+
+            cur.execute(
+                _sql_pg_fix(
+                    """
+                    UPDATE predictions_history
+                    SET actual_result = ?
+                    WHERE league = ?
+                      AND fixture_id = ?
+                      AND (actual_result IS NULL OR TRIM(actual_result) = '')
+                    """
+                ),
+                (actual, int(league), int(fid)),
+            )
             updated += 1
 
         except Exception as e:
-            errors.append({"fixture_id": fid, "error": repr(e)})
-            # keep going
+            errors.append({"fixture_id": int(fid), "error": repr(e)})
+
+    # 3) Commit + close
+    try:
+        if not dry_run:
+            conn.commit()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
     return {
         "ok": True,
@@ -3385,22 +3497,6 @@ def api_results_sync(
         "skipped": skipped,
         "errors": errors[:10],
     }
-
-
-    # =====================================================
-# 📊 RESULTS + METRICS ENDPOINTS (WORKING WITH EXISTING DB)
-# =====================================================
-from datetime import datetime, timedelta
-import json
-import sqlite3
-import math
-
-from pathlib import Path
-import sqlite3
-
-os.makedirs("data", exist_ok=True)
-
-
 @app.get("/backtest/1x2")
 def api_backtest_1x2(
     league: int = Query(39, description="League ID"),
@@ -3551,9 +3647,9 @@ def api_backtest_1x2(
 
                 # ---- RAW (uncalibrated) probs from Poisson on xG ----
         raw = poisson_1x2_probs(xg_home, xg_away, max_goals=int(max_goals)) or {}
-        rph = float(raw.get("home", 0.0))
-        rpd = float(raw.get("draw", 0.0))
-        rpa = float(raw.get("away", 0.0))
+        rph = _to_float(raw.get("home"), 0.0)
+        rpd = _to_float(raw.get("draw"), 0.0)
+        rpa = _to_float(raw.get("away"), 0.0)
 
         rs = rph + rpd + rpa
         if rs > 0:
@@ -3566,9 +3662,9 @@ def api_backtest_1x2(
         if cal:
             probs = apply_1x2_calibration(probs, cal) or probs
 
-        ph = float(probs.get("home", 0.0))
-        pd = float(probs.get("draw", 0.0))
-        pa = float(probs.get("away", 0.0))
+        ph = _to_float(probs.get("home"), 0.0)
+        pd = _to_float(probs.get("draw"), 0.0)
+        pa = _to_float(probs.get("away"), 0.0)
 
         s = ph + pd + pa
         if s > 0:
@@ -3716,41 +3812,42 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
         import math
 
         ensure_predictions_db()
-        conn = db_connect()
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
 
         rows = []
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT ph.id, ph.fixture_id, ph.kickoff_utc,
-                       ph.model_home_p, ph.model_draw_p, ph.model_away_p,
-                       ph.predicted_side, ph.actual_result
-                FROM predictions_history ph
-                JOIN (
-                    SELECT fixture_id, MAX(id) AS max_id
-                    FROM predictions_history
-                    WHERE league = ?
-                      AND actual_result IS NOT NULL
-                      AND TRIM(COALESCE(actual_result,'')) <> ''
-                    GROUP BY fixture_id
-                ) t
-                ON ph.id = t.max_id
-                ORDER BY ph.kickoff_utc DESC
-                LIMIT 5000
-                """,
-                (int(league),),
-            )
-            for r in cur.fetchall():
-                rows.append({
-                    "id": r[0],
-                    "fixture_id": r[1],
-                    "kickoff_utc": r[2],
-                    "ph": r[3],
-                    "pd": r[4],
-                    "pa": r[5],
-                    "predicted_side": r[6],
-                    "actual_result": r[7],
-                })
+        cur.execute(
+            """
+            SELECT ph.id, ph.fixture_id, ph.kickoff_utc,
+                   ph.model_home_p, ph.model_draw_p, ph.model_away_p,
+                   ph.predicted_side, ph.actual_result
+            FROM predictions_history ph
+            JOIN (
+                SELECT fixture_id, MAX(id) AS max_id
+                FROM predictions_history
+                WHERE league = ?
+                  AND actual_result IS NOT NULL
+                  AND TRIM(COALESCE(actual_result,'')) <> ''
+                GROUP BY fixture_id
+            ) t
+            ON ph.id = t.max_id
+            ORDER BY ph.kickoff_utc DESC
+            LIMIT 5000
+            """,
+            (int(league),),
+        )
+        for r in cur.fetchall():
+            rows.append({
+                "id": r[0],
+                "fixture_id": r[1],
+                "kickoff_utc": r[2],
+                "ph": r[3],
+                "pd": r[4],
+                "pa": r[5],
+                "predicted_side": r[6],
+                "actual_result": r[7],
+            })
+        conn.close()
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=int(window_days))
 
