@@ -3271,19 +3271,75 @@ def api_value_upcoming(
         "min_edge": min_edge,
     }
 
+@app.get("/bet-of-day")
+def api_bet_of_day(
+    league: int = Query(DEFAULT_LEAGUE, description="League ID (e.g. 39 = Premier League)"),
+    days_ahead: int = Query(3, ge=1, le=14, description="How many days ahead to look for fixtures"),
+    min_edge: float = Query(0.05, description="Minimum edge to consider (e.g. 0.05 = 5%)"),
+):
+    """
+    Return the single best value spot ('Bet of the Day') for a league.
+
+    This is just a thin wrapper around /value/upcoming:
+    - Calls the same logic with limit=1
+    - Returns either a single fixture or a friendly 'no value spots' message
+    """
+    # Reuse the /value/upcoming logic with limit=1 so we don't duplicate any odds/model code.
+    resp = api_value_upcoming(
+        league=league,
+        days_ahead=days_ahead,
+        min_edge=min_edge,
+        limit=1,
+    )
+
+    # If /value/upcoming itself failed (ok == False), just forward that
+    if not resp.get("ok", False) and resp.get("fixtures") is None:
+        return resp
+
+    fixtures = resp.get("fixtures") or []
+
+    if not fixtures:
+        # No value spots for this configuration
+        return {
+            "ok": False,
+            "reason": "no_value_spots",
+            "message": "No value spots found for this league / window / min_edge.",
+            "league": league,
+            "days_ahead": days_ahead,
+            "min_edge": min_edge,
+        }
+
+    # We asked /value/upcoming for limit=1, so take the first fixture
+    best_fixture = fixtures[0]
+
+    return {
+        "ok": True,
+        "league": league,
+        "days_ahead": days_ahead,
+        "min_edge": min_edge,
+        "source": "model+odds",
+        "fixture": best_fixture,
+    }
+    from datetime import datetime, timedelta
+
 @app.post("/results/sync")
 def api_results_sync(
     league: int = Query(39, description="League ID"),
     lookback_days: int = Query(21, ge=1, le=365, description="How far back to look for unfinished predictions"),
     max_fixtures: int = Query(50, ge=1, le=300, description="Max fixtures to update per run"),
     dry_run: bool = Query(False, description="If true, don't write to DB"),
-    debug: bool = Query(False, description="If true, include details for skipped fixtures"),
-    _admin: bool = Depends(require_admin),
+    debug: bool = Query(False, description="If true, include skipped_details in response"),
 ):
     """
-    Backfill actual_result for predictions_history once matches finish.
+    Backfill actual_result for predictions_history rows once matches finish.
 
-    Uses SQLite (DB_PATH) and "?" placeholders to avoid DB placeholder mismatch.
+    Selects fixture_ids that:
+      - match league
+      - kickoff_utc is within [now - lookback_days, now)
+      - actual_result is NULL/empty
+    Then fetches each fixture from API-FOOTBALL and writes actual_result (home/draw/away) when final.
+
+    Uses SQLite (DB_PATH) and "?" placeholders.
     """
     from datetime import datetime, timedelta, timezone
     import sqlite3
@@ -3299,6 +3355,7 @@ def api_results_sync(
     errors = []
     skipped_details = []
 
+    # 1) read candidate fixture_ids
     try:
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
@@ -3309,7 +3366,7 @@ def api_results_sync(
             WHERE league = ?
               AND kickoff_utc >= ?
               AND kickoff_utc < ?
-              AND (actual_result IS NULL OR TRIM(actual_result) = '')
+              AND (actual_result IS NULL OR TRIM(COALESCE(actual_result,'')) = '')
               AND fixture_id IS NOT NULL
             GROUP BY fixture_id
             ORDER BY MAX(kickoff_utc) DESC
@@ -3317,49 +3374,62 @@ def api_results_sync(
             """,
             (int(league), since, now.isoformat(), int(max_fixtures)),
         )
-        candidates = cur.fetchall()
+        fixture_rows = cur.fetchall()
         conn.close()
     except Exception as e:
-        return {"ok": False, "league": league, "error": f"DB read failed: {e!r}"}
+        return {"ok": False, "league": league, "error": f"DB read failed: {repr(e)}"}
 
-    for (fid, _kick) in candidates:
-        scanned += 1
+    fixture_ids = []
+    for (fid, last_kickoff) in fixture_rows:
         try:
-            fid_int = int(fid)
+            if fid is None:
+                continue
+            fixture_ids.append(int(fid))
         except Exception:
-            skipped += 1
-            if debug and len(skipped_details) < 20:
-                skipped_details.append({"fixture_id": fid, "reason": "invalid_fixture_id"})
             continue
 
+    # 2) resolve each fixture and update
+    for fid_int in fixture_ids:
+        scanned += 1
         try:
             data = api_get("/fixtures", {"id": fid_int})
-            resp = (data.get("response") or [])
+            resp = data.get("response") or []
             if not resp:
                 skipped += 1
-                if debug and len(skipped_details) < 20:
-                    skipped_details.append({"fixture_id": fid_int, "reason": "no_api_response"})
+                if debug:
+                    skipped_details.append({"fixture_id": fid_int, "reason": "not_found"})
                 continue
 
-            fx = resp[0]
-            status = (((fx.get("fixture") or {}).get("status") or {}).get("short") or "").upper()
+            fx = resp[0] or {}
+            fx_info = fx.get("fixture") or {}
+            st = fx_info.get("status") or {}
+            status_short = (st.get("short") or "").strip().upper()
+
+            # final statuses (API-FOOTBALL commonly uses FT, AET, PEN for finished)
+            if status_short not in ("FT", "AET", "PEN"):
+                skipped += 1
+                if debug:
+                    skipped_details.append({"fixture_id": fid_int, "reason": "not_final", "status": status_short or None})
+                continue
+
             goals = fx.get("goals") or {}
             hg = goals.get("home")
             ag = goals.get("away")
-
-            if status not in ("FT", "AET", "PEN"):
-                skipped += 1
-                if debug and len(skipped_details) < 20:
-                    skipped_details.append({"fixture_id": fid_int, "reason": "not_final", "status": status})
-                continue
             if hg is None or ag is None:
                 skipped += 1
-                if debug and len(skipped_details) < 20:
-                    skipped_details.append({"fixture_id": fid_int, "reason": "missing_goals", "status": status})
+                if debug:
+                    skipped_details.append({"fixture_id": fid_int, "reason": "missing_goals", "status": status_short})
                 continue
 
-            hg = int(hg)
-            ag = int(ag)
+            try:
+                hg = int(hg)
+                ag = int(ag)
+            except Exception:
+                skipped += 1
+                if debug:
+                    skipped_details.append({"fixture_id": fid_int, "reason": "bad_goals", "status": status_short})
+                continue
+
             if hg > ag:
                 actual = "home"
             elif ag > hg:
@@ -3367,26 +3437,43 @@ def api_results_sync(
             else:
                 actual = "draw"
 
+            teams = fx.get("teams") or {}
+            home_name = ((teams.get("home") or {}) .get("name"))
+            away_name = ((teams.get("away") or {}) .get("name"))
+            kickoff_utc = fx_info.get("date")
+
             if dry_run:
                 updated += 1
                 continue
 
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-            cur.execute(
-                """
-                UPDATE predictions_history
-                SET actual_result = ?
-                WHERE league = ?
-                  AND fixture_id = ?
-                  AND (actual_result IS NULL OR TRIM(actual_result) = '')
-                """,
-                (actual, int(league), fid_int),
-            )
-            conn.commit()
-            conn.close()
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    UPDATE predictions_history
+                    SET
+                        actual_result = ?,
+                        home_team = COALESCE(home_team, ?),
+                        away_team = COALESCE(away_team, ?),
+                        kickoff_utc = COALESCE(kickoff_utc, ?)
+                    WHERE league = ?
+                      AND fixture_id = ?
+                      AND (actual_result IS NULL OR TRIM(COALESCE(actual_result,'')) = '')
+                    """,
+                    (actual, home_name, away_name, kickoff_utc, int(league), int(fid_int)),
+                )
+                conn.commit()
+                conn.close()
 
-            updated += 1
+                if cur.rowcount and cur.rowcount > 0:
+                    updated += 1
+                else:
+                    skipped += 1
+                    if debug:
+                        skipped_details.append({"fixture_id": fid_int, "reason": "no_rows_updated"})
+            except Exception as e:
+                errors.append({"fixture_id": fid_int, "error": repr(e)})
 
         except Exception as e:
             errors.append({"fixture_id": fid_int, "error": repr(e)})
@@ -3403,49 +3490,349 @@ def api_results_sync(
         "errors": errors[:10],
     }
     if debug:
-        out["skipped_details"] = skipped_details
+        out["skipped_details"] = skipped_details[:50]
     return out
+
+@app.get("/backtest/1x2")
+def api_backtest_1x2(
+    league: int = Query(39, description="League ID"),
+    season: int = Query(None, description="Season year (e.g. 2025). If omitted, uses current season."),
+    last_n: int = Query(200, ge=20, le=2000, description="How many finished fixtures to evaluate (most recent first)"),
+    max_goals: int = Query(10, ge=6, le=15, description="Poisson truncation for 1X2 probs"),
+    write_db: bool = Query(False, description="If true, write actual_result + model probs into predictions_history"),
+    dry_run: bool = Query(False, description="If true, do not write to DB even if write_db=true"),
+    sample_limit: int = Query(300, ge=0, le=2000, description="How many per-game rows to include in sample (0 disables sample)"),
+):
+    """
+    Backtest your model on FINISHED fixtures (FT), computing accuracy + logloss.
+
+    - Fetches last_n finished fixtures via API-FOOTBALL
+    - Runs your existing model pipeline to get xG (home_goals, away_goals)
+    - Converts xG -> 1X2 probabilities via poisson_1x2_probs()
+    - Scores accuracy + logloss
+    - Optional: writes results back into predictions_history (so /progress/metrics can work)
+    """
+    import math
+    from datetime import datetime, timezone, timedelta
+
+    model, meta = load_model_and_meta(league)
+
+    # pick season default
+    if season is None:
+        season = current_season()
+
+    # 1) Fetch finished fixtures
+    # API-FOOTBALL supports status=FT; we then take the most recent last_n by kickoff date.
+    data = api_get("/fixtures", {"league": league, "season": season, "status": "FT"})
+    fixtures = (data.get("response") or [])
+    if not fixtures:
+        return {"ok": False, "message": "No finished fixtures found.", "league": league, "season": season}
+
+    # sort newest first
+    def _fx_date(fx):
+        try:
+            return (fx.get("fixture") or {}).get("date") or ""
+        except Exception:
+            return ""
+
+    fixtures.sort(key=_fx_date, reverse=True)
+    fixtures = fixtures[: int(last_n)]
+
+    # 2) Predict on these fixtures using your existing pipeline
+    # Use a wide window so nothing is filtered out by date.
+    now = datetime.now(timezone.utc)
+    window_start = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    window_end = now + timedelta(days=1)
+
+    preds = build_predictions_for_fixtures(
+        fixtures=fixtures,
+        model=model,
+        meta=meta,
+        league=league,
+        season=season,
+        window_start=window_start,
+        window_end=window_end,
+    ) or []
+
+    if not preds:
+        return {"ok": False, "message": "No predictions generated for fixtures.", "league": league, "season": season}
+
+    # helper: actual result from fixture goals
+    def actual_1x2_from_fixture(fx: dict):
+        goals = fx.get("goals") or {}
+        hg = goals.get("home")
+        ag = goals.get("away")
+        if hg is None or ag is None:
+            return None
+        try:
+            hg = int(hg)
+            ag = int(ag)
+        except Exception:
+            return None
+        if hg > ag:
+            return "home"
+        if ag > hg:
+            return "away"
+        return "draw"
+
+    # helper: find the original fixture record by fixture_id (for actual_result)
+    fx_by_id = {}
+    for fx in fixtures:
+        fid = (fx.get("fixture") or {}).get("id")
+        if fid is not None:
+            fx_by_id[int(fid)] = fx
+
+    # helper: pull xg values from pred dict (robust to different keys)
+    def get_xg(pred: dict):
+        # prefer explicit keys
+        xg_h = pred.get("xg_home")
+        xg_a = pred.get("xg_away")
+
+        # common fallbacks
+        if xg_h is None:
+            xg_h = pred.get("pred_home_goals") or pred.get("home_goals") or pred.get("xgH")
+        if xg_a is None:
+            xg_a = pred.get("pred_away_goals") or pred.get("away_goals") or pred.get("xgA")
+
+        # sometimes nested
+        p = pred.get("predictions") or {}
+        if xg_h is None:
+            xg_h = p.get("xg_home") or p.get("home_goals") or p.get("pred_home_goals")
+        if xg_a is None:
+            xg_a = p.get("xg_away") or p.get("away_goals") or p.get("pred_away_goals")
+
+        try:
+            xg_h = float(xg_h) if xg_h is not None else None
+            xg_a = float(xg_a) if xg_a is not None else None
+        except Exception:
+            xg_h, xg_a = None, None
+
+        return xg_h, xg_a
+
+    # 3) Score
+    eps = 1e-12
+    n = 0
+    correct = 0
+    logloss_sum = 0.0
+
+    per_game = []
+
+    cal = load_1x2_calibration(league) or {}
+
+
+    for pred in preds:
+        fid = pred.get("fixture_id") or (pred.get("fixture") or {}).get("id")
+        if fid is None:
+            continue
+        try:
+            fid = int(fid)
+        except Exception:
+            continue
+
+        fx = fx_by_id.get(fid)
+        if not fx:
+            continue
+
+        actual = actual_1x2_from_fixture(fx)
+        if actual not in ("home", "draw", "away"):
+            continue
+
+        xg_home, xg_away = get_xg(pred)
+        if not isinstance(xg_home, (int, float)) or not isinstance(xg_away, (int, float)):
+            continue
+
+                # ---- RAW (uncalibrated) probs from Poisson on xG ----
+        raw = poisson_1x2_probs(xg_home, xg_away, max_goals=int(max_goals)) or {}
+        rph = float(raw.get("home", 0.0))
+        rpd = float(raw.get("draw", 0.0))
+        rpa = float(raw.get("away", 0.0))
+
+        rs = rph + rpd + rpa
+        if rs > 0:
+            rph, rpd, rpa = rph / rs, rpd / rs, rpa / rs
+        else:
+            rph = rpd = rpa = 1.0 / 3.0
+
+        # ---- CALIBRATED probs (what your API serves) ----
+        probs = {"home": rph, "draw": rpd, "away": rpa}
+        if cal:
+            probs = apply_1x2_calibration(probs, cal) or probs
+
+        ph = float(probs.get("home", 0.0))
+        pd = float(probs.get("draw", 0.0))
+        pa = float(probs.get("away", 0.0))
+
+        s = ph + pd + pa
+        if s > 0:
+            ph, pd, pa = ph / s, pd / s, pa / s
+        else:
+            ph = pd = pa = 1.0 / 3.0
+
+        dist = {"home": ph, "draw": pd, "away": pa}
+        pred_side = max(dist, key=dist.get)
+
+        p_true = dist[actual]
+        ll = -math.log(max(p_true, eps))
+
+
+        p_true = {"home": ph, "draw": pd, "away": pa}[actual]
+        ll = -math.log(max(p_true, eps))
+
+        n += 1
+        if pred_side == actual:
+            correct += 1
+        logloss_sum += ll
+
+        per_game.append(
+            {
+                "fixture_id": fid,
+                "kickoff_utc": (fx.get("fixture") or {}).get("date"),
+                "home_name": ((fx.get("teams") or {}).get("home") or {}).get("name"),
+                "away_name": ((fx.get("teams") or {}).get("away") or {}).get("name"),
+                "actual_result": actual,
+                "model_pick": pred_side,
+                "model_pick_prob": round(dist[pred_side], 4),
+                "xg_home": round(xg_home, 3),
+                "xg_away": round(xg_away, 3),
+
+                # NEW: raw (pre-calibration)
+                "raw_probs": {"home": round(rph, 6), "draw": round(rpd, 6), "away": round(rpa, 6)},
+
+                # NEW: calibrated (what you scored on)
+                "calibrated_probs": {"home": round(ph, 6), "draw": round(pd, 6), "away": round(pa, 6)},
+
+                # backward compat (keep name used elsewhere)
+                "model_probs": {"home": round(ph, 6), "draw": round(pd, 6), "away": round(pa, 6)},
+
+                "logloss": round(ll, 4),
+            }
+        )
+
+
+        # 4) Optional: write back into DB so /progress/metrics can work later
+        if write_db and not dry_run:
+            try:
+                ensure_predictions_db()
+                conn = sqlite3.connect(DB_PATH)
+                cur = conn.cursor()
+
+                cols = [r[1] for r in cur.execute("PRAGMA table_info(predictions_history)").fetchall()]
+                # build dynamic upsert only with columns that exist
+                insert_cols = []
+                insert_vals = []
+                def add(col, val):
+                    if col in cols:
+                        insert_cols.append(col)
+                        insert_vals.append(val)
+
+                add("league", int(league))
+                add("fixture_id", int(fid))
+                add("kickoff_utc", (fx.get("fixture") or {}).get("date"))
+                add("home_team", ((fx.get("teams") or {}).get("home") or {}).get("name"))
+                add("away_team", ((fx.get("teams") or {}).get("away") or {}).get("name"))
+
+                add("model_home_p", float(ph))
+                add("model_draw_p", float(pd))
+                add("model_away_p", float(pa))
+
+                add("predicted_side", pred_side)
+                add("actual_result", actual)
+
+                # payload if available
+                try:
+                    add("payload", json.dumps(pred, ensure_ascii=False))
+                except Exception:
+                    pass
+
+                # build query
+                placeholders = ",".join(["?"] * len(insert_cols))
+                col_sql = ",".join(insert_cols)
+
+                # update set (don’t overwrite actual_result if already set)
+                set_parts = []
+                for c in insert_cols:
+                    if c in ("id",):
+                        continue
+                    if c == "actual_result":
+                        set_parts.append(f"{c} = COALESCE(predictions_history.actual_result, excluded.actual_result)")
+                    else:
+                        set_parts.append(f"{c} = excluded.{c}")
+                set_sql = ",\n".join(set_parts)
+
+                sql = f"""
+                INSERT INTO predictions_history ({col_sql})
+                VALUES ({placeholders})
+                ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
+                {set_sql}
+                """
+
+                cur.execute(_sql_pg_fix(sql), tuple(insert_vals))
+                conn.commit()
+                conn.close()
+            except Exception:
+                # do not fail whole backtest if DB write hiccups
+                pass
+
+    if n == 0:
+        return {"ok": False, "message": "No scorable fixtures (missing goals/xG).", "league": league, "season": season}
+
+    return {
+        "ok": True,
+        "league": league,
+        "season": season,
+        "fixtures_scored": n,
+        "accuracy": round(correct / n, 4),
+        "logloss": round(logloss_sum / n, 4),
+        "write_db": bool(write_db),
+        "dry_run": bool(dry_run),
+                "fixtures_total": len(fixtures),
+        "preds_generated": len(preds),
+        "per_game_len": len(per_game),
+        "n_used": n,
+        "sample_limit": int(sample_limit),
+        "sample": (per_game[: min(int(sample_limit), len(per_game))] if int(sample_limit) > 0 else []),
+    }
+
 
 @app.get("/progress/metrics")
 def api_progress_metrics(league: int = 39, window_days: int = 60):
     """
-    Progress stats (accuracy + log loss) for recent predictions in predictions_history.
+    Progress stats (accuracy + logloss) for recent predictions in predictions_history.
 
-    - Dedupes by fixture_id (uses latest row per fixture)
+    Notes:
+    - Uses the latest row per fixture_id (max(id))
     - Only counts rows where actual_result is known AND model probs exist
-    - Adds baselines (freq model) for quick benchmarking:
-        * outcome_counts / outcome_rates
-        * baseline_accuracy (always-pick-most-frequent)
-        * baseline_logloss (frequency-only constant-prob model)
-        * delta_logloss_vs_freq (positive => model better than baseline)
-    - Never crashes: returns JSON error on unexpected issues
+    - Includes simple baselines derived from the same window:
+        * baseline_accuracy: always pick the most frequent outcome
+        * baseline_logloss: constant-prob model using observed outcome rates
+        * delta_logloss_vs_freq: baseline_logloss - model_logloss (positive => model better)
     """
+    from datetime import datetime, timezone, timedelta
+    from collections import Counter
+    import sqlite3
+    import math
+
+    def _parse_dt(x):
+        if not x:
+            return None
+        try:
+            return datetime.fromisoformat(str(x).replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    def _f(x, default=0.0):
+        try:
+            v = float(x)
+            # NaN guard
+            return default if v != v else v
+        except Exception:
+            return default
+
     try:
-        from datetime import datetime, timezone, timedelta
-        import math
-        import sqlite3
-        from collections import Counter
-
-        def _parse_dt(x):
-            if not x:
-                return None
-            try:
-                return datetime.fromisoformat(str(x).replace("Z", "+00:00"))
-            except Exception:
-                return None
-
-        def _to_float(x):
-            try:
-                v = float(x)
-                if v != v:  # NaN
-                    return 0.0
-                return v
-            except Exception:
-                return 0.0
-
         ensure_predictions_db()
 
-        # NOTE: use SQLite DB_PATH with "?" placeholders to avoid DB placeholder mismatch.
+        cutoff = datetime.now(timezone.utc) - timedelta(days=int(window_days))
+
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         cur.execute(
@@ -3471,33 +3858,30 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
         rows = cur.fetchall()
         conn.close()
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=int(window_days))
-
-        correct = 0
         total = 0
+        correct = 0
         log_losses = []
         counts = Counter()
 
-        for r in rows:
-            # r: (id, fixture_id, kickoff_utc, ph, pd, pa, predicted_side, actual_result)
-            kdt = _parse_dt(r[2])
+        for (row_id, fixture_id, kickoff_utc, ph, pd, pa, predicted_side, actual_result) in rows:
+            kdt = _parse_dt(kickoff_utc)
             if kdt and kdt < cutoff:
                 continue
 
-            actual = (r[7] or "").strip().lower()
+            actual = (actual_result or "").strip().lower()
             if actual not in ("home", "draw", "away"):
                 continue
 
-            ph = _to_float(r[3])
-            pd = _to_float(r[4])
-            pa = _to_float(r[5])
+            ph = _f(ph, 0.0)
+            pd = _f(pd, 0.0)
+            pa = _f(pa, 0.0)
 
             sprob = ph + pd + pa
             if sprob <= 0.0:
                 continue
             ph, pd, pa = ph / sprob, pd / sprob, pa / sprob
 
-            pred = (r[6] or "").strip().lower()
+            pred = (predicted_side or "").strip().lower()
             if pred not in ("home", "draw", "away"):
                 pred = max([("home", ph), ("draw", pd), ("away", pa)], key=lambda t: t[1])[0]
 
@@ -3512,16 +3896,22 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
             log_losses.append(-math.log(p_true))
 
         if total == 0:
-            return {"ok": False, "message": "No records with actual results in this window.", "league": league, "window_days": window_days}
+            return {
+                "ok": False,
+                "league": league,
+                "window_days": window_days,
+                "message": "No records with actual results + model probs in this window.",
+            }
 
         accuracy = correct / total
-        model_logloss = (sum(log_losses) / len(log_losses)) if log_losses else None
+        model_logloss = sum(log_losses) / len(log_losses) if log_losses else None
 
+        # --- Baselines (same window) ---
         rates = {k: (counts.get(k, 0) / total) for k in ("home", "draw", "away")}
         baseline_accuracy = max(rates.values()) if total else None
         eps = 1e-12
         baseline_logloss = -sum((r * math.log(max(r, eps))) for r in rates.values() if r > 0.0) if total else None
-        delta = (baseline_logloss - model_logloss) if (isinstance(baseline_logloss, float) and isinstance(model_logloss, float)) else None
+        delta_ll = (baseline_logloss - model_logloss) if (isinstance(baseline_logloss, float) and isinstance(model_logloss, float)) else None
 
         return {
             "ok": True,
@@ -3531,13 +3921,13 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
             "correct": correct,
             "accuracy": round(accuracy, 4),
             "logloss": (round(model_logloss, 5) if isinstance(model_logloss, float) else None),
-
             "outcome_counts": dict(counts),
             "outcome_rates": {k: round(v, 4) for k, v in rates.items()},
             "baseline_accuracy": (round(baseline_accuracy, 4) if isinstance(baseline_accuracy, float) else None),
             "baseline_logloss": (round(baseline_logloss, 5) if isinstance(baseline_logloss, float) else None),
-            "delta_logloss_vs_freq": (round(delta, 5) if isinstance(delta, float) else None),
+            "delta_logloss_vs_freq": (round(delta_ll, 5) if isinstance(delta_ll, float) else None),
         }
+
     except Exception as e:
         logger.exception("[progress/metrics] failed: %s", e)
         return {"ok": False, "league": league, "window_days": window_days, "error": str(e)}
