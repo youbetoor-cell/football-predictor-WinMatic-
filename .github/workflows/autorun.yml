@@ -1,0 +1,40 @@
+name: WinMatic Auto Run
+
+on:
+  schedule:
+    # every 30 minutes
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  autorun:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call backend maintenance endpoints
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          echo "BASE_URL=$BASE_URL"
+
+          echo "1) Sync results (writes finished fixtures/results)"
+          curl -fsS -X POST "$BASE_URL/results/sync" \
+            -H "X-Admin-Token: $ADMIN_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{}' | head -c 800 || true
+          echo
+
+          echo "2) Update history rows with actual results + derived metrics"
+          curl -fsS "$BASE_URL/update-results" | head -c 800 || true
+          echo
+
+          echo "3) Warm value scan + odds cache (key leagues)"
+          for L in 39 140 135 78 61; do
+            echo " - warm league=$L"
+            curl -fsS "$BASE_URL/value/upcoming?league=$L&days_ahead=7&limit=200&min_edge=0.03" > /dev/null || true
+          done
+
+          echo "done"
