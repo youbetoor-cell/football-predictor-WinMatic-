@@ -2423,6 +2423,18 @@ def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
 
 app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
+# --- Always return JSON on unhandled errors (helps static pages + json.tool) ---
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request, exc):
+    # Keep it safe: no traceback/locals in the response
+    return JSONResponse(
+        status_code=500,
+        content={"ok": False, "error": f"{exc.__class__.__name__}: {exc}"},
+    )
+
+
 @app.get("/debug/db")
 def debug_db():
     import os
@@ -3768,7 +3780,21 @@ def api_progress_metrics(
         # rows are id DESC, so first one we see for a fixture_id is the latest
         if fixture_id in latest_by_fixture:
             continue
-        latest_by_fixture[fixture_id] = (ph, pd, pa, actual_result)
+        def _sf(x):
+            try:
+                if x is None:
+                    return None
+                return float(x)
+            except Exception:
+                return None
+
+        phf, pdf, paf = _sf(ph), _sf(pd), _sf(pa)
+        if phf is None or pdf is None or paf is None:
+            continue
+        sprob = phf + pdf + paf
+        if sprob <= 0:
+            continue
+        latest_by_fixture[fixture_id] = (phf / sprob, pdf / sprob, paf / sprob, actual_result)
 
     total = len(latest_by_fixture)
     if total == 0:
@@ -3816,7 +3842,13 @@ predicted = max(probs, key=probs.get)
             correct += 1
 
         # log loss on the TRUE outcome
-        p_true = max(probs.get(actual, 1e-6), 1e-6)
+        p_true = probs.get(actual, 0.0)
+        try:
+            p_true = float(p_true)
+        except Exception:
+            p_true = 0.0
+        if p_true <= 0.0:
+            p_true = 1e-12
         log_losses.append(-math.log(p_true))
 
     accuracy = round(correct / total, 3)
