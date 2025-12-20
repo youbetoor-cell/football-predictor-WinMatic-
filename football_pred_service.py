@@ -3322,24 +3322,21 @@ def api_bet_of_day(
     }
     from datetime import datetime, timedelta
 
-@app.post("/results/sync", dependencies=[Depends(require_admin)])
+@app.post("/results/sync")
 def api_results_sync(
     league: int = Query(39, description="League ID"),
-    lookback_days: int = Query(21, ge=1, le=365, description="How far back to look for fixtures to finalize"),
-    max_fixtures: int = Query(200, ge=1, le=2000, description="Max fixtures to scan"),
-    dry_run: bool = Query(False, description="If true, do not write to DB"),
+    lookback_days: int = Query(21, ge=1, le=365, description="How far back to look for unfinished predictions"),
+    max_fixtures: int = Query(50, ge=1, le=300, description="Max fixtures to update per run"),
+    dry_run: bool = Query(False, description="If true, don't write to DB"),
+    debug: bool = Query(False, description="If true, include details for skipped fixtures"),
+    _admin: bool = Depends(require_admin),
 ):
     """
-    Fill `actual_result` in predictions_history for finished fixtures.
+    Backfill actual_result for predictions_history once matches finish.
 
-    Finds rows in predictions_history that:
-      - match league
-      - kickoff_utc is within the last `lookback_days`
-      - actual_result is NULL / empty
-    Then fetches each fixture by id from API-FOOTBALL and writes:
-      home / away / draw
+    Uses SQLite (DB_PATH) and "?" placeholders to avoid DB placeholder mismatch.
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     import sqlite3
 
     ensure_predictions_db()
@@ -3351,74 +3348,81 @@ def api_results_sync(
     updated = 0
     skipped = 0
     errors = []
+    skipped_details = []
 
-    # fetch candidates (most recent first)
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT DISTINCT fixture_id
-        FROM predictions_history
-        WHERE league = ?
-          AND kickoff_utc >= ?
-          AND kickoff_utc < ?
-          AND fixture_id IS NOT NULL
-          AND (actual_result IS NULL OR TRIM(actual_result) = '')
-        ORDER BY kickoff_utc DESC
-        LIMIT ?
-        """,
-        (int(league), since, now.isoformat(), int(max_fixtures)),
-    )
-    fixture_ids = [r[0] for r in cur.fetchall() if r and r[0] is not None]
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT fixture_id, MAX(kickoff_utc) AS last_kickoff
+            FROM predictions_history
+            WHERE league = ?
+              AND kickoff_utc >= ?
+              AND kickoff_utc < ?
+              AND (actual_result IS NULL OR TRIM(actual_result) = '')
+              AND fixture_id IS NOT NULL
+            GROUP BY fixture_id
+            ORDER BY MAX(kickoff_utc) DESC
+            LIMIT ?
+            """,
+            (int(league), since, now.isoformat(), int(max_fixtures)),
+        )
+        candidates = cur.fetchall()
+        conn.close()
+    except Exception as e:
+        return {"ok": False, "league": league, "error": f"DB read failed: {e!r}"}
 
-    def actual_1x2_from_fixture_payload(fx: dict):
-        goals = (fx.get("goals") or {})
-        hg = goals.get("home")
-        ag = goals.get("away")
-        if hg is None or ag is None:
-            return None
-        try:
-            hg = int(hg)
-            ag = int(ag)
-        except Exception:
-            return None
-        if hg > ag:
-            return "home"
-        if ag > hg:
-            return "away"
-        return "draw"
-
-    for fid in fixture_ids:
+    for (fid, _kick) in candidates:
         scanned += 1
         try:
             fid_int = int(fid)
         except Exception:
             skipped += 1
+            if debug and len(skipped_details) < 20:
+                skipped_details.append({"fixture_id": fid, "reason": "invalid_fixture_id"})
             continue
 
         try:
             data = api_get("/fixtures", {"id": fid_int})
             resp = (data.get("response") or [])
-            fx = resp[0] if resp else None
-            if not fx:
+            if not resp:
                 skipped += 1
+                if debug and len(skipped_details) < 20:
+                    skipped_details.append({"fixture_id": fid_int, "reason": "no_api_response"})
                 continue
 
-            # Only finalize finished matches
+            fx = resp[0]
             status = (((fx.get("fixture") or {}).get("status") or {}).get("short") or "").upper()
+            goals = fx.get("goals") or {}
+            hg = goals.get("home")
+            ag = goals.get("away")
+
             if status not in ("FT", "AET", "PEN"):
                 skipped += 1
+                if debug and len(skipped_details) < 20:
+                    skipped_details.append({"fixture_id": fid_int, "reason": "not_final", "status": status})
+                continue
+            if hg is None or ag is None:
+                skipped += 1
+                if debug and len(skipped_details) < 20:
+                    skipped_details.append({"fixture_id": fid_int, "reason": "missing_goals", "status": status})
                 continue
 
-            actual = actual_1x2_from_fixture_payload(fx)
-            if actual not in ("home", "draw", "away"):
-                skipped += 1
-                continue
+            hg = int(hg); ag = int(ag)
+            if hg > ag:
+                actual = "home"
+            elif ag > hg:
+                actual = "away"
+            else:
+                actual = "draw"
 
             if dry_run:
                 updated += 1
                 continue
 
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
             cur.execute(
                 """
                 UPDATE predictions_history
@@ -3430,25 +3434,27 @@ def api_results_sync(
                 (actual, int(league), fid_int),
             )
             conn.commit()
+            conn.close()
+
             updated += 1
 
         except Exception as e:
             errors.append({"fixture_id": fid_int, "error": repr(e)})
-            # keep going
 
-    conn.close()
-
-    return {
+    out = {
         "ok": True,
-        "league": int(league),
-        "lookback_days": int(lookback_days),
-        "max_fixtures": int(max_fixtures),
-        "dry_run": bool(dry_run),
-        "scanned": int(scanned),
-        "updated": int(updated),
-        "skipped": int(skipped),
+        "league": league,
+        "lookback_days": lookback_days,
+        "max_fixtures": max_fixtures,
+        "dry_run": dry_run,
+        "scanned": scanned,
+        "updated": updated,
+        "skipped": skipped,
         "errors": errors[:10],
     }
+    if debug:
+        out["skipped_details"] = skipped_details
+    return out
 
 @app.get("/backtest/1x2")
 def api_backtest_1x2(
