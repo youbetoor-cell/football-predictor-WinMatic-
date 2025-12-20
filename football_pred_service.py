@@ -128,6 +128,14 @@ def ensure_predictions_db() -> None:
             "actual_result": "TEXT",
             # optional JSON payload field for backwards compatibility
             "payload": "TEXT",
+
+            # --- market implied probs / odds (optional) ---
+            "market_home_p": "REAL",
+            "market_draw_p": "REAL",
+            "market_away_p": "REAL",
+            "market_home_odds": "REAL",
+            "market_draw_odds": "REAL",
+            "market_away_odds": "REAL",
         }
 
         # 4) Add any missing columns
@@ -2121,6 +2129,33 @@ def extract_match_winner_odds(data: Dict[str, Any]) -> Optional[Dict[str, float]
     return None
 
 
+
+
+def odds_to_implied_probs_1x2(odds: dict) -> Optional[Dict[str, float]]:
+    """Convert decimal 1X2 odds into normalized implied probabilities.
+
+    Returns dict {home, draw, away} or None if odds missing/invalid.
+    """
+    try:
+        if not isinstance(odds, dict):
+            return None
+        oh = odds.get("home")
+        od = odds.get("draw")
+        oa = odds.get("away")
+        if oh is None or od is None or oa is None:
+            return None
+        oh = float(oh); od = float(od); oa = float(oa)
+        if oh <= 0 or od <= 0 or oa <= 0:
+            return None
+        ph = 1.0 / oh
+        pd = 1.0 / od
+        pa = 1.0 / oa
+        s = ph + pd + pa
+        if s <= 0:
+            return None
+        return {"home": ph / s, "draw": pd / s, "away": pa / s}
+    except Exception:
+        return None
 def fetch_1x2_odds_for_fixture(fixture_id: int) -> Optional[Dict[str, float]]:
     """
     Call API-FOOTBALL /odds for a single fixture and return 1X2 odds.
@@ -3615,6 +3650,11 @@ def api_backtest_1x2(
     correct = 0
     logloss_sum = 0.0
 
+    # --- market (odds-implied) baseline metrics (if odds available) ---
+    market_n = 0
+    market_correct = 0
+    market_logloss_sum = 0.0
+
     per_game = []
 
     # DB write counters (for write_db=true)
@@ -3683,6 +3723,46 @@ def api_backtest_1x2(
         p_true = {"home": ph, "draw": pd, "away": pa}[actual]
         ll = -math.log(max(p_true, eps))
 
+
+        # --- Market odds baseline (if available) ---
+        market_probs = None
+        market_pick = None
+        market_ll = None
+        mph = mpd = mpa = None
+        try:
+            odds = fetch_1x2_odds_for_fixture(fid)
+            market_probs = odds_to_implied_probs_1x2(odds) if odds else None
+        except Exception:
+            market_probs = None
+
+        if market_probs:
+            try:
+                mph = float(market_probs.get("home", 0.0) or 0.0)
+                mpd = float(market_probs.get("draw", 0.0) or 0.0)
+                mpa = float(market_probs.get("away", 0.0) or 0.0)
+            except Exception:
+                mph = mpd = mpa = None
+
+        if isinstance(mph, (int, float)) and isinstance(mpd, (int, float)) and isinstance(mpa, (int, float)):
+            ms = float(mph + mpd + mpa)
+            if ms > 0:
+                mph, mpd, mpa = mph / ms, mpd / ms, mpa / ms
+                market_probs = {"home": mph, "draw": mpd, "away": mpa}
+                try:
+                    market_pick = max(market_probs, key=market_probs.get)
+                except Exception:
+                    market_pick = None
+                try:
+                    market_ll = -math.log(max(float(market_probs.get(actual, 0.0) or 0.0), eps))
+                except Exception:
+                    market_ll = None
+
+                market_n += 1
+                if market_pick == actual:
+                    market_correct += 1
+                if isinstance(market_ll, (int, float)):
+                    market_logloss_sum += float(market_ll)
+
         n += 1
         if pred_side == actual:
             correct += 1
@@ -3708,6 +3788,15 @@ def api_backtest_1x2(
 
                 # backward compat (keep name used elsewhere)
                 "model_probs": {"home": round(ph, 6), "draw": round(pd, 6), "away": round(pa, 6)},
+
+                # NEW: market implied (from odds)
+                "market_probs": (
+                    {"home": round(mph, 6), "draw": round(mpd, 6), "away": round(mpa, 6)}
+                    if isinstance(mph, (int, float)) and isinstance(mpd, (int, float)) and isinstance(mpa, (int, float))
+                    else None
+                ),
+                "market_pick": market_pick,
+                "market_logloss": (round(market_ll, 4) if isinstance(market_ll, (int, float)) else None),
 
                 "logloss": round(ll, 4),
             }
@@ -3740,6 +3829,24 @@ def api_backtest_1x2(
                 add("model_home_p", float(ph))
                 add("model_draw_p", float(pd))
                 add("model_away_p", float(pa))
+
+                # market implied probs + odds (if available)
+                if isinstance(mph, (int, float)) and isinstance(mpd, (int, float)) and isinstance(mpa, (int, float)):
+                    add("market_home_p", float(mph))
+                    add("market_draw_p", float(mpd))
+                    add("market_away_p", float(mpa))
+                try:
+                    if isinstance(odds, dict):
+                        oh = odds.get("home")
+                        od = odds.get("draw")
+                        oa = odds.get("away")
+                        if oh is not None and od is not None and oa is not None:
+                            add("market_home_odds", float(oh))
+                            add("market_draw_odds", float(od))
+                            add("market_away_odds", float(oa))
+                except Exception:
+                    pass
+
 
                 add("predicted_side", pred_side)
                 add("actual_result", actual)
@@ -3797,6 +3904,13 @@ def api_backtest_1x2(
         "fixtures_scored": n,
         "accuracy": round(correct / n, 4),
         "logloss": round(logloss_sum / n, 4),
+        "market_samples": int(market_n),
+        "market_accuracy": (round(market_correct / market_n, 4) if market_n else None),
+        "market_logloss": (round(market_logloss_sum / market_n, 4) if market_n else None),
+        "delta_logloss_vs_market": (
+            round((logloss_sum / n) - (market_logloss_sum / market_n), 5)
+            if (n and market_n) else None
+        ),
         "write_db": bool(write_db),
         "dry_run": bool(dry_run),
                 "fixtures_total": len(fixtures),
@@ -3812,52 +3926,44 @@ def api_backtest_1x2(
     }
 
 
+
 @app.get("/progress/metrics")
 def api_progress_metrics(league: int = 39, window_days: int = 60):
     """
-    Progress stats (accuracy + logloss) for recent predictions in predictions_history.
+    Progress stats (accuracy + log loss) for recent predictions in predictions_history.
 
-    Notes:
-    - Uses the latest row per fixture_id (max(id))
+    - Dedupes by fixture_id (uses latest row per fixture)
     - Only counts rows where actual_result is known AND model probs exist
-    - Includes simple baselines derived from the same window:
-        * baseline_accuracy: always pick the most frequent outcome
-        * baseline_logloss: constant-prob model using observed outcome rates
-        * delta_logloss_vs_freq: baseline_logloss - model_logloss (positive => model better)
+    - Optionally (if market_* columns exist + are populated): computes market-implied baseline
+      accuracy/logloss (from 1X2 odds) and delta vs market.
+    - Never crashes: returns JSON error on unexpected issues
     """
-    from datetime import datetime, timezone, timedelta
-    from collections import Counter
-    import sqlite3
-    import math
-
-    def _parse_dt(x):
-        if not x:
-            return None
-        try:
-            return datetime.fromisoformat(str(x).replace("Z", "+00:00"))
-        except Exception:
-            return None
-
-    def _f(x, default=0.0):
-        try:
-            v = float(x)
-            # NaN guard
-            return default if v != v else v
-        except Exception:
-            return default
-
     try:
+        from datetime import datetime, timezone, timedelta
+        import math
+        from collections import Counter
+
         ensure_predictions_db()
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=int(window_days))
 
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
-        cur.execute(
-            """
+
+        # detect optional market columns (schema evolves)
+        cur.execute("PRAGMA table_info(predictions_history)")
+        cols = {r[1] for r in cur.fetchall()}
+        has_market = {"market_home_p", "market_draw_p", "market_away_p"}.issubset(cols)
+
+        select_market = ""
+        if has_market:
+            select_market = ", ph.market_home_p, ph.market_draw_p, ph.market_away_p"
+
+        sql = f"""
             SELECT ph.id, ph.fixture_id, ph.kickoff_utc,
                    ph.model_home_p, ph.model_draw_p, ph.model_away_p,
                    ph.predicted_side, ph.actual_result
+                   {select_market}
             FROM predictions_history ph
             JOIN (
                 SELECT fixture_id, MAX(id) AS max_id
@@ -3870,19 +3976,61 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
             ON ph.id = t.max_id
             ORDER BY ph.kickoff_utc DESC
             LIMIT 5000
-            """,
-            (int(league),),
-        )
+        """
+
+        cur.execute(sql, (int(league),))
         rows = cur.fetchall()
         conn.close()
 
+        def parse_dt(x):
+            if not x:
+                return None
+            try:
+                return datetime.fromisoformat(str(x).replace("Z", "+00:00"))
+            except Exception:
+                return None
+
         total = 0
         correct = 0
-        log_losses = []
-        counts = Counter()
+        logloss_sum = 0.0
 
-        for (row_id, fixture_id, kickoff_utc, ph, pd, pa, predicted_side, actual_result) in rows:
-            kdt = _parse_dt(kickoff_utc)
+        market_total = 0
+        market_correct = 0
+        market_logloss_sum = 0.0
+
+        outcome_counts = Counter()
+
+        eps = 1e-12
+
+        for r in rows:
+            if has_market:
+                (
+                    _row_id,
+                    _fixture_id,
+                    kickoff_utc,
+                    ph,
+                    pd,
+                    pa,
+                    predicted_side,
+                    actual_result,
+                    mph,
+                    mpd,
+                    mpa,
+                ) = r
+            else:
+                (
+                    _row_id,
+                    _fixture_id,
+                    kickoff_utc,
+                    ph,
+                    pd,
+                    pa,
+                    predicted_side,
+                    actual_result,
+                ) = r
+                mph = mpd = mpa = None
+
+            kdt = parse_dt(kickoff_utc)
             if kdt and kdt < cutoff:
                 continue
 
@@ -3890,12 +4038,18 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
             if actual not in ("home", "draw", "away"):
                 continue
 
-            ph = _f(ph, 0.0)
-            pd = _f(pd, 0.0)
-            pa = _f(pa, 0.0)
+            outcome_counts[actual] += 1
+
+            # model probs
+            try:
+                ph = float(ph) if ph is not None else 0.0
+                pd = float(pd) if pd is not None else 0.0
+                pa = float(pa) if pa is not None else 0.0
+            except Exception:
+                continue
 
             sprob = ph + pd + pa
-            if sprob <= 0.0:
+            if sprob <= 0:
                 continue
             ph, pd, pa = ph / sprob, pd / sprob, pa / sprob
 
@@ -3904,53 +4058,94 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
                 pred = max([("home", ph), ("draw", pd), ("away", pa)], key=lambda t: t[1])[0]
 
             total += 1
-            counts[actual] += 1
             if pred == actual:
                 correct += 1
 
             p_true = {"home": ph, "draw": pd, "away": pa}.get(actual, 0.0)
-            if p_true <= 0.0:
-                p_true = 1e-12
-            log_losses.append(-math.log(p_true))
+            logloss_sum += -math.log(max(p_true, eps))
+
+            # market (if available)
+            if has_market:
+                try:
+                    mph = float(mph) if mph is not None else None
+                    mpd = float(mpd) if mpd is not None else None
+                    mpa = float(mpa) if mpa is not None else None
+                except Exception:
+                    mph = mpd = mpa = None
+
+                if isinstance(mph, (int, float)) and isinstance(mpd, (int, float)) and isinstance(mpa, (int, float)):
+                    ms = float(mph + mpd + mpa)
+                    if ms > 0:
+                        mph, mpd, mpa = mph / ms, mpd / ms, mpa / ms
+                        mprobs = {"home": mph, "draw": mpd, "away": mpa}
+                        try:
+                            mpick = max(mprobs, key=mprobs.get)
+                        except Exception:
+                            mpick = None
+                        market_total += 1
+                        if mpick == actual:
+                            market_correct += 1
+                        market_logloss_sum += -math.log(max(float(mprobs.get(actual, 0.0) or 0.0), eps))
 
         if total == 0:
-            return {
-                "ok": False,
-                "league": league,
-                "window_days": window_days,
-                "message": "No records with actual results + model probs in this window.",
-            }
+            return {"ok": False, "message": "No records with actual results + model probs in this window.", "league": league, "window_days": window_days}
 
         accuracy = correct / total
-        model_logloss = sum(log_losses) / len(log_losses) if log_losses else None
+        logloss = logloss_sum / total
 
-        # --- Baselines (same window) ---
-        rates = {k: (counts.get(k, 0) / total) for k in ("home", "draw", "away")}
-        baseline_accuracy = max(rates.values()) if total else None
-        eps = 1e-12
-        baseline_logloss = -sum((r * math.log(max(r, eps))) for r in rates.values() if r > 0.0) if total else None
-        delta_ll = (baseline_logloss - model_logloss) if (isinstance(baseline_logloss, float) and isinstance(model_logloss, float)) else None
+        # baseline from observed outcome frequencies (within this window)
+        outcome_rates = {k: (v / total) for k, v in outcome_counts.items()} if total else {}
+        baseline_accuracy = (max(outcome_rates.values()) if outcome_rates else None)
 
-        return {
+        baseline_logloss = None
+        if outcome_rates:
+            bl = 0.0
+            for k, v in outcome_rates.items():
+                bl += -float(v) * math.log(max(float(v), eps))
+            baseline_logloss = bl
+
+        out = {
             "ok": True,
             "league": league,
             "window_days": window_days,
             "samples": total,
             "correct": correct,
             "accuracy": round(accuracy, 4),
-            "logloss": (round(model_logloss, 5) if isinstance(model_logloss, float) else None),
-            "outcome_counts": dict(counts),
-            "outcome_rates": {k: round(v, 4) for k, v in rates.items()},
+            "logloss": round(logloss, 5),
+            "outcome_counts": dict(outcome_counts),
+            "outcome_rates": {k: round(v, 4) for k, v in outcome_rates.items()},
             "baseline_accuracy": (round(baseline_accuracy, 4) if isinstance(baseline_accuracy, float) else None),
             "baseline_logloss": (round(baseline_logloss, 5) if isinstance(baseline_logloss, float) else None),
-            "delta_logloss_vs_freq": (round(delta_ll, 5) if isinstance(delta_ll, float) else None),
+            "delta_logloss_vs_freq": (round(logloss - baseline_logloss, 5) if isinstance(baseline_logloss, float) else None),
         }
+
+        if has_market and market_total:
+            market_accuracy = market_correct / market_total
+            market_logloss = market_logloss_sum / market_total
+            out.update({
+                "market_samples": int(market_total),
+                "market_correct": int(market_correct),
+                "market_accuracy": round(market_accuracy, 4),
+                "market_logloss": round(market_logloss, 5),
+                "delta_logloss_vs_market": round(logloss - market_logloss, 5),
+            })
+        else:
+            out.update({
+                "market_samples": 0,
+                "market_correct": 0,
+                "market_accuracy": None,
+                "market_logloss": None,
+                "delta_logloss_vs_market": None,
+            })
+
+        return out
 
     except Exception as e:
         logger.exception("[progress/metrics] failed: %s", e)
         return {"ok": False, "league": league, "window_days": window_days, "error": str(e)}
 
 @app.get("/progress/roi")
+
 def api_progress_roi(
     league: int = Query(39, description="League ID"),
     window_days: int = Query(
