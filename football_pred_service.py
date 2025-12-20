@@ -7,6 +7,22 @@ WinMatic backend — cleaned and patched:
 - Keep all prediction endpoints intact
 """
 
+
+
+def _sql_pg_fix(q: str) -> str:
+    """
+    Convert SQLite-style placeholders/functions to Postgres-safe SQL.
+    - '?'  -> '%s'
+    - datetime('now') -> now()
+    """
+    try:
+        import os
+        db = os.getenv("DATABASE_URL", "") or ""
+        if db.startswith("postgres"):
+            return q.replace("datetime('now')", "now()").replace("?", "%s")
+    except Exception:
+        pass
+    return q
 import os
 import io
 import json
@@ -3658,7 +3674,7 @@ def api_backtest_1x2(
                 {set_sql}
                 """
 
-                cur.execute(sql, tuple(insert_vals))
+                cur.execute(_sql_pg_fix(sql), tuple(insert_vals))
                 conn.commit()
                 conn.close()
             except Exception:
