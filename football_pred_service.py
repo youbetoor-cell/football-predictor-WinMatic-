@@ -232,22 +232,6 @@ handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"
 if not logger.handlers:
     logger.addHandler(handler)
 
-
-# ------------------------------------------------------------
-# Small helpers
-# ------------------------------------------------------------
-def _env_int(name: str, default: int) -> int:
-    """Parse an int env var safely (accepts values like '21600 (6 hours)')."""
-    raw = os.getenv(name, str(default))
-    if raw is None:
-        return int(default)
-    try:
-        return int(str(raw).strip())
-    except Exception:
-        import re as _re
-        m = _re.search(r"-?\d+", str(raw))
-        return int(m.group(0)) if m else int(default)
-
 # ============================================================
 # API CACHE HELPERS
 # ============================================================
@@ -535,10 +519,11 @@ def init_history_db() -> None:
 init_history_db()
 
 def record_predictions_history(league: int, fixtures: list[dict]) -> None:
-    """Persist prediction payloads for later analysis.
+    """
+    Persist prediction payloads for later analysis.
 
-    Upserts on (league, fixture_id, kickoff_utc) so we don't create duplicates.
-    Stores key fields into columns when present (for metrics pages), and always stores full JSON payload.
+    Upserts on (league, fixture_id, kickoff_utc) so we don't create duplicates,
+    and never writes blank created_at.
     """
     if not fixtures:
         return
@@ -547,12 +532,6 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
     try:
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
-
-        # Ensure schema exists
-        try:
-            ensure_predictions_db()
-        except Exception:
-            pass
 
         # Ensure unique key exists (needed for ON CONFLICT)
         try:
@@ -563,100 +542,39 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
         except Exception as e:
             logger.warning("[DB] Could not ensure unique index: %s", e)
 
-        # Discover columns that exist (SQLite)
-        try:
-            cur.execute("PRAGMA table_info(predictions_history);")
-            cols = [r[1] for r in (cur.fetchall() or [])]  # name is index 1
-        except Exception:
-            cols = []
-        colset = set(cols)
-
-        def _team_name(val) -> str | None:
-            if isinstance(val, dict):
-                return val.get("name") or val.get("team")
-            if isinstance(val, str):
-                return val
-            return None
-
+        rows: list[tuple] = []
         for f in fixtures:
             fixture_id = f.get("fixture_id") or (f.get("fixture") or {}).get("id")
             kickoff_utc = f.get("kickoff_utc") or (f.get("fixture") or {}).get("date")
             if fixture_id is None or kickoff_utc is None:
                 continue
 
-            try:
-                payload = json.dumps(f, ensure_ascii=False)
-            except Exception:
-                payload = ""
+            payload = json.dumps(f, ensure_ascii=False)
+            rows.append((int(league), int(fixture_id), str(kickoff_utc), payload))
 
-            home_team = f.get("home_team") or _team_name(f.get("home")) or f.get("home_name") or f.get("home")
-            away_team = f.get("away_team") or _team_name(f.get("away")) or f.get("away_name") or f.get("away")
+        if not rows:
+            return
 
-            mp = f.get("model_probs") or f.get("model_probabilities") or f.get("probs") or {}
-            mh = mp.get("home") if isinstance(mp, dict) else None
-            md = mp.get("draw") if isinstance(mp, dict) else None
-            ma = mp.get("away") if isinstance(mp, dict) else None
-
-            predicted_side = f.get("predicted_side") or f.get("model_pick") or f.get("value_pick") or f.get("best_side")
-            edge_value = f.get("edge_value")
-            if edge_value is None:
-                edge_value = f.get("best_edge") or f.get("value_pick_ev")
-
-            created_at = datetime.now(timezone.utc).isoformat()
-
-            data: dict[str, object] = {
-                "league": int(league),
-                "fixture_id": int(fixture_id),
-                "kickoff_utc": str(kickoff_utc),
-                "payload": payload,
-                "created_at": created_at,
-            }
-
-            if "home_team" in colset and home_team is not None:
-                data["home_team"] = str(home_team)
-            if "away_team" in colset and away_team is not None:
-                data["away_team"] = str(away_team)
-            if "model_home_p" in colset and mh is not None:
-                data["model_home_p"] = float(mh)
-            if "model_draw_p" in colset and md is not None:
-                data["model_draw_p"] = float(md)
-            if "model_away_p" in colset and ma is not None:
-                data["model_away_p"] = float(ma)
-            if "predicted_side" in colset and predicted_side is not None:
-                data["predicted_side"] = str(predicted_side)
-            if "edge_value" in colset and edge_value is not None:
-                try:
-                    data["edge_value"] = float(edge_value)
-                except Exception:
-                    pass
-
-            insert_cols = list(data.keys())
-            placeholders = ",".join(["?"] * len(insert_cols))
-            col_sql = ",".join(insert_cols)
-
-            update_cols = []
-            for c in insert_cols:
-                if c in ("league", "fixture_id", "kickoff_utc"):
-                    continue
-                update_cols.append(f"{c}=excluded.{c}")
-            update_sql = ",".join(update_cols) if update_cols else "payload=excluded.payload"
-
-            cur.execute(
-                f"INSERT INTO predictions_history ({col_sql}) VALUES ({placeholders}) "
-                f"ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET {update_sql};",
-                [data[c] for c in insert_cols],
-            )
-
+        cur.executemany(
+            """
+            INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
+            VALUES (?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
+              payload = excluded.payload,
+              created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)
+            """,
+            rows,
+        )
         conn.commit()
-    except Exception as e:
-        logger.exception("[DB] record_predictions_history failed: %s", e)
-    finally:
-        try:
-            if conn:
-                conn.close()
-        except Exception:
-            pass
 
+    except Exception as e:
+        logger.warning("Failed to record history: %s", e)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 def model_paths(league_id: int) -> Tuple[str, str]:
     model_path = os.path.join(ART, f"model_{league_id}.joblib")
@@ -3337,57 +3255,6 @@ def api_value_upcoming(
         "min_edge": min_edge,
     }
 
-
-@app.get("/matches/today")
-def api_matches_today(
-    date: Optional[str] = Query(None, description="YYYY-MM-DD (defaults to today UTC)"),
-    limit: int = Query(500, ge=1, le=5000),
-):
-    """Return fixtures scheduled for a given date across all leagues."""
-    try:
-        if date:
-            date_str = str(date)
-        else:
-            date_str = datetime.now(timezone.utc).date().isoformat()
-
-        data = api_get("/fixtures", {"date": date_str})
-        resp = data.get("response") or []
-        items = []
-        for r in resp:
-            fx = (r or {}).get("fixture") or {}
-            lg = (r or {}).get("league") or {}
-            tm = (r or {}).get("teams") or {}
-            home = (tm or {}).get("home") or {}
-            away = (tm or {}).get("away") or {}
-            status = (fx.get("status") or {}).get("short") or (fx.get("status") or {}).get("long") or ""
-            kickoff = fx.get("date") or ""
-            items.append(
-                {
-                    "fixture_id": fx.get("id"),
-                    "kickoff_utc": kickoff,
-                    "status": status,
-                    "league": {"id": lg.get("id"), "name": lg.get("name"), "country": lg.get("country"), "logo": lg.get("logo")},
-                    "home": {"id": home.get("id"), "name": home.get("name"), "logo": home.get("logo")},
-                    "away": {"id": away.get("id"), "name": away.get("name"), "logo": away.get("logo")},
-                }
-            )
-        # sort by kickoff
-        def _k(it):
-            try:
-                return datetime.fromisoformat(str(it.get("kickoff_utc")).replace("Z", "+00:00"))
-            except Exception:
-                return datetime.max.replace(tzinfo=timezone.utc)
-        items.sort(key=_k)
-        if limit:
-            items = items[: int(limit)]
-        return {"ok": True, "date": date_str, "count": len(items), "fixtures": items}
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        logger.exception("[MATCHES] /matches/today failed: %s", e)
-        raise HTTPException(status_code=502, detail="Failed to fetch matches for date.")
-
-
 @app.get("/bet-of-day")
 def api_bet_of_day(
     league: int = Query(DEFAULT_LEAGUE, description="League ID (e.g. 39 = Premier League)"),
@@ -3467,74 +3334,20 @@ def api_results_sync(
     # candidates: finished by time, missing actual_result
     cur.execute(
         """
-        SELECT DISTINCT fixture_id
+        SELECT fixture_id, MAX(kickoff_utc) AS last_kickoff
         FROM predictions_history
         WHERE league = ?
           AND kickoff_utc >= ?
           AND kickoff_utc < ?
           AND (actual_result IS NULL OR TRIM(actual_result) = '')
           AND fixture_id IS NOT NULL
-        ORDER BY kickoff_utc DESC
+        GROUP BY fixture_id
+        ORDER BY MAX(kickoff_utc) DESC
         LIMIT ?
         """,
         (league, since, now.isoformat(), max_fixtures),
     )
-    fixture_ids = [r[0] for r in cur.fetchall()]
-    conn.close()
-
-    updated = 0
-    scanned = 0
-    skipped = 0
-    errors = []
-
-    for fid in fixture_ids:
-        scanned += 1
-        try:
-            data = api_get("/fixtures", {"id": int(fid)})
-            resp = (data.get("response") or [])
-            if not resp:
-                skipped += 1
-                continue
-
-            fx = resp[0]
-            goals = fx.get("goals") or {}
-            hg = goals.get("home")
-            ag = goals.get("away")
-
-            # if API doesn’t have goals yet, skip
-            if hg is None or ag is None:
-                skipped += 1
-                continue
-
-            try:
-                hg = int(hg)
-                ag = int(ag)
-            except Exception:
-                skipped += 1
-                continue
-
-            if hg > ag:
-                actual = "home"
-            elif ag > hg:
-                actual = "away"
-            else:
-                actual = "draw"
-
-            if dry_run:
-                updated += 1
-                continue
-
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-            cur.execute(
-                """
-                UPDATE predictions_history
-                SET actual_result = ?
-                WHERE league = ?
-                  AND fixture_id = ?
-                  AND (actual_result IS NULL OR TRIM(actual_result) = '')
-                """,
-                (actual, league, int(fid)),
+,
             )
             conn.commit()
             conn.close()
@@ -3602,7 +3415,7 @@ def api_backtest_1x2(
 
     # 1) Fetch finished fixtures
     # API-FOOTBALL supports status=FT; we then take the most recent last_n by kickoff date.
-    data = api_get("/fixtures", {"league": league, "season": season, "last": int(last), "status": "FT"})
+    data = api_get("/fixtures", {"league": league, "season": season, "status": "FT"})
     fixtures = (data.get("response") or [])
     if not fixtures:
         return {"ok": False, "message": "No finished fixtures found.", "league": league, "season": season}
