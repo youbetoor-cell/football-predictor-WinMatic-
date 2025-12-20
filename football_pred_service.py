@@ -3805,17 +3805,34 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
 
     - Dedupes by fixture_id (uses latest row per fixture)
     - Only counts rows where actual_result is known AND model probs exist
-    - Never crashes: returns JSON error on unexpected issues
+    - Null/NaN-safe: never crashes on bad rows
     """
-    try:
-        from datetime import datetime, timezone, timedelta
-        import math
+    from datetime import datetime, timezone, timedelta
+    import math
+    import sqlite3
 
+    def _to_float(x, default=0.0):
+        try:
+            v = float(x)
+            if v != v:  # NaN
+                return default
+            return v
+        except Exception:
+            return default
+
+    def _pick_side(ph, pd, pa):
+        # return best side or None if all are <= 0
+        best = max([("home", ph), ("draw", pd), ("away", pa)], key=lambda t: t[1])
+        return best[0] if best[1] > 0.0 else None
+
+    try:
         ensure_predictions_db()
+
+        # Use sqlite directly (works on Neon/SQLite setups where DB_PATH is the source of truth)
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
 
-        rows = []
+        # Get latest row per fixture with actual_result set
         cur.execute(
             """
             SELECT ph.id, ph.fixture_id, ph.kickoff_utc,
@@ -3836,17 +3853,7 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
             """,
             (int(league),),
         )
-        for r in cur.fetchall():
-            rows.append({
-                "id": r[0],
-                "fixture_id": r[1],
-                "kickoff_utc": r[2],
-                "ph": r[3],
-                "pd": r[4],
-                "pa": r[5],
-                "predicted_side": r[6],
-                "actual_result": r[7],
-            })
+        raw_rows = cur.fetchall()
         conn.close()
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=int(window_days))
@@ -3859,34 +3866,34 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
             except Exception:
                 return None
 
-        correct = 0
         total = 0
+        correct = 0
         log_losses = []
 
-        for r in rows:
-            kdt = parse_dt(r.get("kickoff_utc"))
+        for r in raw_rows:
+            kickoff_utc = r[2]
+            kdt = parse_dt(kickoff_utc)
             if kdt and kdt < cutoff:
                 continue
 
-            actual = (r.get("actual_result") or "").strip().lower()
-            if actual not in ("home", "draw", "away"):
-                continue
-
-            try:
-                ph = float(r.get("ph") or 0.0)
-                pd = float(r.get("pd") or 0.0)
-                pa = float(r.get("pa") or 0.0)
-            except Exception:
-                continue
+            ph = _to_float(r[3], 0.0)
+            pd = _to_float(r[4], 0.0)
+            pa = _to_float(r[5], 0.0)
 
             sprob = ph + pd + pa
-            if sprob <= 0:
+            if sprob <= 0.0:
                 continue
             ph, pd, pa = ph / sprob, pd / sprob, pa / sprob
 
-            pred = (r.get("predicted_side") or "").strip().lower()
+            actual = (r[7] or "").strip().lower()
+            if actual not in ("home", "draw", "away"):
+                continue
+
+            pred = (r[6] or "").strip().lower()
             if pred not in ("home", "draw", "away"):
-                pred = max([("home", ph), ("draw", pd), ("away", pa)], key=lambda t: t[1])[0]
+                pred = _pick_side(ph, pd, pa)
+                if pred is None:
+                    continue
 
             total += 1
             if pred == actual:
@@ -3898,7 +3905,12 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
             log_losses.append(-math.log(p_true))
 
         if total == 0:
-            return {"ok": False, "message": "No records with actual results in this window.", "league": league, "window_days": window_days}
+            return {
+                "ok": False,
+                "message": "No records with actual results in this window.",
+                "league": league,
+                "window_days": window_days,
+            }
 
         accuracy = correct / total
         logloss = sum(log_losses) / len(log_losses) if log_losses else None
@@ -3912,6 +3924,7 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
             "accuracy": round(accuracy, 4),
             "logloss": (round(logloss, 5) if isinstance(logloss, float) else None),
         }
+
     except Exception as e:
         logger.exception("[progress/metrics] failed: %s", e)
         return {"ok": False, "league": league, "window_days": window_days, "error": str(e)}
