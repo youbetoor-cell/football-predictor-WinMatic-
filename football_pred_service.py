@@ -136,6 +136,8 @@ def ensure_predictions_db() -> None:
             "market_home_odds": "REAL",
             "market_draw_odds": "REAL",
             "market_away_odds": "REAL",
+            "market_bookmaker": "TEXT",
+            "market_bet_name": "TEXT",
         }
 
         # 4) Add any missing columns
@@ -2083,54 +2085,10 @@ def decimal_to_implied_prob(odd: float) -> float:
     return 1.0 / odd
 
 
-def extract_match_winner_odds(data: Dict[str, Any]) -> Optional[Dict[str, float]]:
-    """
-    Extract 1X2 (Match Winner) odds from an API-FOOTBALL /odds response.
-
-    Returns a dict like:
-      {"home": 1.85, "draw": 3.8, "away": 4.2}
-    or None if not found.
-    """
-    resp = data.get("response") or []
-    if not resp:
-        return None
-
-    entry = resp[0]  # first fixture
-    bookmakers = entry.get("bookmakers") or []
-    if not bookmakers:
-        return None
-
-    # For simplicity, just use the first bookmaker that has a Match Winner / 1X2 market
-    for bm in bookmakers:
-        bets = bm.get("bets") or []
-        for bet in bets:
-            name = (bet.get("name") or bet.get("label") or "").lower()
-            if "match winner" in name or "1x2" in name:
-                values = bet.get("values") or []
-                out: Dict[str, float] = {}
-                for v in values:
-                    side = (v.get("value") or "").lower()
-                    odd_str = v.get("odd")
-                    try:
-                        odd_val = float(odd_str)
-                    except Exception:
-                        continue
-
-                    if "home" in side or side == "1":
-                        out["home"] = odd_val
-                    elif "away" in side or side == "2":
-                        out["away"] = odd_val
-                    elif "draw" in side or side == "x":
-                        out["draw"] = odd_val
-
-                if len(out) >= 2:
-                    return out
-
-    return None
-
-
-
-
+def extract_match_winner_odds(odds_payload: dict):
+    """Backward-compatible: returns decimal odds dict {'home','draw','away'} or None."""
+    odds, _meta = extract_market_odds_1x2_with_meta(odds_payload)
+    return odds
 def odds_to_implied_probs_1x2(odds: dict) -> Optional[Dict[str, float]]:
     """Convert decimal 1X2 odds into normalized implied probabilities.
 
@@ -2156,24 +2114,118 @@ def odds_to_implied_probs_1x2(odds: dict) -> Optional[Dict[str, float]]:
         return {"home": ph / s, "draw": pd / s, "away": pa / s}
     except Exception:
         return None
-def fetch_1x2_odds_for_fixture(fixture_id: int) -> Optional[Dict[str, float]]:
+
+
+def odds_to_probs_1x2(odds_home, odds_draw, odds_away):
+    # Decimal odds -> implied probs, then normalize to remove overround
+    try:
+        oh = float(odds_home); od = float(odds_draw); oa = float(odds_away)
+        if oh <= 1e-9 or od <= 1e-9 or oa <= 1e-9:
+            return None
+    except Exception:
+        return None
+
+    ph = 1.0 / oh
+    pd = 1.0 / od
+    pa = 1.0 / oa
+    s = ph + pd + pa
+    if s <= 0:
+        return None
+    return {"home": ph / s, "draw": pd / s, "away": pa / s}
+
+
+def extract_market_probs_from_api_football_odds(payload: dict):
     """
-    Call API-FOOTBALL /odds for a single fixture and return 1X2 odds.
+    API-Football /odds response can vary a lot.
+    We scan all bookmakers/bets and accept the first complete 1X2 set we find.
+    Returns normalized implied probabilities (overround removed).
     """
+    resp = (payload or {}).get("response") or []
+    if not resp:
+        return None
+
+    for item in resp:
+        bms = item.get("bookmakers") or []
+        for bm in bms:
+            bets = bm.get("bets") or []
+            for bet in bets:
+                bet_name = (bet.get("name") or "").strip().lower()
+                if not any(k in bet_name for k in ["match winner", "1x2", "full time result", "result"]):
+                    continue
+
+                vals = bet.get("values") or []
+                got = {"home": None, "draw": None, "away": None}
+                for v in vals:
+                    lab = (v.get("value") or "").strip().lower()
+                    odd = v.get("odd")
+                    if lab in ("home", "1"):
+                        got["home"] = odd
+                    elif lab in ("draw", "x"):
+                        got["draw"] = odd
+                    elif lab in ("away", "2"):
+                        got["away"] = odd
+
+                if got["home"] and got["draw"] and got["away"]:
+                    return odds_to_probs_1x2(got["home"], got["draw"], got["away"])
+
+    return None
+
+
+def extract_market_odds_1x2_with_meta(payload: dict):
+    """
+    Robust odds extractor:
+    Scans all bookmakers and all bet blocks and returns the first complete 1X2 odds set.
+    Returns (odds_dict, meta_dict) where odds_dict has keys home/draw/away (floats) and
+    meta_dict contains bookmaker + bet name (if available).
+    """
+    resp = (payload or {}).get("response") or []
+    if not resp:
+        return None, None
+
+    for item in resp:
+        bms = item.get("bookmakers") or []
+        for bm in bms:
+            bm_name = (bm.get("name") or "").strip() or None
+            bets = bm.get("bets") or []
+            for bet in bets:
+                raw_bet_name = (bet.get("name") or "").strip()
+                bet_name = raw_bet_name.lower()
+                if not any(k in bet_name for k in ["match winner", "1x2", "full time result", "result"]):
+                    continue
+
+                vals = bet.get("values") or []
+                got = {"home": None, "draw": None, "away": None}
+                for v in vals:
+                    lab = (v.get("value") or "").strip().lower()
+                    odd = v.get("odd")
+                    if lab in ("home", "1"):
+                        got["home"] = odd
+                    elif lab in ("draw", "x"):
+                        got["draw"] = odd
+                    elif lab in ("away", "2"):
+                        got["away"] = odd
+
+                if got["home"] and got["draw"] and got["away"]:
+                    try:
+                        out = {"home": float(got["home"]), "draw": float(got["draw"]), "away": float(got["away"])}
+                    except Exception:
+                        continue
+                    meta = {"bookmaker": bm_name, "bet_name": raw_bet_name or None}
+                    return out, meta
+
+    return None, None
+
+def fetch_1x2_odds_for_fixture(fixture_id: int, return_meta: bool = False):
+    """Fetch odds from API-Football and extract a complete 1X2 set (robust across bookmakers)."""
     try:
         data = api_get("/odds", {"fixture": fixture_id})
-    except HTTPException as e:
-        logger.warning("[ODDS] HTTP error fixture=%s: %s", fixture_id, e.detail)
-        return None
-    except Exception as e:
-        logger.warning("[ODDS] error fixture=%s: %s", fixture_id, e)
-        return None
+    except Exception:
+        return (None, None) if return_meta else None
 
-    odds = extract_match_winner_odds(data)
-    if not odds:
-        logger.info("[ODDS] no 1X2 odds for fixture=%s", fixture_id)
+    odds, meta = extract_market_odds_1x2_with_meta(data)
+    if return_meta:
+        return odds, (meta or {})
     return odds
-
 import math
 
 def poisson_1x2_probs(lam_home: float, lam_away: float, max_goals: int = 10) -> dict:
@@ -3730,7 +3782,7 @@ def api_backtest_1x2(
         market_ll = None
         mph = mpd = mpa = None
         try:
-            odds = fetch_1x2_odds_for_fixture(fid)
+            odds, odds_meta = fetch_1x2_odds_for_fixture(fid, return_meta=True)
             market_probs = odds_to_implied_probs_1x2(odds) if odds else None
         except Exception:
             market_probs = None
@@ -3844,6 +3896,16 @@ def api_backtest_1x2(
                             add("market_home_odds", float(oh))
                             add("market_draw_odds", float(od))
                             add("market_away_odds", float(oa))
+                except Exception:
+                    pass
+
+                # Optional: store which bookmaker/bet we used for market odds
+                try:
+                    bm_name = (odds_meta or {}).get("bookmaker")
+                    bet_name = (odds_meta or {}).get("bet_name")
+                    if bm_name is not None or bet_name is not None:
+                        add("market_bookmaker", bm_name)
+                        add("market_bet_name", bet_name)
                 except Exception:
                     pass
 
