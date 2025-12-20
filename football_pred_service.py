@@ -3617,6 +3617,11 @@ def api_backtest_1x2(
 
     per_game = []
 
+    # DB write counters (for write_db=true)
+    db_writes_attempted = 0
+    db_writes_ok = 0
+    db_write_errors = []
+
     cal = load_1x2_calibration(league) or {}
 
 
@@ -3711,19 +3716,20 @@ def api_backtest_1x2(
 
         # 4) Optional: write back into DB so /progress/metrics can work later
         if write_db and not dry_run:
+            db_writes_attempted += 1
             try:
                 ensure_predictions_db()
                 conn = sqlite3.connect(DB_PATH)
                 cur = conn.cursor()
 
+                # Existing columns (schema-flexible)
                 cols = [r[1] for r in cur.execute("PRAGMA table_info(predictions_history)").fetchall()]
-                # build dynamic upsert only with columns that exist
-                insert_cols = []
-                insert_vals = []
+
+                # Prepare data to write
+                row_data = {}
                 def add(col, val):
                     if col in cols:
-                        insert_cols.append(col)
-                        insert_vals.append(val)
+                        row_data[col] = val
 
                 add("league", int(league))
                 add("fixture_id", int(fid))
@@ -3744,34 +3750,42 @@ def api_backtest_1x2(
                 except Exception:
                     pass
 
-                # build query
-                placeholders = ",".join(["?"] * len(insert_cols))
-                col_sql = ",".join(insert_cols)
-
-                # update set (don’t overwrite actual_result if already set)
-                set_parts = []
-                for c in insert_cols:
+                # ---- Update-first (fills placeholder rows created elsewhere) ----
+                # This avoids ON CONFLICT issues and handles cases where kickoff_utc differs in formatting.
+                update_cols = []
+                update_vals = []
+                for c, v in row_data.items():
                     if c in ("id",):
                         continue
                     if c == "actual_result":
-                        set_parts.append(f"{c} = COALESCE(predictions_history.actual_result, excluded.actual_result)")
+                        update_cols.append("actual_result = COALESCE(actual_result, ?)")
+                        update_vals.append(v)
                     else:
-                        set_parts.append(f"{c} = excluded.{c}")
-                set_sql = ",\n".join(set_parts)
+                        update_cols.append(f"{c} = ?")
+                        update_vals.append(v)
 
-                sql = f"""
-                INSERT INTO predictions_history ({col_sql})
-                VALUES ({placeholders})
-                ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
-                {set_sql}
-                """
+                if update_cols:
+                    sql_upd = f"UPDATE predictions_history SET {', '.join(update_cols)} WHERE league = ? AND fixture_id = ?"
+                    cur.execute(sql_upd, tuple(update_vals) + (int(league), int(fid)))
 
-                cur.execute(_sql_pg_fix(sql), tuple(insert_vals))
+                # If nothing updated, insert a new row
+                if getattr(cur, "rowcount", 0) == 0:
+                    insert_cols = [c for c in row_data.keys() if c != "id"]
+                    insert_vals = [row_data[c] for c in insert_cols]
+                    placeholders = ",".join(["?"] * len(insert_cols))
+                    col_sql = ",".join(insert_cols)
+                    sql_ins = f"INSERT INTO predictions_history ({col_sql}) VALUES ({placeholders})"
+                    cur.execute(sql_ins, tuple(insert_vals))
+
                 conn.commit()
                 conn.close()
-            except Exception:
-                # do not fail whole backtest if DB write hiccups
-                pass
+                db_writes_ok += 1
+            except Exception as e:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                db_write_errors.append({"fixture_id": int(fid), "error": repr(e)})
 
     if n == 0:
         return {"ok": False, "message": "No scorable fixtures (missing goals/xG).", "league": league, "season": season}
@@ -3791,6 +3805,10 @@ def api_backtest_1x2(
         "n_used": n,
         "sample_limit": int(sample_limit),
         "sample": (per_game[: min(int(sample_limit), len(per_game))] if int(sample_limit) > 0 else []),
+        "db_writes_attempted": (db_writes_attempted if (write_db and not dry_run) else 0),
+        "db_writes_ok": (db_writes_ok if (write_db and not dry_run) else 0),
+        "db_writes_failed": (len(db_write_errors) if (write_db and not dry_run) else 0),
+        "db_write_errors_sample": (db_write_errors[:5] if db_write_errors else []),
     }
 
 
