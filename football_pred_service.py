@@ -431,7 +431,14 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     headers = {"x-apisports-key": API_FOOTBALL_KEY}
-    url = f"{API_BASE}{path}"
+    # Build URL robustly (avoid '...ioodds' when path lacks a leading slash)
+    from urllib.parse import urljoin
+    if isinstance(path, str) and (path.startswith("http://") or path.startswith("https://")):
+        url = path
+    else:
+        base = (API_BASE or "").rstrip("/") + "/"
+        p = (path or "").lstrip("/")
+        url = urljoin(base, p)
     logger.info("[API CALL] %s %s", url, params)
 
     # --- Perform the request ------------------------------------------------
@@ -5115,7 +5122,7 @@ def debug_odds_scan(fixture_id: int):
     Fetch /odds for a fixture and explain why we did/didn't find a complete 1X2 set.
     """
     try:
-        payload = api_get("odds", {"fixture": fixture_id})
+        payload = api_get("/odds", {"fixture": fixture_id})
     except Exception as e:
         return {"ok": False, "fixture_id": fixture_id, "error": str(e)}
 
