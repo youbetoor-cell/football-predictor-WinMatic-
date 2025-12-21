@@ -28,6 +28,7 @@ import io
 import json
 import math
 import time
+import threading
 import base64
 import logging
 import sqlite3
@@ -177,6 +178,31 @@ if not API_FOOTBALL_KEY:
 
 API_BASE = "https://v3.football.api-sports.io"
 
+# Odds endpoints often have limited historical availability.
+# To avoid wasting API quota, we only attempt odds fetches within this window.
+ODDS_LOOKBACK_DAYS = int(os.getenv("ODDS_LOOKBACK_DAYS", "21"))   # past days
+ODDS_FUTURE_DAYS = int(os.getenv("ODDS_FUTURE_DAYS", "10"))       # upcoming days
+ODDS_MAX_CALLS_PER_RUN = int(os.getenv("ODDS_MAX_CALLS_PER_RUN", "60"))
+
+def _within_odds_window(kickoff_utc: Any) -> bool:
+    """Return True if kickoff is within a (now - lookback) .. (now + future) window."""
+    try:
+        if not kickoff_utc:
+            return False
+        if isinstance(kickoff_utc, str):
+            dt = datetime.datetime.fromisoformat(kickoff_utc.replace("Z", "+00:00"))
+        elif isinstance(kickoff_utc, datetime.datetime):
+            dt = kickoff_utc
+        else:
+            return False
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        return (now - datetime.timedelta(days=ODDS_LOOKBACK_DAYS)) <= dt <= (now + datetime.timedelta(days=ODDS_FUTURE_DAYS))
+    except Exception:
+        return False
+
+
 ART = "artifacts"
 os.makedirs(ART, exist_ok=True)
 
@@ -253,6 +279,16 @@ FEATURE_COLS_BASE = [
 
 logger = logging.getLogger("winmatic")
 logger.setLevel(logging.INFO)
+
+# ---- Lightweight API usage tracking (helps with quota + performance debugging) ----
+# (Counts HTTP calls only; cache hits are not counted)
+API_USAGE_LOCK = threading.Lock()
+API_USAGE = {
+    "total_http_calls": 0,
+    "by_path": {},          # path -> count
+    "last_headers": {},     # last seen rate/quota headers
+}
+
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 if not logger.handlers:
@@ -444,6 +480,23 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
     # --- Perform the request ------------------------------------------------
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=15)
+        # Track real HTTP calls (cache hits don't reach this line)
+        try:
+            with API_USAGE_LOCK:
+                API_USAGE['total_http_calls'] = API_USAGE.get('total_http_calls', 0) + 1
+                API_USAGE['by_path'][path] = API_USAGE.get('by_path', {}).get(path, 0) + 1
+                hdr = {}
+                for k in [
+                    'x-requests-remaining','x-requests-limit',
+                    'x-ratelimit-remaining','x-ratelimit-limit','x-ratelimit-reset',
+                    'x-rate-limit-remaining','x-rate-limit-limit','x-rate-limit-reset',
+                ]:
+                    if k in (resp.headers or {}):
+                        hdr[k] = resp.headers.get(k)
+                if hdr:
+                    API_USAGE['last_headers'] = hdr
+        except Exception:
+            pass
         data = resp.json()
     except Exception as e:
         logger.warning("[API ERROR] %s", e)
@@ -1128,81 +1181,69 @@ def add_schedule_congestion_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+
 def add_odds_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Add bookmaker closing odds (implied probabilities) for each fixture.
+    Add odds-implied 1X2 probabilities as features.
 
-    Creates columns:
-    - home_odd_implied
-    - draw_odd_implied
-    - away_odd_implied
+    IMPORTANT (quota): API-Football odds coverage is often limited for older fixtures.
+    We only fetch odds for fixtures within a configurable time window, otherwise we keep
+    a neutral fallback (1/3, 1/3, 1/3).
 
-    If odds are missing or the API fails, falls back to 1/3, 1/3, 1/3.
+    Env vars:
+      - ODDS_LOOKBACK_DAYS (default 21)
+      - ODDS_FUTURE_DAYS (default 10)
+      - ODDS_MAX_CALLS_PER_RUN (default 60)
     """
-    api_key = os.getenv("API_FOOTBALL_KEY", "")
-    if not api_key:
-        logger.warning("[TRAIN] API_FOOTBALL_KEY not set, using neutral odds features.")
-        df["home_odd_implied"] = 1.0 / 3.0
-        df["draw_odd_implied"] = 1.0 / 3.0
-        df["away_odd_implied"] = 1.0 / 3.0
+    if df is None or df.empty or "fixture_id" not in df.columns:
         return df
 
-    odds_rows: List[Dict[str, Any]] = []
-    fixture_ids = df["fixture_id"].dropna().unique().tolist()
+    # Ensure columns exist
+    for c in ["home_odd_implied", "draw_odd_implied", "away_odd_implied"]:
+        if c not in df.columns:
+            df[c] = 1.0 / 3.0
 
-    for fid in fixture_ids:
-        fid_int = int(fid)
-        p_home_implied = p_draw_implied = p_away_implied = 1.0 / 3.0
+    calls = 0
 
+    # Iterate rows; fetch odds only when within odds window and fixture_id is valid
+    for i, row in df.iterrows():
+        fid = row.get("fixture_id")
         try:
-            url_odds = f"https://v3.football.api-sports.io/odds?fixture={fid_int}"
-            headers = {"x-apisports-key": api_key}
-            r_odds = requests.get(url_odds, headers=headers, timeout=10)
-            r_odds.raise_for_status()
-            response = r_odds.json().get("response", [])
+            fid_int = int(fid)
+        except Exception:
+            continue
 
-            if response:
-                # Prefer Bet365 if present, otherwise just take the first bookmaker
-                bookmaker_entry = next(
-                    (x for x in response if x.get("bookmaker", {}).get("name") == "Bet365"),
-                    response[0],
-                )
-
-                bets = bookmaker_entry.get("bets", [])
-                if bets:
-                    # Assume first "Match Winner" style market has 3 outcomes: 1X2
-                    values = bets[0].get("values", [])
-                    if len(values) >= 3:
-                        odds_home = float(values[0].get("odd"))
-                        odds_draw = float(values[1].get("odd"))
-                        odds_away = float(values[2].get("odd"))
-
-                        inv_sum = (1.0 / odds_home) + (1.0 / odds_draw) + (1.0 / odds_away)
-                        if inv_sum > 0:
-                            p_home_implied = (1.0 / odds_home) / inv_sum
-                            p_draw_implied = (1.0 / odds_draw) / inv_sum
-                            p_away_implied = (1.0 / odds_away) / inv_sum
-        except Exception as e:
-            logger.warning("[TRAIN] odds fetch failed for fixture %s: %s", fid_int, e)
-
-        odds_rows.append(
-            {
-                "fixture_id": fid_int,
-                "home_odd_implied": p_home_implied,
-                "draw_odd_implied": p_draw_implied,
-                "away_odd_implied": p_away_implied,
-            }
+        kickoff = (
+            row.get("kickoff_utc")
+            or row.get("date")
+            or row.get("kickoff")
+            or row.get("fixture_date")
         )
 
-    odds_df = pd.DataFrame(odds_rows)
+        if not _within_odds_window(kickoff):
+            continue
 
-    df = df.merge(odds_df, on="fixture_id", how="left")
-    # Fill any missing with neutral 1/3
-    for col in ["home_odd_implied", "draw_odd_implied", "away_odd_implied"]:
-        df[col] = df[col].fillna(1.0 / 3.0).astype(float)
+        if calls >= ODDS_MAX_CALLS_PER_RUN:
+            logger.info("[ODDS] reached ODDS_MAX_CALLS_PER_RUN=%s; skipping remaining odds fetches", ODDS_MAX_CALLS_PER_RUN)
+            break
+
+        try:
+            payload = api_get("/odds", {"fixture": fid_int})
+            scan = scan_market_odds(payload)
+            calls += 1
+
+            if scan and scan.get("found"):
+                probs = (scan.get("selected") or {}).get("probs") or {}
+                ph = probs.get("home"); pd = probs.get("draw"); pa = probs.get("away")
+                if ph is not None and pd is not None and pa is not None:
+                    df.at[i, "home_odd_implied"] = float(ph)
+                    df.at[i, "draw_odd_implied"] = float(pd)
+                    df.at[i, "away_odd_implied"] = float(pa)
+        except Exception:
+            # Keep defaults on any error
+            continue
 
     return df
-
 
 def add_rest_days_features(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -2706,6 +2747,48 @@ def _fetch_and_cache_logo(team_id: int) -> Optional[bytes]:
     except Exception as e:
         logger.warning("[LOGO] fetch failed for team_id=%s: %s", team_id, e)
     return None
+
+
+# Odds endpoints often have limited historical availability.
+# To avoid wasting API quota, we only attempt odds fetches within this window.
+ODDS_LOOKBACK_DAYS = int(os.getenv("ODDS_LOOKBACK_DAYS", "21"))   # past days
+ODDS_FUTURE_DAYS = int(os.getenv("ODDS_FUTURE_DAYS", "10"))       # upcoming days
+ODDS_MAX_CALLS_PER_RUN = int(os.getenv("ODDS_MAX_CALLS_PER_RUN", "60"))
+
+def _within_odds_window(kickoff_utc: Any) -> bool:
+    """Return True if kickoff is within a (now - lookback) .. (now + future) window."""
+    try:
+        if not kickoff_utc:
+            return False
+        if isinstance(kickoff_utc, str):
+            dt = datetime.datetime.fromisoformat(kickoff_utc.replace("Z", "+00:00"))
+        elif isinstance(kickoff_utc, datetime.datetime):
+            dt = kickoff_utc
+        else:
+            return False
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        return (now - datetime.timedelta(days=ODDS_LOOKBACK_DAYS)) <= dt <= (now + datetime.timedelta(days=ODDS_FUTURE_DAYS))
+    except Exception:
+        return False
+
+
+@app.get("/debug/api-usage")
+def debug_api_usage():
+    """Show basic API call counters (HTTP calls only, not cache hits)."""
+    try:
+        with API_USAGE_LOCK:
+            data = {
+                "ok": True,
+                "total_http_calls": API_USAGE.get("total_http_calls", 0),
+                "by_path": dict(API_USAGE.get("by_path", {})),
+                "last_headers": dict(API_USAGE.get("last_headers", {})),
+            }
+        data["by_path_sorted"] = sorted(data["by_path"].items(), key=lambda kv: kv[1], reverse=True)
+        return data
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 @app.get("/team-logo/default.png")
 def team_logo_default():
