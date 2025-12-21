@@ -2136,62 +2136,24 @@ def odds_to_probs_1x2(odds_home, odds_draw, odds_away):
 
 def extract_market_probs_from_api_football_odds(payload: dict):
     """
-    Convenience wrapper: extract odds first (scanning all bookmakers/bets),
-    then convert to normalized implied probabilities.
-    """
-    odds, _meta = extract_market_odds_1x2_with_meta(payload)
-    if not odds:
-        return None
-    return odds_to_probs_1x2(odds.get("home"), odds.get("draw"), odds.get("away"))
+    API-Football /odds response can vary a lot.
+    We scan all bookmakers/bets and accept the first COMPLETE 1X2 set we can turn into
+    normalized implied probabilities.
 
-def extract_market_odds_1x2_with_meta(payload: dict):
-    """
-    Return (odds_dict, meta_dict) extracted from API-Football /odds payload.
-
-    We scan *all* bookmakers and *all* bets. We prefer common full-time 1X2 bet names,
-    but fall back to any bet that contains a clean 1/X/2 triple.
-
-    odds_dict is decimal odds: {"home": float, "draw": float, "away": float}
-    meta_dict: {"bookmaker": str|None, "bet_name": str|None}
+    IMPORTANT: Do not stop scanning if a "complete" set has invalid/missing odds values.
     """
     resp = (payload or {}).get("response") or []
     if not resp:
-        return None, None
-
-    preferred_keywords = (
-        "match winner",
-        "1x2",
-        "full time result",
-        "full-time result",
-        "ft result",
-        "result",
-        "winner",
-        "moneyline",
-        "3 way",
-        "3-way",
-        "three way",
-    )
-
-    def is_preferred(bet_name: str) -> bool:
-        n = (bet_name or "").strip().lower()
-        if not n:
-            return False
-        return any(k in n for k in preferred_keywords)
-
-    best_fallback = None  # (odds_dict, meta_dict)
+        return None
 
     for item in resp:
         bms = item.get("bookmakers") or []
         for bm in bms:
-            bm_name = bm.get("name") or bm.get("bookmaker") or bm.get("id")
             bets = bm.get("bets") or []
             for bet in bets:
-                raw_bet_name = (bet.get("name") or "").strip()
                 vals = bet.get("values") or []
-
                 got = {"home": None, "draw": None, "away": None}
                 for v in vals:
-                    # Some payloads vary; "value" is common for API-Football
                     lab = (v.get("value") or "").strip().lower()
                     odd = v.get("odd")
                     if lab in ("home", "1"):
@@ -2201,30 +2163,164 @@ def extract_market_odds_1x2_with_meta(payload: dict):
                     elif lab in ("away", "2"):
                         got["away"] = odd
 
-                if not (got["home"] and got["draw"] and got["away"]):
+                if got["home"] and got["draw"] and got["away"]:
+                    probs = odds_to_probs_1x2(got["home"], got["draw"], got["away"])
+                    if probs:
+                        return probs
+                    # else: keep scanning
+
+    return None
+
+def scan_market_odds_1x2(payload: dict, *, max_notes: int = 50) -> dict:
+    """
+    Scan an API-Football /odds payload and try to extract a complete 1X2 (home/draw/away) set.
+    Returns a debug-friendly dict explaining what was (and wasn't) found.
+    """
+    resp = (payload or {}).get("response") or []
+    if not resp:
+        return {
+            "found": False,
+            "reason": "no_response",
+            "selected": None,
+            "stats": {"items": 0, "bookmakers": 0, "bets": 0, "preferred_bets": 0},
+            "notes": [],
+        }
+
+    def _norm(s) -> str:
+        return (s or "").strip().lower()
+
+    def _is_preferred_bet(bet: dict) -> bool:
+        name = _norm(bet.get("name"))
+        bet_id = bet.get("id")
+        if str(bet_id).strip() == "1":  # API-Football commonly uses id=1 for Match Winner
+            return True
+        return any(k in name for k in ["match winner", "1x2", "full time result", "fulltime result", "result", "winner"])
+
+    def _map_values(vals: list, home_name: str, away_name: str) -> dict:
+        got = {"home": None, "draw": None, "away": None}
+        h = _norm(home_name)
+        a = _norm(away_name)
+        for v in vals or []:
+            lab = _norm(v.get("value"))
+            odd = v.get("odd")
+            if lab in ("home", "1"):
+                got["home"] = odd
+            elif lab in ("draw", "x", "tie"):
+                got["draw"] = odd
+            elif lab in ("away", "2"):
+                got["away"] = odd
+            else:
+                # Sometimes labels are team names
+                if h and (lab == h or (h in lab and got["home"] is None)):
+                    got["home"] = odd
+                elif a and (lab == a or (a in lab and got["away"] is None)):
+                    got["away"] = odd
+        return got
+
+    notes = []
+    missing_counts = {"home": 0, "draw": 0, "away": 0, "invalid_odds": 0}
+    stats = {"items": 0, "bookmakers": 0, "bets": 0, "preferred_bets": 0}
+
+    # Two-pass scan: prefer obvious 1X2 / Match Winner bets, then fall back to any bet.
+    for pass_idx in (0, 1):
+        preferred_only = (pass_idx == 0)
+
+        for item in resp:
+            stats["items"] += 1
+            teams = item.get("teams") or {}
+            home_name = ((teams.get("home") or {}).get("name")) or ""
+            away_name = ((teams.get("away") or {}).get("name")) or ""
+
+            bms = item.get("bookmakers") or []
+            if not bms:
+                if len(notes) < max_notes:
+                    notes.append({"reason": "no_bookmakers", "context": {"item_fixture": (item.get("fixture") or {}).get("id")}})
+                continue
+
+            for bm in bms:
+                stats["bookmakers"] += 1
+                bm_name = bm.get("name") or bm.get("id") or "unknown"
+                bets = bm.get("bets") or []
+                if not bets:
+                    if len(notes) < max_notes:
+                        notes.append({"reason": "no_bets", "context": {"bookmaker": bm_name}})
                     continue
 
-                try:
-                    out = {"home": float(got["home"]), "draw": float(got["draw"]), "away": float(got["away"])}
-                except Exception:
-                    continue
+                for bet in bets:
+                    stats["bets"] += 1
+                    bet_name = bet.get("name") or bet.get("id") or "unknown"
+                    preferred = _is_preferred_bet(bet)
+                    if preferred:
+                        stats["preferred_bets"] += 1
+                    if preferred_only and not preferred:
+                        continue
 
-                # sanity: decimal odds should be > 1
-                if out["home"] <= 1e-9 or out["draw"] <= 1e-9 or out["away"] <= 1e-9:
-                    continue
+                    got = _map_values(bet.get("values") or [], home_name, away_name)
 
-                meta = {"bookmaker": bm_name if bm_name is not None else None, "bet_name": raw_bet_name or None}
+                    missing = [k for k in ("home", "draw", "away") if not got.get(k)]
+                    if missing:
+                        for k in missing:
+                            missing_counts[k] += 1
+                        if len(notes) < max_notes:
+                            notes.append({"reason": "incomplete_1x2", "missing": missing, "context": {"bookmaker": bm_name, "bet": bet_name}})
+                        continue
 
-                if is_preferred(raw_bet_name):
-                    return out, meta
+                    probs = odds_to_probs_1x2(got["home"], got["draw"], got["away"])
+                    if not probs:
+                        missing_counts["invalid_odds"] += 1
+                        if len(notes) < max_notes:
+                            notes.append({"reason": "invalid_odds", "context": {"bookmaker": bm_name, "bet": bet_name, "odds": got}})
+                        continue
 
-                if best_fallback is None:
-                    best_fallback = (out, meta)
+                    return {
+                        "found": True,
+                        "reason": "ok",
+                        "selected": {
+                            "odds": {"home": float(got["home"]), "draw": float(got["draw"]), "away": float(got["away"])},
+                            "probs": probs,
+                            "meta": {"bookmaker": str(bm_name), "bet_name": str(bet_name)},
+                            "pass": "preferred" if preferred_only else "fallback",
+                        },
+                        "stats": stats,
+                        "missing_counts": missing_counts,
+                        "notes": notes,
+                    }
 
-    if best_fallback:
-        return best_fallback[0], best_fallback[1]
+    # Nothing found
+    reason = "no_1x2_bet_found" if stats.get("preferred_bets", 0) == 0 else "no_complete_1x2_set"
+    # A more specific primary reason, if obvious
+    if stats.get("bookmakers", 0) == 0:
+        reason = "no_bookmakers"
+    elif stats.get("bets", 0) == 0:
+        reason = "no_bets"
+    elif missing_counts["draw"] > 0 and missing_counts["draw"] >= missing_counts["home"] and missing_counts["draw"] >= missing_counts["away"]:
+        reason = "missing_draw"
+    elif missing_counts["home"] > 0 and missing_counts["home"] >= missing_counts["draw"] and missing_counts["home"] >= missing_counts["away"]:
+        reason = "missing_home"
+    elif missing_counts["away"] > 0 and missing_counts["away"] >= missing_counts["draw"] and missing_counts["away"] >= missing_counts["home"]:
+        reason = "missing_away"
 
-    return None, None
+    return {
+        "found": False,
+        "reason": reason,
+        "selected": None,
+        "stats": stats,
+        "missing_counts": missing_counts,
+        "notes": notes,
+    }
+
+
+def extract_market_odds_1x2_with_meta(payload: dict):
+    """
+    Backwards-compatible wrapper around scan_market_odds_1x2().
+    Returns (odds_dict, meta_dict) or (None, None).
+    """
+    scan = scan_market_odds_1x2(payload, max_notes=0)
+    if not scan.get("found"):
+        return None, None
+    sel = scan.get("selected") or {}
+    return sel.get("odds"), sel.get("meta")
+
 def fetch_1x2_odds_for_fixture(fixture_id: int, return_meta: bool = False):
     """Fetch odds from API-Football and extract a complete 1X2 set (robust across bookmakers)."""
     try:
@@ -4867,34 +4963,22 @@ def api_predictions_sanity(
 
       
 
-@app.get("/debug/fixture/{fixture_id}")
-def debug_fixture(
-    fixture_id: int = ApiPath(..., description="Fixture ID (as stored in predictions_history)"),
-    league: int = Query(DEFAULT_LEAGUE, description="League ID, e.g. 39 = Premier League"),
-    include_history: bool = Query(
-        True,
-        description="If true, include all DB rows for this fixture (not just the latest one)"
-    ),
-) -> Dict[str, Any]:
-    """
-    Debug endpoint to inspect what the model predicted for a single fixture.
+@app.get(
+    "/debug/fixture/{fixture_id}",
+    response_description="""
+    Debug a single fixture's saved record(s).
 
-    It ONLY reads from predictions_history (no external API calls), so it is
-    safe to use even when API-FOOTBALL quota is exhausted.
+    Note: this is best-effort and only reads from the local SQLite history DB.
+    """,
+)
+def debug_fixture(fixture_id: int, league: int, include_history: bool = True):
+    db_path = HISTORY_DB_PATH
+    if not os.path.exists(db_path):
+        return {"ok": False, "error": f"History DB not found: {db_path}", "fixture_id": fixture_id, "league": league}
 
-    Returns:
-    - basic fixture info (teams, kickoff time)
-    - model probabilities (home/draw/away)
-    - predicted side
-    - edge_value (if any)
-    - actual_result (if filled by /update-results)
-    - optionally: all historical rows for this fixture in the DB
-    """
-    ensure_predictions_db()
-
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
         cur.execute(
             """
             SELECT
@@ -4909,29 +4993,28 @@ def debug_fixture(
                 model_away_p,
                 predicted_side,
                 edge_value,
-                actual_result
+                actual_result,
+                market_home_p,
+                market_draw_p,
+                market_away_p,
+                market_home_odds,
+                market_draw_odds,
+                market_away_odds,
+                market_bookmaker,
+                market_bet_name
             FROM predictions_history
-            WHERE fixture_id = ?
-              AND league = ?
+            WHERE fixture_id = ? AND league = ?
             ORDER BY id DESC
             """,
             (fixture_id, league),
         )
         rows = cur.fetchall()
+    finally:
         conn.close()
-    except Exception as e:
-        logger.error("[DEBUG FIXTURE] DB error: %s", e)
-        return {"ok": False, "error": str(e)}
 
     if not rows:
-        return {
-            "ok": False,
-            "fixture_id": fixture_id,
-            "league": league,
-            "error": "No predictions found for this fixture in predictions_history.",
-        }
+        return {"ok": False, "error": "no records found", "fixture_id": fixture_id, "league": league}
 
-    # Latest record (the first row because we ordered by id DESC)
     (
         row_id,
         fx_id,
@@ -4945,26 +5028,35 @@ def debug_fixture(
         predicted_side,
         edge_value,
         actual_result,
+        mkh,
+        mkd,
+        mka,
+        moh,
+        mod,
+        moa,
+        mbm,
+        mbet,
     ) = rows[0]
 
-    # Build a clean "latest" summary
     latest = {
         "fixture_id": fx_id,
         "league": lg,
         "home_team": home_team,
         "away_team": away_team,
         "kickoff_utc": kickoff_utc,
-        "model_probs": {
-            "home": ph,
-            "draw": pd,
-            "away": pa,
-        },
+        "model_probs": {"home": ph, "draw": pd, "away": pa} if ph is not None else None,
         "predicted_side": predicted_side,
         "edge_value": edge_value,
         "actual_result": actual_result,
     }
 
-    # Optionally include the full DB history for this fixture
+    if mkh is not None and mkd is not None and mka is not None:
+        latest["market_probs"] = {"home": mkh, "draw": mkd, "away": mka}
+    if moh is not None and mod is not None and moa is not None:
+        latest["market_odds"] = {"home": moh, "draw": mod, "away": moa}
+    if (mbm is not None and str(mbm).strip()) or (mbet is not None and str(mbet).strip()):
+        latest["market_meta"] = {"bookmaker": mbm, "bet_name": mbet}
+
     history = []
     if include_history:
         for (
@@ -4977,89 +5069,63 @@ def debug_fixture(
             ph,
             pd,
             pa,
-            pred_side,
-            edge,
-            result,
+            predicted_side,
+            edge_value,
+            actual_result,
+            mkh,
+            mkd,
+            mka,
+            moh,
+            mod,
+            moa,
+            mbm,
+            mbet,
         ) in rows:
-            history.append({
-                "row_id": row_id,
-                "fixture_id": fx_id,
-                "league": lg,
-                "home_team": home_team,
-                "away_team": away_team,
-                "kickoff_utc": kickoff_utc,
-                "model_home_p": ph,
-                "model_draw_p": pd,
-                "model_away_p": pa,
-                "predicted_side": pred_side,
-                "edge_value": edge,
-                "actual_result": result,
-            })
+            history.append(
+                {
+                    "row_id": row_id,
+                    "fixture_id": fx_id,
+                    "league": lg,
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "kickoff_utc": kickoff_utc,
+                    "model_home_p": ph,
+                    "model_draw_p": pd,
+                    "model_away_p": pa,
+                    "predicted_side": predicted_side,
+                    "edge_value": edge_value,
+                    "actual_result": actual_result,
+                    "market_home_p": mkh,
+                    "market_draw_p": mkd,
+                    "market_away_p": mka,
+                    "market_home_odds": moh,
+                    "market_draw_odds": mod,
+                    "market_away_odds": moa,
+                    "market_bookmaker": mbm,
+                    "market_bet_name": mbet,
+                }
+            )
 
+    return {"ok": True, "fixture_id": fixture_id, "league": league, "latest": latest, "num_records": len(rows), "history": history}
+
+
+@app.get("/debug/odds-scan/{fixture_id}")
+def debug_odds_scan(fixture_id: int):
+    """
+    Fetch /odds for a fixture and explain why we did/didn't find a complete 1X2 set.
+    """
+    try:
+        payload = api_get("odds", {"fixture": fixture_id})
+    except Exception as e:
+        return {"ok": False, "fixture_id": fixture_id, "error": str(e)}
+
+    scan = scan_market_odds_1x2(payload, max_notes=80)
     return {
         "ok": True,
         "fixture_id": fixture_id,
-        "league": league,
-        "latest": latest,
-        "num_records": len(rows),
-        "history": history if include_history else None,
+        "api": {"results": (payload or {}).get("results"), "errors": (payload or {}).get("errors")},
+        "scan": scan,
     }
-
-
-@app.get("/team-strength")
-def api_team_strength(league: int = Query(DEFAULT_LEAGUE)):
-    _, meta = load_model_and_meta(league)
-    team_summary = meta.get("team_summary", {})
-    teams = list(team_summary.values())
-    teams.sort(key=lambda r: r.get("rating", 1.0), reverse=True)
-    return {"ok": True, "league": league, "teams": teams}
-
-@app.get("/model-info")
-def api_model_info(league: int = Query(DEFAULT_LEAGUE)):
-    """
-    Show information about the currently trained model for a league:
-    - seasons used
-    - features and targets
-    - evaluation metrics (logloss, Brier)
-    - when it was trained
-    """
-    _, meta = load_model_and_meta(league)
-
-    info = {
-        "league": league,
-        "seasons": meta.get("seasons"),
-        "features": meta.get("feature_cols"),
-        "targets": meta.get("target_cols"),
-        "metrics": meta.get("metrics"),
-        "trained_at": meta.get("trained_at"),
-    }
-
-    return {"ok": True, "info": info}
-
-@lru_cache(maxsize=512)
-def get_fixture_logos(fixture_id: int) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Small cache so we only call API-FOOTBALL once per fixture
-    when building /results/recent cards with real team logos.
-
-    Returns (home_logo_url, away_logo_url).
-    If anything fails, both are None.
-    """
-    try:
-        data = api_get("/fixtures", {"id": fixture_id})
-    except HTTPException as e:
-        logger.warning("[RESULTS LOGOS] API error for fixture %s: %s", fixture_id, e.detail)
-        return None, None
-
-    resp = data.get("response") or []
-    if not resp:
-        return None, None
-
-    teams = resp[0].get("teams") or {}
-    home = teams.get("home") or {}
-    away = teams.get("away") or {}
-
-    return home.get("logo"), away.get("logo")
 
 @app.get("/debug/leagues")
 def debug_leagues():
