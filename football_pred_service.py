@@ -2136,40 +2136,14 @@ def odds_to_probs_1x2(odds_home, odds_draw, odds_away):
 
 def extract_market_probs_from_api_football_odds(payload: dict):
     """
-    API-Football /odds response can vary a lot.
-    We scan all bookmakers/bets and accept the first COMPLETE 1X2 set we can turn into
-    normalized implied probabilities.
-
-    IMPORTANT: Do not stop scanning if a "complete" set has invalid/missing odds values.
+    Convenience wrapper: extract odds first (scanning all bookmakers/bets),
+    then convert to normalized implied probabilities.
     """
-    resp = (payload or {}).get("response") or []
-    if not resp:
+    odds, _meta = extract_market_odds_1x2_with_meta(payload)
+    if not odds:
         return None
+    return odds_to_probs_1x2(odds.get("home"), odds.get("draw"), odds.get("away"))
 
-    for item in resp:
-        bms = item.get("bookmakers") or []
-        for bm in bms:
-            bets = bm.get("bets") or []
-            for bet in bets:
-                vals = bet.get("values") or []
-                got = {"home": None, "draw": None, "away": None}
-                for v in vals:
-                    lab = (v.get("value") or "").strip().lower()
-                    odd = v.get("odd")
-                    if lab in ("home", "1"):
-                        got["home"] = odd
-                    elif lab in ("draw", "x"):
-                        got["draw"] = odd
-                    elif lab in ("away", "2"):
-                        got["away"] = odd
-
-                if got["home"] and got["draw"] and got["away"]:
-                    probs = odds_to_probs_1x2(got["home"], got["draw"], got["away"])
-                    if probs:
-                        return probs
-                    # else: keep scanning
-
-    return None
 def extract_market_odds_1x2_with_meta(payload: dict):
     """
     Return (odds_dict, meta_dict) extracted from API-Football /odds payload.
