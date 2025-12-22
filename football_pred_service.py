@@ -28,7 +28,6 @@ import io
 import json
 import math
 import time
-import threading
 import base64
 import logging
 import sqlite3
@@ -129,16 +128,6 @@ def ensure_predictions_db() -> None:
             "actual_result": "TEXT",
             # optional JSON payload field for backwards compatibility
             "payload": "TEXT",
-
-            # --- market implied probs / odds (optional) ---
-            "market_home_p": "REAL",
-            "market_draw_p": "REAL",
-            "market_away_p": "REAL",
-            "market_home_odds": "REAL",
-            "market_draw_odds": "REAL",
-            "market_away_odds": "REAL",
-            "market_bookmaker": "TEXT",
-            "market_bet_name": "TEXT",
         }
 
         # 4) Add any missing columns
@@ -177,31 +166,6 @@ if not API_FOOTBALL_KEY:
     raise RuntimeError("API_FOOTBALL_KEY environment variable is not set")
 
 API_BASE = "https://v3.football.api-sports.io"
-
-# Odds endpoints often have limited historical availability.
-# To avoid wasting API quota, we only attempt odds fetches within this window.
-ODDS_LOOKBACK_DAYS = int(os.getenv("ODDS_LOOKBACK_DAYS", "21"))   # past days
-ODDS_FUTURE_DAYS = int(os.getenv("ODDS_FUTURE_DAYS", "10"))       # upcoming days
-ODDS_MAX_CALLS_PER_RUN = int(os.getenv("ODDS_MAX_CALLS_PER_RUN", "60"))
-
-def _within_odds_window(kickoff_utc: Any) -> bool:
-    """Return True if kickoff is within a (now - lookback) .. (now + future) window."""
-    try:
-        if not kickoff_utc:
-            return False
-        if isinstance(kickoff_utc, str):
-            dt = datetime.datetime.fromisoformat(kickoff_utc.replace("Z", "+00:00"))
-        elif isinstance(kickoff_utc, datetime.datetime):
-            dt = kickoff_utc
-        else:
-            return False
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=datetime.timezone.utc)
-        now = datetime.datetime.now(datetime.timezone.utc)
-        return (now - datetime.timedelta(days=ODDS_LOOKBACK_DAYS)) <= dt <= (now + datetime.timedelta(days=ODDS_FUTURE_DAYS))
-    except Exception:
-        return False
-
 
 ART = "artifacts"
 os.makedirs(ART, exist_ok=True)
@@ -279,16 +243,6 @@ FEATURE_COLS_BASE = [
 
 logger = logging.getLogger("winmatic")
 logger.setLevel(logging.INFO)
-
-# ---- Lightweight API usage tracking (helps with quota + performance debugging) ----
-# (Counts HTTP calls only; cache hits are not counted)
-API_USAGE_LOCK = threading.Lock()
-API_USAGE = {
-    "total_http_calls": 0,
-    "by_path": {},          # path -> count
-    "last_headers": {},     # last seen rate/quota headers
-}
-
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 if not logger.handlers:
@@ -419,6 +373,37 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
     """Call API-FOOTBALL with cache + daily-quota protection."""
     global API_QUOTA_EXHAUSTED
 
+from functools import lru_cache
+from typing import Optional, Tuple
+
+@lru_cache(maxsize=512)
+def get_fixture_logos(fixture_id: int) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Best-effort: fetch home/away logo URLs for a fixture.
+
+    IMPORTANT: This must NEVER break /results/recent.
+    If anything fails (quota, network, weird data), return (None, None).
+    """
+    try:
+        data = api_get("/fixtures", {"id": int(fixture_id)})
+        resp = (data or {}).get("response") or []
+        if not resp:
+            return None, None
+
+        teams = (resp[0] or {}).get("teams") or {}
+        home_logo = (teams.get("home") or {}).get("logo")
+        away_logo = (teams.get("away") or {}).get("logo")
+        return home_logo, away_logo
+    except Exception as e:
+        # never crash caller
+        try:
+            logger.warning("[RESULTS LOGOS] fixture=%s failed: %s", fixture_id, e)
+        except Exception:
+            pass
+        return None, None
+
+
+
     # 🧩 Developer mode: skip all live API calls
     if is_cache_only_mode():
         cached = try_cache(path, params, reason="cache-only-mode")
@@ -467,36 +452,12 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     headers = {"x-apisports-key": API_FOOTBALL_KEY}
-    # Build URL robustly (avoid '...ioodds' when path lacks a leading slash)
-    from urllib.parse import urljoin
-    if isinstance(path, str) and (path.startswith("http://") or path.startswith("https://")):
-        url = path
-    else:
-        base = (API_BASE or "").rstrip("/") + "/"
-        p = (path or "").lstrip("/")
-        url = urljoin(base, p)
+    url = f"{API_BASE}{path}"
     logger.info("[API CALL] %s %s", url, params)
 
     # --- Perform the request ------------------------------------------------
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=15)
-        # Track real HTTP calls (cache hits don't reach this line)
-        try:
-            with API_USAGE_LOCK:
-                API_USAGE['total_http_calls'] = API_USAGE.get('total_http_calls', 0) + 1
-                API_USAGE['by_path'][path] = API_USAGE.get('by_path', {}).get(path, 0) + 1
-                hdr = {}
-                for k in [
-                    'x-requests-remaining','x-requests-limit',
-                    'x-ratelimit-remaining','x-ratelimit-limit','x-ratelimit-reset',
-                    'x-rate-limit-remaining','x-rate-limit-limit','x-rate-limit-reset',
-                ]:
-                    if k in (resp.headers or {}):
-                        hdr[k] = resp.headers.get(k)
-                if hdr:
-                    API_USAGE['last_headers'] = hdr
-        except Exception:
-            pass
         data = resp.json()
     except Exception as e:
         logger.warning("[API ERROR] %s", e)
@@ -1181,69 +1142,81 @@ def add_schedule_congestion_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
 def add_odds_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Add odds-implied 1X2 probabilities as features.
+    Add bookmaker closing odds (implied probabilities) for each fixture.
 
-    IMPORTANT (quota): API-Football odds coverage is often limited for older fixtures.
-    We only fetch odds for fixtures within a configurable time window, otherwise we keep
-    a neutral fallback (1/3, 1/3, 1/3).
+    Creates columns:
+    - home_odd_implied
+    - draw_odd_implied
+    - away_odd_implied
 
-    Env vars:
-      - ODDS_LOOKBACK_DAYS (default 21)
-      - ODDS_FUTURE_DAYS (default 10)
-      - ODDS_MAX_CALLS_PER_RUN (default 60)
+    If odds are missing or the API fails, falls back to 1/3, 1/3, 1/3.
     """
-    if df is None or df.empty or "fixture_id" not in df.columns:
+    api_key = os.getenv("API_FOOTBALL_KEY", "")
+    if not api_key:
+        logger.warning("[TRAIN] API_FOOTBALL_KEY not set, using neutral odds features.")
+        df["home_odd_implied"] = 1.0 / 3.0
+        df["draw_odd_implied"] = 1.0 / 3.0
+        df["away_odd_implied"] = 1.0 / 3.0
         return df
 
-    # Ensure columns exist
-    for c in ["home_odd_implied", "draw_odd_implied", "away_odd_implied"]:
-        if c not in df.columns:
-            df[c] = 1.0 / 3.0
+    odds_rows: List[Dict[str, Any]] = []
+    fixture_ids = df["fixture_id"].dropna().unique().tolist()
 
-    calls = 0
+    for fid in fixture_ids:
+        fid_int = int(fid)
+        p_home_implied = p_draw_implied = p_away_implied = 1.0 / 3.0
 
-    # Iterate rows; fetch odds only when within odds window and fixture_id is valid
-    for i, row in df.iterrows():
-        fid = row.get("fixture_id")
         try:
-            fid_int = int(fid)
-        except Exception:
-            continue
+            url_odds = f"https://v3.football.api-sports.io/odds?fixture={fid_int}"
+            headers = {"x-apisports-key": api_key}
+            r_odds = requests.get(url_odds, headers=headers, timeout=10)
+            r_odds.raise_for_status()
+            response = r_odds.json().get("response", [])
 
-        kickoff = (
-            row.get("kickoff_utc")
-            or row.get("date")
-            or row.get("kickoff")
-            or row.get("fixture_date")
+            if response:
+                # Prefer Bet365 if present, otherwise just take the first bookmaker
+                bookmaker_entry = next(
+                    (x for x in response if x.get("bookmaker", {}).get("name") == "Bet365"),
+                    response[0],
+                )
+
+                bets = bookmaker_entry.get("bets", [])
+                if bets:
+                    # Assume first "Match Winner" style market has 3 outcomes: 1X2
+                    values = bets[0].get("values", [])
+                    if len(values) >= 3:
+                        odds_home = float(values[0].get("odd"))
+                        odds_draw = float(values[1].get("odd"))
+                        odds_away = float(values[2].get("odd"))
+
+                        inv_sum = (1.0 / odds_home) + (1.0 / odds_draw) + (1.0 / odds_away)
+                        if inv_sum > 0:
+                            p_home_implied = (1.0 / odds_home) / inv_sum
+                            p_draw_implied = (1.0 / odds_draw) / inv_sum
+                            p_away_implied = (1.0 / odds_away) / inv_sum
+        except Exception as e:
+            logger.warning("[TRAIN] odds fetch failed for fixture %s: %s", fid_int, e)
+
+        odds_rows.append(
+            {
+                "fixture_id": fid_int,
+                "home_odd_implied": p_home_implied,
+                "draw_odd_implied": p_draw_implied,
+                "away_odd_implied": p_away_implied,
+            }
         )
 
-        if not _within_odds_window(kickoff):
-            continue
+    odds_df = pd.DataFrame(odds_rows)
 
-        if calls >= ODDS_MAX_CALLS_PER_RUN:
-            logger.info("[ODDS] reached ODDS_MAX_CALLS_PER_RUN=%s; skipping remaining odds fetches", ODDS_MAX_CALLS_PER_RUN)
-            break
-
-        try:
-            payload = api_get("/odds", {"fixture": fid_int})
-            scan = scan_market_odds(payload)
-            calls += 1
-
-            if scan and scan.get("found"):
-                probs = (scan.get("selected") or {}).get("probs") or {}
-                ph = probs.get("home"); pd = probs.get("draw"); pa = probs.get("away")
-                if ph is not None and pd is not None and pa is not None:
-                    df.at[i, "home_odd_implied"] = float(ph)
-                    df.at[i, "draw_odd_implied"] = float(pd)
-                    df.at[i, "away_odd_implied"] = float(pa)
-        except Exception:
-            # Keep defaults on any error
-            continue
+    df = df.merge(odds_df, on="fixture_id", how="left")
+    # Fill any missing with neutral 1/3
+    for col in ["home_odd_implied", "draw_odd_implied", "away_odd_implied"]:
+        df[col] = df[col].fillna(1.0 / 3.0).astype(float)
 
     return df
+
 
 def add_rest_days_features(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -2133,253 +2106,70 @@ def decimal_to_implied_prob(odd: float) -> float:
     return 1.0 / odd
 
 
-def extract_match_winner_odds(odds_payload: dict):
-    """Backward-compatible: returns decimal odds dict {'home','draw','away'} or None."""
-    odds, _meta = extract_market_odds_1x2_with_meta(odds_payload)
-    return odds
-def odds_to_implied_probs_1x2(odds: dict) -> Optional[Dict[str, float]]:
-    """Convert decimal 1X2 odds into normalized implied probabilities.
-
-    Returns dict {home, draw, away} or None if odds missing/invalid.
+def extract_match_winner_odds(data: Dict[str, Any]) -> Optional[Dict[str, float]]:
     """
-    try:
-        if not isinstance(odds, dict):
-            return None
-        oh = odds.get("home")
-        od = odds.get("draw")
-        oa = odds.get("away")
-        if oh is None or od is None or oa is None:
-            return None
-        oh = float(oh); od = float(od); oa = float(oa)
-        if oh <= 0 or od <= 0 or oa <= 0:
-            return None
-        ph = 1.0 / oh
-        pd = 1.0 / od
-        pa = 1.0 / oa
-        s = ph + pd + pa
-        if s <= 0:
-            return None
-        return {"home": ph / s, "draw": pd / s, "away": pa / s}
-    except Exception:
-        return None
+    Extract 1X2 (Match Winner) odds from an API-FOOTBALL /odds response.
 
-
-def odds_to_probs_1x2(odds_home, odds_draw, odds_away):
-    # Decimal odds -> implied probs, then normalize to remove overround
-    try:
-        oh = float(odds_home); od = float(odds_draw); oa = float(odds_away)
-        if oh <= 1e-9 or od <= 1e-9 or oa <= 1e-9:
-            return None
-    except Exception:
-        return None
-
-    ph = 1.0 / oh
-    pd = 1.0 / od
-    pa = 1.0 / oa
-    s = ph + pd + pa
-    if s <= 0:
-        return None
-    return {"home": ph / s, "draw": pd / s, "away": pa / s}
-
-
-def extract_market_probs_from_api_football_odds(payload: dict):
+    Returns a dict like:
+      {"home": 1.85, "draw": 3.8, "away": 4.2}
+    or None if not found.
     """
-    API-Football /odds response can vary a lot.
-    We scan all bookmakers/bets and accept the first COMPLETE 1X2 set we can turn into
-    normalized implied probabilities.
-
-    IMPORTANT: Do not stop scanning if a "complete" set has invalid/missing odds values.
-    """
-    resp = (payload or {}).get("response") or []
+    resp = data.get("response") or []
     if not resp:
         return None
 
-    for item in resp:
-        bms = item.get("bookmakers") or []
-        for bm in bms:
-            bets = bm.get("bets") or []
-            for bet in bets:
-                vals = bet.get("values") or []
-                got = {"home": None, "draw": None, "away": None}
-                for v in vals:
-                    lab = (v.get("value") or "").strip().lower()
-                    odd = v.get("odd")
-                    if lab in ("home", "1"):
-                        got["home"] = odd
-                    elif lab in ("draw", "x"):
-                        got["draw"] = odd
-                    elif lab in ("away", "2"):
-                        got["away"] = odd
+    entry = resp[0]  # first fixture
+    bookmakers = entry.get("bookmakers") or []
+    if not bookmakers:
+        return None
 
-                if got["home"] and got["draw"] and got["away"]:
-                    probs = odds_to_probs_1x2(got["home"], got["draw"], got["away"])
-                    if probs:
-                        return probs
-                    # else: keep scanning
+    # For simplicity, just use the first bookmaker that has a Match Winner / 1X2 market
+    for bm in bookmakers:
+        bets = bm.get("bets") or []
+        for bet in bets:
+            name = (bet.get("name") or bet.get("label") or "").lower()
+            if "match winner" in name or "1x2" in name:
+                values = bet.get("values") or []
+                out: Dict[str, float] = {}
+                for v in values:
+                    side = (v.get("value") or "").lower()
+                    odd_str = v.get("odd")
+                    try:
+                        odd_val = float(odd_str)
+                    except Exception:
+                        continue
+
+                    if "home" in side or side == "1":
+                        out["home"] = odd_val
+                    elif "away" in side or side == "2":
+                        out["away"] = odd_val
+                    elif "draw" in side or side == "x":
+                        out["draw"] = odd_val
+
+                if len(out) >= 2:
+                    return out
 
     return None
 
-def scan_market_odds_1x2(payload: dict, *, max_notes: int = 50) -> dict:
+
+def fetch_1x2_odds_for_fixture(fixture_id: int) -> Optional[Dict[str, float]]:
     """
-    Scan an API-Football /odds payload and try to extract a complete 1X2 (home/draw/away) set.
-    Returns a debug-friendly dict explaining what was (and wasn't) found.
+    Call API-FOOTBALL /odds for a single fixture and return 1X2 odds.
     """
-    resp = (payload or {}).get("response") or []
-    if not resp:
-        return {
-            "found": False,
-            "reason": "no_response",
-            "selected": None,
-            "stats": {"items": 0, "bookmakers": 0, "bets": 0, "preferred_bets": 0},
-            "notes": [],
-        }
-
-    def _norm(s) -> str:
-        return (s or "").strip().lower()
-
-    def _is_preferred_bet(bet: dict) -> bool:
-        name = _norm(bet.get("name"))
-        bet_id = bet.get("id")
-        if str(bet_id).strip() == "1":  # API-Football commonly uses id=1 for Match Winner
-            return True
-        return any(k in name for k in ["match winner", "1x2", "full time result", "fulltime result", "result", "winner"])
-
-    def _map_values(vals: list, home_name: str, away_name: str) -> dict:
-        got = {"home": None, "draw": None, "away": None}
-        h = _norm(home_name)
-        a = _norm(away_name)
-        for v in vals or []:
-            lab = _norm(v.get("value"))
-            odd = v.get("odd")
-            if lab in ("home", "1"):
-                got["home"] = odd
-            elif lab in ("draw", "x", "tie"):
-                got["draw"] = odd
-            elif lab in ("away", "2"):
-                got["away"] = odd
-            else:
-                # Sometimes labels are team names
-                if h and (lab == h or (h in lab and got["home"] is None)):
-                    got["home"] = odd
-                elif a and (lab == a or (a in lab and got["away"] is None)):
-                    got["away"] = odd
-        return got
-
-    notes = []
-    missing_counts = {"home": 0, "draw": 0, "away": 0, "invalid_odds": 0}
-    stats = {"items": 0, "bookmakers": 0, "bets": 0, "preferred_bets": 0}
-
-    # Two-pass scan: prefer obvious 1X2 / Match Winner bets, then fall back to any bet.
-    for pass_idx in (0, 1):
-        preferred_only = (pass_idx == 0)
-
-        for item in resp:
-            stats["items"] += 1
-            teams = item.get("teams") or {}
-            home_name = ((teams.get("home") or {}).get("name")) or ""
-            away_name = ((teams.get("away") or {}).get("name")) or ""
-
-            bms = item.get("bookmakers") or []
-            if not bms:
-                if len(notes) < max_notes:
-                    notes.append({"reason": "no_bookmakers", "context": {"item_fixture": (item.get("fixture") or {}).get("id")}})
-                continue
-
-            for bm in bms:
-                stats["bookmakers"] += 1
-                bm_name = bm.get("name") or bm.get("id") or "unknown"
-                bets = bm.get("bets") or []
-                if not bets:
-                    if len(notes) < max_notes:
-                        notes.append({"reason": "no_bets", "context": {"bookmaker": bm_name}})
-                    continue
-
-                for bet in bets:
-                    stats["bets"] += 1
-                    bet_name = bet.get("name") or bet.get("id") or "unknown"
-                    preferred = _is_preferred_bet(bet)
-                    if preferred:
-                        stats["preferred_bets"] += 1
-                    if preferred_only and not preferred:
-                        continue
-
-                    got = _map_values(bet.get("values") or [], home_name, away_name)
-
-                    missing = [k for k in ("home", "draw", "away") if not got.get(k)]
-                    if missing:
-                        for k in missing:
-                            missing_counts[k] += 1
-                        if len(notes) < max_notes:
-                            notes.append({"reason": "incomplete_1x2", "missing": missing, "context": {"bookmaker": bm_name, "bet": bet_name}})
-                        continue
-
-                    probs = odds_to_probs_1x2(got["home"], got["draw"], got["away"])
-                    if not probs:
-                        missing_counts["invalid_odds"] += 1
-                        if len(notes) < max_notes:
-                            notes.append({"reason": "invalid_odds", "context": {"bookmaker": bm_name, "bet": bet_name, "odds": got}})
-                        continue
-
-                    return {
-                        "found": True,
-                        "reason": "ok",
-                        "selected": {
-                            "odds": {"home": float(got["home"]), "draw": float(got["draw"]), "away": float(got["away"])},
-                            "probs": probs,
-                            "meta": {"bookmaker": str(bm_name), "bet_name": str(bet_name)},
-                            "pass": "preferred" if preferred_only else "fallback",
-                        },
-                        "stats": stats,
-                        "missing_counts": missing_counts,
-                        "notes": notes,
-                    }
-
-    # Nothing found
-    reason = "no_1x2_bet_found" if stats.get("preferred_bets", 0) == 0 else "no_complete_1x2_set"
-    # A more specific primary reason, if obvious
-    if stats.get("bookmakers", 0) == 0:
-        reason = "no_bookmakers"
-    elif stats.get("bets", 0) == 0:
-        reason = "no_bets"
-    elif missing_counts["draw"] > 0 and missing_counts["draw"] >= missing_counts["home"] and missing_counts["draw"] >= missing_counts["away"]:
-        reason = "missing_draw"
-    elif missing_counts["home"] > 0 and missing_counts["home"] >= missing_counts["draw"] and missing_counts["home"] >= missing_counts["away"]:
-        reason = "missing_home"
-    elif missing_counts["away"] > 0 and missing_counts["away"] >= missing_counts["draw"] and missing_counts["away"] >= missing_counts["home"]:
-        reason = "missing_away"
-
-    return {
-        "found": False,
-        "reason": reason,
-        "selected": None,
-        "stats": stats,
-        "missing_counts": missing_counts,
-        "notes": notes,
-    }
-
-
-def extract_market_odds_1x2_with_meta(payload: dict):
-    """
-    Backwards-compatible wrapper around scan_market_odds_1x2().
-    Returns (odds_dict, meta_dict) or (None, None).
-    """
-    scan = scan_market_odds_1x2(payload, max_notes=0)
-    if not scan.get("found"):
-        return None, None
-    sel = scan.get("selected") or {}
-    return sel.get("odds"), sel.get("meta")
-
-def fetch_1x2_odds_for_fixture(fixture_id: int, return_meta: bool = False):
-    """Fetch odds from API-Football and extract a complete 1X2 set (robust across bookmakers)."""
     try:
         data = api_get("/odds", {"fixture": fixture_id})
-    except Exception:
-        return (None, None) if return_meta else None
+    except HTTPException as e:
+        logger.warning("[ODDS] HTTP error fixture=%s: %s", fixture_id, e.detail)
+        return None
+    except Exception as e:
+        logger.warning("[ODDS] error fixture=%s: %s", fixture_id, e)
+        return None
 
-    odds, meta = extract_market_odds_1x2_with_meta(data)
-    if return_meta:
-        return odds, (meta or {})
+    odds = extract_match_winner_odds(data)
+    if not odds:
+        logger.info("[ODDS] no 1X2 odds for fixture=%s", fixture_id)
     return odds
+
 import math
 
 def poisson_1x2_probs(lam_home: float, lam_away: float, max_goals: int = 10) -> dict:
@@ -2747,48 +2537,6 @@ def _fetch_and_cache_logo(team_id: int) -> Optional[bytes]:
     except Exception as e:
         logger.warning("[LOGO] fetch failed for team_id=%s: %s", team_id, e)
     return None
-
-
-# Odds endpoints often have limited historical availability.
-# To avoid wasting API quota, we only attempt odds fetches within this window.
-ODDS_LOOKBACK_DAYS = int(os.getenv("ODDS_LOOKBACK_DAYS", "21"))   # past days
-ODDS_FUTURE_DAYS = int(os.getenv("ODDS_FUTURE_DAYS", "10"))       # upcoming days
-ODDS_MAX_CALLS_PER_RUN = int(os.getenv("ODDS_MAX_CALLS_PER_RUN", "60"))
-
-def _within_odds_window(kickoff_utc: Any) -> bool:
-    """Return True if kickoff is within a (now - lookback) .. (now + future) window."""
-    try:
-        if not kickoff_utc:
-            return False
-        if isinstance(kickoff_utc, str):
-            dt = datetime.datetime.fromisoformat(kickoff_utc.replace("Z", "+00:00"))
-        elif isinstance(kickoff_utc, datetime.datetime):
-            dt = kickoff_utc
-        else:
-            return False
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=datetime.timezone.utc)
-        now = datetime.datetime.now(datetime.timezone.utc)
-        return (now - datetime.timedelta(days=ODDS_LOOKBACK_DAYS)) <= dt <= (now + datetime.timedelta(days=ODDS_FUTURE_DAYS))
-    except Exception:
-        return False
-
-
-@app.get("/debug/api-usage")
-def debug_api_usage():
-    """Show basic API call counters (HTTP calls only, not cache hits)."""
-    try:
-        with API_USAGE_LOCK:
-            data = {
-                "ok": True,
-                "total_http_calls": API_USAGE.get("total_http_calls", 0),
-                "by_path": dict(API_USAGE.get("by_path", {})),
-                "last_headers": dict(API_USAGE.get("last_headers", {})),
-            }
-        data["by_path_sorted"] = sorted(data["by_path"].items(), key=lambda kv: kv[1], reverse=True)
-        return data
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
 
 @app.get("/team-logo/default.png")
 def team_logo_default():
@@ -3607,11 +3355,11 @@ def api_bet_of_day(
 
 @app.post("/results/sync")
 def api_results_sync(
-    league: int = Query(39, description="League ID"),
-    lookback_days: int = Query(21, ge=1, le=365, description="How far back to look for unfinished predictions"),
-    max_fixtures: int = Query(50, ge=1, le=300, description="Max fixtures to update per run"),
-    dry_run: bool = Query(False, description="If true, don't write to DB"),
-    debug: bool = Query(False, description="If true, include skipped_details in response"),
+    league: int = 39,
+    lookback_days: int = 21,
+    max_fixtures: int = 50,
+    dry_run: bool = False,
+    debug: bool = False,
 ):
     """
     Backfill actual_result for predictions_history rows once matches finish.
@@ -3620,160 +3368,103 @@ def api_results_sync(
       - match league
       - kickoff_utc is within [now - lookback_days, now)
       - actual_result is NULL/empty
+
     Then fetches each fixture from API-FOOTBALL and writes actual_result (home/draw/away) when final.
 
-    Uses SQLite (DB_PATH) and "?" placeholders.
+    IMPORTANT: quota-safe-ish: only touches up to max_fixtures per call.
     """
-    from datetime import datetime, timedelta, timezone
-    import sqlite3
-
     ensure_predictions_db()
 
-    now = datetime.now(timezone.utc)
-    since = (now - timedelta(days=int(lookback_days))).isoformat()
+    # Clamp params
+    lookback_days = max(1, min(int(lookback_days), 365))
+    max_fixtures = max(1, min(int(max_fixtures), 300))
 
-    scanned = 0
-    updated = 0
-    skipped = 0
-    errors = []
-    skipped_details = []
+    now = datetime.utcnow()
+    since = now - timedelta(days=lookback_days)
 
-    # 1) read candidate fixture_ids
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT fixture_id, MAX(kickoff_utc) AS last_kickoff
-            FROM predictions_history
-            WHERE league = ?
-              AND kickoff_utc >= ?
-              AND kickoff_utc < ?
-              AND (actual_result IS NULL OR TRIM(COALESCE(actual_result,'')) = '')
-              AND fixture_id IS NOT NULL
-            GROUP BY fixture_id
-            ORDER BY MAX(kickoff_utc) DESC
-            LIMIT ?
-            """,
-            (int(league), since, now.isoformat(), int(max_fixtures)),
-        )
-        fixture_rows = cur.fetchall()
-        conn.close()
-    except Exception as e:
-        return {"ok": False, "league": league, "error": f"DB read failed: {repr(e)}"}
-
-    fixture_ids = []
-    for (fid, last_kickoff) in fixture_rows:
+    def _result_from_fixture_payload(payload: dict) -> Optional[str]:
         try:
-            if fid is None:
-                continue
-            fixture_ids.append(int(fid))
-        except Exception:
-            continue
-
-    # 2) resolve each fixture and update
-    for fid_int in fixture_ids:
-        scanned += 1
-        try:
-            data = api_get("/fixtures", {"id": fid_int})
-            resp = data.get("response") or []
+            resp = (payload or {}).get("response") or []
             if not resp:
-                skipped += 1
-                if debug:
-                    skipped_details.append({"fixture_id": fid_int, "reason": "not_found"})
-                continue
-
+                return None
             fx = resp[0] or {}
-            fx_info = fx.get("fixture") or {}
-            st = fx_info.get("status") or {}
-            status_short = (st.get("short") or "").strip().upper()
-
-            # final statuses (API-FOOTBALL commonly uses FT, AET, PEN for finished)
-            if status_short not in ("FT", "AET", "PEN"):
-                skipped += 1
-                if debug:
-                    skipped_details.append({"fixture_id": fid_int, "reason": "not_final", "status": status_short or None})
-                continue
-
+            st = ((fx.get("fixture") or {}).get("status") or {}).get("short")
+            if st not in ("FT", "AET", "PEN"):
+                return None
             goals = fx.get("goals") or {}
             hg = goals.get("home")
             ag = goals.get("away")
             if hg is None or ag is None:
-                skipped += 1
-                if debug:
-                    skipped_details.append({"fixture_id": fid_int, "reason": "missing_goals", "status": status_short})
-                continue
-
-            try:
-                hg = int(hg)
-                ag = int(ag)
-            except Exception:
-                skipped += 1
-                if debug:
-                    skipped_details.append({"fixture_id": fid_int, "reason": "bad_goals", "status": status_short})
-                continue
-
+                return None
             if hg > ag:
-                actual = "home"
-            elif ag > hg:
-                actual = "away"
-            else:
-                actual = "draw"
+                return "home"
+            if ag > hg:
+                return "away"
+            return "draw"
+        except Exception:
+            return None
 
-            teams = fx.get("teams") or {}
-            home_name = ((teams.get("home") or {}) .get("name"))
-            away_name = ((teams.get("away") or {}) .get("name"))
-            kickoff_utc = fx_info.get("date")
+    # Pull candidate fixtures
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT DISTINCT fixture_id
+        FROM predictions_history
+        WHERE league = ?
+          AND kickoff_utc >= ?
+          AND kickoff_utc < ?
+          AND (actual_result IS NULL OR TRIM(actual_result) = '')
+        ORDER BY kickoff_utc DESC
+        LIMIT ?
+        """,
+        (league, since.isoformat(), now.isoformat(), max_fixtures),
+    )
+    fixture_ids = [int(r[0]) for r in cur.fetchall()]
 
-            if dry_run:
-                updated += 1
+    updated = 0
+    skipped = []
+    errors = []
+
+    for fid in fixture_ids:
+        try:
+            data = api_get("/fixtures", {"id": int(fid)})
+            result = _result_from_fixture_payload(data)
+            if result is None:
+                if debug:
+                    skipped.append({"fixture_id": fid, "reason": "not_finished_or_no_score"})
                 continue
 
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cur = conn.cursor()
+            if not dry_run:
                 cur.execute(
                     """
                     UPDATE predictions_history
-                    SET
-                        actual_result = ?,
-                        home_team = COALESCE(home_team, ?),
-                        away_team = COALESCE(away_team, ?),
-                        kickoff_utc = COALESCE(kickoff_utc, ?)
-                    WHERE league = ?
-                      AND fixture_id = ?
-                      AND (actual_result IS NULL OR TRIM(COALESCE(actual_result,'')) = '')
+                    SET actual_result = ?
+                    WHERE fixture_id = ? AND league = ?
                     """,
-                    (actual, home_name, away_name, kickoff_utc, int(league), int(fid_int)),
+                    (result, int(fid), int(league)),
                 )
                 conn.commit()
-                conn.close()
 
-                if cur.rowcount and cur.rowcount > 0:
-                    updated += 1
-                else:
-                    skipped += 1
-                    if debug:
-                        skipped_details.append({"fixture_id": fid_int, "reason": "no_rows_updated"})
-            except Exception as e:
-                errors.append({"fixture_id": fid_int, "error": repr(e)})
-
+            updated += 1
         except Exception as e:
-            errors.append({"fixture_id": fid_int, "error": repr(e)})
+            errors.append({"fixture_id": fid, "error": str(e)})
+            continue
+
+    conn.close()
 
     out = {
         "ok": True,
         "league": league,
         "lookback_days": lookback_days,
         "max_fixtures": max_fixtures,
-        "dry_run": dry_run,
-        "scanned": scanned,
+        "candidates": len(fixture_ids),
         "updated": updated,
-        "skipped": skipped,
-        "errors": errors[:10],
+        "dry_run": bool(dry_run),
+        "errors": errors[:20],
     }
     if debug:
-        out["skipped_details"] = skipped_details[:50]
+        out["skipped_details"] = skipped[:50]
     return out
 
 @app.get("/backtest/1x2")
@@ -3898,17 +3589,7 @@ def api_backtest_1x2(
     correct = 0
     logloss_sum = 0.0
 
-    # --- market (odds-implied) baseline metrics (if odds available) ---
-    market_n = 0
-    market_correct = 0
-    market_logloss_sum = 0.0
-
     per_game = []
-
-    # DB write counters (for write_db=true)
-    db_writes_attempted = 0
-    db_writes_ok = 0
-    db_write_errors = []
 
     cal = load_1x2_calibration(league) or {}
 
@@ -3971,46 +3652,6 @@ def api_backtest_1x2(
         p_true = {"home": ph, "draw": pd, "away": pa}[actual]
         ll = -math.log(max(p_true, eps))
 
-
-        # --- Market odds baseline (if available) ---
-        market_probs = None
-        market_pick = None
-        market_ll = None
-        mph = mpd = mpa = None
-        try:
-            odds, odds_meta = fetch_1x2_odds_for_fixture(fid, return_meta=True)
-            market_probs = odds_to_implied_probs_1x2(odds) if odds else None
-        except Exception:
-            market_probs = None
-
-        if market_probs:
-            try:
-                mph = float(market_probs.get("home", 0.0) or 0.0)
-                mpd = float(market_probs.get("draw", 0.0) or 0.0)
-                mpa = float(market_probs.get("away", 0.0) or 0.0)
-            except Exception:
-                mph = mpd = mpa = None
-
-        if isinstance(mph, (int, float)) and isinstance(mpd, (int, float)) and isinstance(mpa, (int, float)):
-            ms = float(mph + mpd + mpa)
-            if ms > 0:
-                mph, mpd, mpa = mph / ms, mpd / ms, mpa / ms
-                market_probs = {"home": mph, "draw": mpd, "away": mpa}
-                try:
-                    market_pick = max(market_probs, key=market_probs.get)
-                except Exception:
-                    market_pick = None
-                try:
-                    market_ll = -math.log(max(float(market_probs.get(actual, 0.0) or 0.0), eps))
-                except Exception:
-                    market_ll = None
-
-                market_n += 1
-                if market_pick == actual:
-                    market_correct += 1
-                if isinstance(market_ll, (int, float)):
-                    market_logloss_sum += float(market_ll)
-
         n += 1
         if pred_side == actual:
             correct += 1
@@ -4037,15 +3678,6 @@ def api_backtest_1x2(
                 # backward compat (keep name used elsewhere)
                 "model_probs": {"home": round(ph, 6), "draw": round(pd, 6), "away": round(pa, 6)},
 
-                # NEW: market implied (from odds)
-                "market_probs": (
-                    {"home": round(mph, 6), "draw": round(mpd, 6), "away": round(mpa, 6)}
-                    if isinstance(mph, (int, float)) and isinstance(mpd, (int, float)) and isinstance(mpa, (int, float))
-                    else None
-                ),
-                "market_pick": market_pick,
-                "market_logloss": (round(market_ll, 4) if isinstance(market_ll, (int, float)) else None),
-
                 "logloss": round(ll, 4),
             }
         )
@@ -4053,20 +3685,19 @@ def api_backtest_1x2(
 
         # 4) Optional: write back into DB so /progress/metrics can work later
         if write_db and not dry_run:
-            db_writes_attempted += 1
             try:
                 ensure_predictions_db()
                 conn = sqlite3.connect(DB_PATH)
                 cur = conn.cursor()
 
-                # Existing columns (schema-flexible)
                 cols = [r[1] for r in cur.execute("PRAGMA table_info(predictions_history)").fetchall()]
-
-                # Prepare data to write
-                row_data = {}
+                # build dynamic upsert only with columns that exist
+                insert_cols = []
+                insert_vals = []
                 def add(col, val):
                     if col in cols:
-                        row_data[col] = val
+                        insert_cols.append(col)
+                        insert_vals.append(val)
 
                 add("league", int(league))
                 add("fixture_id", int(fid))
@@ -4078,34 +3709,6 @@ def api_backtest_1x2(
                 add("model_draw_p", float(pd))
                 add("model_away_p", float(pa))
 
-                # market implied probs + odds (if available)
-                if isinstance(mph, (int, float)) and isinstance(mpd, (int, float)) and isinstance(mpa, (int, float)):
-                    add("market_home_p", float(mph))
-                    add("market_draw_p", float(mpd))
-                    add("market_away_p", float(mpa))
-                try:
-                    if isinstance(odds, dict):
-                        oh = odds.get("home")
-                        od = odds.get("draw")
-                        oa = odds.get("away")
-                        if oh is not None and od is not None and oa is not None:
-                            add("market_home_odds", float(oh))
-                            add("market_draw_odds", float(od))
-                            add("market_away_odds", float(oa))
-                except Exception:
-                    pass
-
-                # Optional: store which bookmaker/bet we used for market odds
-                try:
-                    bm_name = (odds_meta or {}).get("bookmaker")
-                    bet_name = (odds_meta or {}).get("bet_name")
-                    if bm_name is not None or bet_name is not None:
-                        add("market_bookmaker", bm_name)
-                        add("market_bet_name", bet_name)
-                except Exception:
-                    pass
-
-
                 add("predicted_side", pred_side)
                 add("actual_result", actual)
 
@@ -4115,42 +3718,34 @@ def api_backtest_1x2(
                 except Exception:
                     pass
 
-                # ---- Update-first (fills placeholder rows created elsewhere) ----
-                # This avoids ON CONFLICT issues and handles cases where kickoff_utc differs in formatting.
-                update_cols = []
-                update_vals = []
-                for c, v in row_data.items():
+                # build query
+                placeholders = ",".join(["?"] * len(insert_cols))
+                col_sql = ",".join(insert_cols)
+
+                # update set (don’t overwrite actual_result if already set)
+                set_parts = []
+                for c in insert_cols:
                     if c in ("id",):
                         continue
                     if c == "actual_result":
-                        update_cols.append("actual_result = COALESCE(actual_result, ?)")
-                        update_vals.append(v)
+                        set_parts.append(f"{c} = COALESCE(predictions_history.actual_result, excluded.actual_result)")
                     else:
-                        update_cols.append(f"{c} = ?")
-                        update_vals.append(v)
+                        set_parts.append(f"{c} = excluded.{c}")
+                set_sql = ",\n".join(set_parts)
 
-                if update_cols:
-                    sql_upd = f"UPDATE predictions_history SET {', '.join(update_cols)} WHERE league = ? AND fixture_id = ?"
-                    cur.execute(sql_upd, tuple(update_vals) + (int(league), int(fid)))
+                sql = f"""
+                INSERT INTO predictions_history ({col_sql})
+                VALUES ({placeholders})
+                ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
+                {set_sql}
+                """
 
-                # If nothing updated, insert a new row
-                if getattr(cur, "rowcount", 0) == 0:
-                    insert_cols = [c for c in row_data.keys() if c != "id"]
-                    insert_vals = [row_data[c] for c in insert_cols]
-                    placeholders = ",".join(["?"] * len(insert_cols))
-                    col_sql = ",".join(insert_cols)
-                    sql_ins = f"INSERT INTO predictions_history ({col_sql}) VALUES ({placeholders})"
-                    cur.execute(sql_ins, tuple(insert_vals))
-
+                cur.execute(_sql_pg_fix(sql), tuple(insert_vals))
                 conn.commit()
                 conn.close()
-                db_writes_ok += 1
-            except Exception as e:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-                db_write_errors.append({"fixture_id": int(fid), "error": repr(e)})
+            except Exception:
+                # do not fail whole backtest if DB write hiccups
+                pass
 
     if n == 0:
         return {"ok": False, "message": "No scorable fixtures (missing goals/xG).", "league": league, "season": season}
@@ -4162,13 +3757,6 @@ def api_backtest_1x2(
         "fixtures_scored": n,
         "accuracy": round(correct / n, 4),
         "logloss": round(logloss_sum / n, 4),
-        "market_samples": int(market_n),
-        "market_accuracy": (round(market_correct / market_n, 4) if market_n else None),
-        "market_logloss": (round(market_logloss_sum / market_n, 4) if market_n else None),
-        "delta_logloss_vs_market": (
-            round((logloss_sum / n) - (market_logloss_sum / market_n), 5)
-            if (n and market_n) else None
-        ),
         "write_db": bool(write_db),
         "dry_run": bool(dry_run),
                 "fixtures_total": len(fixtures),
@@ -4177,12 +3765,7 @@ def api_backtest_1x2(
         "n_used": n,
         "sample_limit": int(sample_limit),
         "sample": (per_game[: min(int(sample_limit), len(per_game))] if int(sample_limit) > 0 else []),
-        "db_writes_attempted": (db_writes_attempted if (write_db and not dry_run) else 0),
-        "db_writes_ok": (db_writes_ok if (write_db and not dry_run) else 0),
-        "db_writes_failed": (len(db_write_errors) if (write_db and not dry_run) else 0),
-        "db_write_errors_sample": (db_write_errors[:5] if db_write_errors else []),
     }
-
 
 
 @app.get("/progress/metrics")
@@ -4192,53 +3775,50 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
 
     - Dedupes by fixture_id (uses latest row per fixture)
     - Only counts rows where actual_result is known AND model probs exist
-    - Optionally (if market_* columns exist + are populated): computes market-implied baseline
-      accuracy/logloss (from 1X2 odds) and delta vs market.
     - Never crashes: returns JSON error on unexpected issues
     """
     try:
         from datetime import datetime, timezone, timedelta
         import math
-        from collections import Counter
 
         ensure_predictions_db()
+        conn = db_connect()
+
+        rows = []
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT ph.id, ph.fixture_id, ph.kickoff_utc,
+                       ph.model_home_p, ph.model_draw_p, ph.model_away_p,
+                       ph.predicted_side, ph.actual_result
+                FROM predictions_history ph
+                JOIN (
+                    SELECT fixture_id, MAX(id) AS max_id
+                    FROM predictions_history
+                    WHERE league = ?
+                      AND actual_result IS NOT NULL
+                      AND TRIM(COALESCE(actual_result,'')) <> ''
+                    GROUP BY fixture_id
+                ) t
+                ON ph.id = t.max_id
+                ORDER BY ph.kickoff_utc DESC
+                LIMIT 5000
+                """,
+                (int(league),),
+            )
+            for r in cur.fetchall():
+                rows.append({
+                    "id": r[0],
+                    "fixture_id": r[1],
+                    "kickoff_utc": r[2],
+                    "ph": r[3],
+                    "pd": r[4],
+                    "pa": r[5],
+                    "predicted_side": r[6],
+                    "actual_result": r[7],
+                })
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=int(window_days))
-
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-
-        # detect optional market columns (schema evolves)
-        cur.execute("PRAGMA table_info(predictions_history)")
-        cols = {r[1] for r in cur.fetchall()}
-        has_market = {"market_home_p", "market_draw_p", "market_away_p"}.issubset(cols)
-
-        select_market = ""
-        if has_market:
-            select_market = ", ph.market_home_p, ph.market_draw_p, ph.market_away_p"
-
-        sql = f"""
-            SELECT ph.id, ph.fixture_id, ph.kickoff_utc,
-                   ph.model_home_p, ph.model_draw_p, ph.model_away_p,
-                   ph.predicted_side, ph.actual_result
-                   {select_market}
-            FROM predictions_history ph
-            JOIN (
-                SELECT fixture_id, MAX(id) AS max_id
-                FROM predictions_history
-                WHERE league = ?
-                  AND actual_result IS NOT NULL
-                  AND TRIM(COALESCE(actual_result,'')) <> ''
-                GROUP BY fixture_id
-            ) t
-            ON ph.id = t.max_id
-            ORDER BY ph.kickoff_utc DESC
-            LIMIT 5000
-        """
-
-        cur.execute(sql, (int(league),))
-        rows = cur.fetchall()
-        conn.close()
 
         def parse_dt(x):
             if not x:
@@ -4248,61 +3828,23 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
             except Exception:
                 return None
 
-        total = 0
         correct = 0
-        logloss_sum = 0.0
-
-        market_total = 0
-        market_correct = 0
-        market_logloss_sum = 0.0
-
-        outcome_counts = Counter()
-
-        eps = 1e-12
+        total = 0
+        log_losses = []
 
         for r in rows:
-            if has_market:
-                (
-                    _row_id,
-                    _fixture_id,
-                    kickoff_utc,
-                    ph,
-                    pd,
-                    pa,
-                    predicted_side,
-                    actual_result,
-                    mph,
-                    mpd,
-                    mpa,
-                ) = r
-            else:
-                (
-                    _row_id,
-                    _fixture_id,
-                    kickoff_utc,
-                    ph,
-                    pd,
-                    pa,
-                    predicted_side,
-                    actual_result,
-                ) = r
-                mph = mpd = mpa = None
-
-            kdt = parse_dt(kickoff_utc)
+            kdt = parse_dt(r.get("kickoff_utc"))
             if kdt and kdt < cutoff:
                 continue
 
-            actual = (actual_result or "").strip().lower()
+            actual = (r.get("actual_result") or "").strip().lower()
             if actual not in ("home", "draw", "away"):
                 continue
 
-            outcome_counts[actual] += 1
-
-            # model probs
             try:
-                ph = float(ph) if ph is not None else 0.0
-                pd = float(pd) if pd is not None else 0.0
-                pa = float(pa) if pa is not None else 0.0
+                ph = float(r.get("ph") or 0.0)
+                pd = float(r.get("pd") or 0.0)
+                pa = float(r.get("pa") or 0.0)
             except Exception:
                 continue
 
@@ -4311,7 +3853,7 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
                 continue
             ph, pd, pa = ph / sprob, pd / sprob, pa / sprob
 
-            pred = (predicted_side or "").strip().lower()
+            pred = (r.get("predicted_side") or "").strip().lower()
             if pred not in ("home", "draw", "away"):
                 pred = max([("home", ph), ("draw", pd), ("away", pa)], key=lambda t: t[1])[0]
 
@@ -4320,90 +3862,30 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
                 correct += 1
 
             p_true = {"home": ph, "draw": pd, "away": pa}.get(actual, 0.0)
-            logloss_sum += -math.log(max(p_true, eps))
-
-            # market (if available)
-            if has_market:
-                try:
-                    mph = float(mph) if mph is not None else None
-                    mpd = float(mpd) if mpd is not None else None
-                    mpa = float(mpa) if mpa is not None else None
-                except Exception:
-                    mph = mpd = mpa = None
-
-                if isinstance(mph, (int, float)) and isinstance(mpd, (int, float)) and isinstance(mpa, (int, float)):
-                    ms = float(mph + mpd + mpa)
-                    if ms > 0:
-                        mph, mpd, mpa = mph / ms, mpd / ms, mpa / ms
-                        mprobs = {"home": mph, "draw": mpd, "away": mpa}
-                        try:
-                            mpick = max(mprobs, key=mprobs.get)
-                        except Exception:
-                            mpick = None
-                        market_total += 1
-                        if mpick == actual:
-                            market_correct += 1
-                        market_logloss_sum += -math.log(max(float(mprobs.get(actual, 0.0) or 0.0), eps))
+            if p_true <= 0.0:
+                p_true = 1e-12
+            log_losses.append(-math.log(p_true))
 
         if total == 0:
-            return {"ok": False, "message": "No records with actual results + model probs in this window.", "league": league, "window_days": window_days}
+            return {"ok": False, "message": "No records with actual results in this window.", "league": league, "window_days": window_days}
 
         accuracy = correct / total
-        logloss = logloss_sum / total
+        logloss = sum(log_losses) / len(log_losses) if log_losses else None
 
-        # baseline from observed outcome frequencies (within this window)
-        outcome_rates = {k: (v / total) for k, v in outcome_counts.items()} if total else {}
-        baseline_accuracy = (max(outcome_rates.values()) if outcome_rates else None)
-
-        baseline_logloss = None
-        if outcome_rates:
-            bl = 0.0
-            for k, v in outcome_rates.items():
-                bl += -float(v) * math.log(max(float(v), eps))
-            baseline_logloss = bl
-
-        out = {
+        return {
             "ok": True,
             "league": league,
             "window_days": window_days,
             "samples": total,
             "correct": correct,
             "accuracy": round(accuracy, 4),
-            "logloss": round(logloss, 5),
-            "outcome_counts": dict(outcome_counts),
-            "outcome_rates": {k: round(v, 4) for k, v in outcome_rates.items()},
-            "baseline_accuracy": (round(baseline_accuracy, 4) if isinstance(baseline_accuracy, float) else None),
-            "baseline_logloss": (round(baseline_logloss, 5) if isinstance(baseline_logloss, float) else None),
-            "delta_logloss_vs_freq": (round(logloss - baseline_logloss, 5) if isinstance(baseline_logloss, float) else None),
+            "logloss": (round(logloss, 5) if isinstance(logloss, float) else None),
         }
-
-        if has_market and market_total:
-            market_accuracy = market_correct / market_total
-            market_logloss = market_logloss_sum / market_total
-            out.update({
-                "market_samples": int(market_total),
-                "market_correct": int(market_correct),
-                "market_accuracy": round(market_accuracy, 4),
-                "market_logloss": round(market_logloss, 5),
-                "delta_logloss_vs_market": round(logloss - market_logloss, 5),
-            })
-        else:
-            out.update({
-                "market_samples": 0,
-                "market_correct": 0,
-                "market_accuracy": None,
-                "market_logloss": None,
-                "delta_logloss_vs_market": None,
-            })
-
-        return out
-
     except Exception as e:
         logger.exception("[progress/metrics] failed: %s", e)
         return {"ok": False, "league": league, "window_days": window_days, "error": str(e)}
 
 @app.get("/progress/roi")
-
 def api_progress_roi(
     league: int = Query(39, description="League ID"),
     window_days: int = Query(
@@ -5053,22 +4535,34 @@ def api_predictions_sanity(
 
       
 
-@app.get(
-    "/debug/fixture/{fixture_id}",
-    response_description="""
-    Debug a single fixture's saved record(s).
+@app.get("/debug/fixture/{fixture_id}")
+def debug_fixture(
+    fixture_id: int = ApiPath(..., description="Fixture ID (as stored in predictions_history)"),
+    league: int = Query(DEFAULT_LEAGUE, description="League ID, e.g. 39 = Premier League"),
+    include_history: bool = Query(
+        True,
+        description="If true, include all DB rows for this fixture (not just the latest one)"
+    ),
+) -> Dict[str, Any]:
+    """
+    Debug endpoint to inspect what the model predicted for a single fixture.
 
-    Note: this is best-effort and only reads from the local SQLite history DB.
-    """,
-)
-def debug_fixture(fixture_id: int, league: int, include_history: bool = True):
-    db_path = HISTORY_DB_PATH
-    if not os.path.exists(db_path):
-        return {"ok": False, "error": f"History DB not found: {db_path}", "fixture_id": fixture_id, "league": league}
+    It ONLY reads from predictions_history (no external API calls), so it is
+    safe to use even when API-FOOTBALL quota is exhausted.
 
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
+    Returns:
+    - basic fixture info (teams, kickoff time)
+    - model probabilities (home/draw/away)
+    - predicted side
+    - edge_value (if any)
+    - actual_result (if filled by /update-results)
+    - optionally: all historical rows for this fixture in the DB
+    """
+    ensure_predictions_db()
+
     try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT
@@ -5083,28 +4577,29 @@ def debug_fixture(fixture_id: int, league: int, include_history: bool = True):
                 model_away_p,
                 predicted_side,
                 edge_value,
-                actual_result,
-                market_home_p,
-                market_draw_p,
-                market_away_p,
-                market_home_odds,
-                market_draw_odds,
-                market_away_odds,
-                market_bookmaker,
-                market_bet_name
+                actual_result
             FROM predictions_history
-            WHERE fixture_id = ? AND league = ?
+            WHERE fixture_id = ?
+              AND league = ?
             ORDER BY id DESC
             """,
             (fixture_id, league),
         )
         rows = cur.fetchall()
-    finally:
         conn.close()
+    except Exception as e:
+        logger.error("[DEBUG FIXTURE] DB error: %s", e)
+        return {"ok": False, "error": str(e)}
 
     if not rows:
-        return {"ok": False, "error": "no records found", "fixture_id": fixture_id, "league": league}
+        return {
+            "ok": False,
+            "fixture_id": fixture_id,
+            "league": league,
+            "error": "No predictions found for this fixture in predictions_history.",
+        }
 
+    # Latest record (the first row because we ordered by id DESC)
     (
         row_id,
         fx_id,
@@ -5118,35 +4613,26 @@ def debug_fixture(fixture_id: int, league: int, include_history: bool = True):
         predicted_side,
         edge_value,
         actual_result,
-        mkh,
-        mkd,
-        mka,
-        moh,
-        mod,
-        moa,
-        mbm,
-        mbet,
     ) = rows[0]
 
+    # Build a clean "latest" summary
     latest = {
         "fixture_id": fx_id,
         "league": lg,
         "home_team": home_team,
         "away_team": away_team,
         "kickoff_utc": kickoff_utc,
-        "model_probs": {"home": ph, "draw": pd, "away": pa} if ph is not None else None,
+        "model_probs": {
+            "home": ph,
+            "draw": pd,
+            "away": pa,
+        },
         "predicted_side": predicted_side,
         "edge_value": edge_value,
         "actual_result": actual_result,
     }
 
-    if mkh is not None and mkd is not None and mka is not None:
-        latest["market_probs"] = {"home": mkh, "draw": mkd, "away": mka}
-    if moh is not None and mod is not None and moa is not None:
-        latest["market_odds"] = {"home": moh, "draw": mod, "away": moa}
-    if (mbm is not None and str(mbm).strip()) or (mbet is not None and str(mbet).strip()):
-        latest["market_meta"] = {"bookmaker": mbm, "bet_name": mbet}
-
+    # Optionally include the full DB history for this fixture
     history = []
     if include_history:
         for (
@@ -5159,63 +4645,89 @@ def debug_fixture(fixture_id: int, league: int, include_history: bool = True):
             ph,
             pd,
             pa,
-            predicted_side,
-            edge_value,
-            actual_result,
-            mkh,
-            mkd,
-            mka,
-            moh,
-            mod,
-            moa,
-            mbm,
-            mbet,
+            pred_side,
+            edge,
+            result,
         ) in rows:
-            history.append(
-                {
-                    "row_id": row_id,
-                    "fixture_id": fx_id,
-                    "league": lg,
-                    "home_team": home_team,
-                    "away_team": away_team,
-                    "kickoff_utc": kickoff_utc,
-                    "model_home_p": ph,
-                    "model_draw_p": pd,
-                    "model_away_p": pa,
-                    "predicted_side": predicted_side,
-                    "edge_value": edge_value,
-                    "actual_result": actual_result,
-                    "market_home_p": mkh,
-                    "market_draw_p": mkd,
-                    "market_away_p": mka,
-                    "market_home_odds": moh,
-                    "market_draw_odds": mod,
-                    "market_away_odds": moa,
-                    "market_bookmaker": mbm,
-                    "market_bet_name": mbet,
-                }
-            )
+            history.append({
+                "row_id": row_id,
+                "fixture_id": fx_id,
+                "league": lg,
+                "home_team": home_team,
+                "away_team": away_team,
+                "kickoff_utc": kickoff_utc,
+                "model_home_p": ph,
+                "model_draw_p": pd,
+                "model_away_p": pa,
+                "predicted_side": pred_side,
+                "edge_value": edge,
+                "actual_result": result,
+            })
 
-    return {"ok": True, "fixture_id": fixture_id, "league": league, "latest": latest, "num_records": len(rows), "history": history}
-
-
-@app.get("/debug/odds-scan/{fixture_id}")
-def debug_odds_scan(fixture_id: int):
-    """
-    Fetch /odds for a fixture and explain why we did/didn't find a complete 1X2 set.
-    """
-    try:
-        payload = api_get("/odds", {"fixture": fixture_id})
-    except Exception as e:
-        return {"ok": False, "fixture_id": fixture_id, "error": str(e)}
-
-    scan = scan_market_odds_1x2(payload, max_notes=80)
     return {
         "ok": True,
         "fixture_id": fixture_id,
-        "api": {"results": (payload or {}).get("results"), "errors": (payload or {}).get("errors")},
-        "scan": scan,
+        "league": league,
+        "latest": latest,
+        "num_records": len(rows),
+        "history": history if include_history else None,
     }
+
+
+@app.get("/team-strength")
+def api_team_strength(league: int = Query(DEFAULT_LEAGUE)):
+    _, meta = load_model_and_meta(league)
+    team_summary = meta.get("team_summary", {})
+    teams = list(team_summary.values())
+    teams.sort(key=lambda r: r.get("rating", 1.0), reverse=True)
+    return {"ok": True, "league": league, "teams": teams}
+
+@app.get("/model-info")
+def api_model_info(league: int = Query(DEFAULT_LEAGUE)):
+    """
+    Show information about the currently trained model for a league:
+    - seasons used
+    - features and targets
+    - evaluation metrics (logloss, Brier)
+    - when it was trained
+    """
+    _, meta = load_model_and_meta(league)
+
+    info = {
+        "league": league,
+        "seasons": meta.get("seasons"),
+        "features": meta.get("feature_cols"),
+        "targets": meta.get("target_cols"),
+        "metrics": meta.get("metrics"),
+        "trained_at": meta.get("trained_at"),
+    }
+
+    return {"ok": True, "info": info}
+
+@lru_cache(maxsize=512)
+def get_fixture_logos(fixture_id: int) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Small cache so we only call API-FOOTBALL once per fixture
+    when building /results/recent cards with real team logos.
+
+    Returns (home_logo_url, away_logo_url).
+    If anything fails, both are None.
+    """
+    try:
+        data = api_get("/fixtures", {"id": fixture_id})
+    except HTTPException as e:
+        logger.warning("[RESULTS LOGOS] API error for fixture %s: %s", fixture_id, e.detail)
+        return None, None
+
+    resp = data.get("response") or []
+    if not resp:
+        return None, None
+
+    teams = resp[0].get("teams") or {}
+    home = teams.get("home") or {}
+    away = teams.get("away") or {}
+
+    return home.get("logo"), away.get("logo")
 
 @app.get("/debug/leagues")
 def debug_leagues():
@@ -5298,114 +4810,68 @@ def debug_pending_results(
 from datetime import datetime, timezone, timedelta  # make sure this is imported at top
 
 
+from fastapi import HTTPException
+
 @app.get("/results/recent")
-def api_recent_results(
-    league: int = Query(39, description="League ID"),
-    limit: int = Query(20, ge=1, le=100, description="Number of fixtures to show"),
-):
+def api_recent_results(league: int = 39, limit: int = 20):
     """
     Return the most recent UNIQUE fixtures (by fixture_id) that have a known result.
     Used by static/results.html.
 
-    Enriches each fixture with home_logo / away_logo using API-FOOTBALL.
+    Must NEVER return 500 (frontend expects a clean JSON response).
+    Logos are best-effort.
     """
-    ensure_predictions_db()
-
     try:
+        ensure_predictions_db()
+
+        limit = max(1, min(int(limit), 100))
+
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
-        # Get all finished predictions for this league, newest first
+
         cur.execute(
             """
-            SELECT
-                fixture_id,
-                league,
-                home_team,
-                away_team,
-                kickoff_utc,
-                model_home_p,
-                model_draw_p,
-                model_away_p,
-                predicted_side,
-                edge_value,
-                actual_result
+            SELECT fixture_id, league, kickoff_utc, home_team, away_team, predicted_side, actual_result
             FROM predictions_history
             WHERE league = ?
-              AND predicted_side IS NOT NULL
               AND actual_result IS NOT NULL
+              AND TRIM(actual_result) <> ''
             ORDER BY kickoff_utc DESC
+            LIMIT ?
             """,
-            (league,),
+            (league, limit),
         )
         rows = cur.fetchall()
+        conn.close()
+
+        fixtures = []
+        for fixture_id, league_id, kickoff, home, away, predicted, actual in rows:
+            home_logo, away_logo = get_fixture_logos(int(fixture_id))  # safe now
+
+            fixtures.append(
+                {
+                    "fixture_id": fixture_id,
+                    "league": league_id,
+                    "kickoff_utc": kickoff,
+                    "home_team": home,
+                    "away_team": away,
+                    "predicted_side": predicted,
+                    "actual_result": actual,
+                    "home_logo": home_logo,
+                    "away_logo": away_logo,
+                }
+            )
+
+        return {"ok": True, "league": league, "limit": limit, "fixtures": fixtures}
+
     except Exception as e:
+        # frontend should get JSON, not HTTP 500
         try:
-            conn.close()
+            logger.exception("[RESULTS] /results/recent failed")
         except Exception:
             pass
-        return {"ok": False, "error": str(e)}
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        return {"ok": False, "league": league, "limit": limit, "fixtures": [], "error": str(e)}
 
-    fixtures = []
-    seen_fixture_ids = set()
-
-    for (
-        fixture_id,
-        lg,
-        home_team,
-        away_team,
-        kickoff_utc,
-        ph,
-        pd,
-        pa,
-        predicted_side,
-        edge_value,
-        actual_result,
-    ) in rows:
-        if fixture_id in seen_fixture_ids:
-            continue  # skip duplicates
-
-        seen_fixture_ids.add(fixture_id)
-        won = bool(actual_result and predicted_side and actual_result == predicted_side)
-
-        # ✅ real logos from API-FOOTBALL (cached per fixture)
-        home_logo, away_logo = get_fixture_logos(fixture_id)
-
-        fixtures.append(
-            {
-                "fixture_id": fixture_id,
-                "league": lg,
-                "home_team": home_team,
-                "away_team": away_team,
-                "home_logo": home_logo,
-                "away_logo": away_logo,
-                "kickoff_utc": kickoff_utc,
-                "model_probs": {"home": ph, "draw": pd, "away": pa},
-                "predicted_side": predicted_side,
-                "edge_value": edge_value,
-                "actual_result": actual_result,
-                "won": won,
-            }
-        )
-
-        if len(fixtures) >= limit:
-            break
-
-    return {
-        "ok": True,
-        "count": len(fixtures),
-        "fixtures": fixtures,
-    }
-
-
-
-# =========================================================
-# ⚽ AUTO-UPDATE ACTUAL RESULTS AFTER MATCHES FINISH
-# =========================================================
 @app.get("/update-results", dependencies=[Depends(require_admin)])
 def api_update_results(
     league: int = Query(39, description="League ID"),
