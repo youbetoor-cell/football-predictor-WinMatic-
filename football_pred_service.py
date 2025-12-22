@@ -5499,3 +5499,50 @@ def model_info(league: int = 39):
         }
     except Exception as e:
         return {"ok": False, "league": int(league), "error": str(e)}
+
+
+# ============================
+# WINMATIC_BUILDER_RESOLVER_V4
+# Prevents recursion + missing builder crashes.
+# ============================
+def _winmatic_empty_builder(*args, **kwargs):
+    return []
+
+def _winmatic_resolve_builder():
+    g = globals()
+
+    # If there's already a callable builder and it's NOT the *_old wrapper, keep it
+    cur = g.get("build_predictions_for_fixtures")
+    old = g.get("build_predictions_for_fixtures_old")
+    if callable(cur) and (old is None or cur is not old):
+        return cur
+
+    # Prefer known names if they exist
+    for name in (
+        "build_predictions_for_fixtures_impl",
+        "build_predictions_for_fixtures_core",
+        "build_predictions_for_fixtures_v2",
+        "build_predictions_for_fixtures_new",
+    ):
+        fn = g.get(name)
+        if callable(fn):
+            return fn
+
+    # Otherwise pick any builder-like function except *_old
+    items = list(g.items())
+    for name, fn in items:
+        if not callable(fn):
+            continue
+        if name == "build_predictions_for_fixtures_old":
+            continue
+        if name.startswith("build_predictions_for_"):
+            return fn
+
+    return _winmatic_empty_builder
+
+try:
+    _chosen = _winmatic_resolve_builder()
+    globals()["build_predictions_for_fixtures"] = _chosen
+except Exception:
+    globals()["build_predictions_for_fixtures"] = _winmatic_empty_builder
+# ============================
