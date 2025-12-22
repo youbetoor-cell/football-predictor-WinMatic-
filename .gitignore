@@ -1,45 +1,16 @@
-
-# local db / exports
-data/predictions_history.db
-data/predictions_history_BACKUP.db
-history_backup.json
-
-# python cache
-__pycache__/
-*.pyc
-
-# local python cache
-__pycache__/
-*.pyc
-
-# local sqlite / dumps / backups
-data/predictions_history.db
-data/predictions_history_BACKUP.db
-winmatic_dump.sql
-history_backup.json
-
-# local one-off copies
-football_pred_service*.py
-static/*_16:12:2025.html
-static/js/status_16:12*.js
-static/predictor_16:12*.html
-static/value_16:12*.html
-static/results_16:12*.html
-static/bets_16:12*.html
-
-# Never commit local virtualenvs
-env/
+# local venvs
 .venv/
-venv/
+env/
 
-# Local data
-data/
+# local databases / data dumps
+data/*.db
 *.db
-*.sqlite
-*.sqlite3
+recent_*.json
 
-# backups
+# patch backups / temp
 *.bak
 *.patchbak
 Terminal Saved Output
-recent_*.json
+
+# macOS
+.DS_Store
