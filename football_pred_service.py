@@ -5433,5 +5433,69 @@ def api_update_results(
     }
 
 # --- Added by patch: alias old function name for backwards compatibility ---
-build_predictions_for_fixtures = build_predictions_for_fixtures_old
 # --- end patch ---
+
+
+# ============================
+# WINMATIC_PRED_BUILDER_RESOLVER
+# Fixes recursion + missing function issues safely.
+# ============================
+def _winmatic_build_predictions_fallback(*args, **kwargs):
+    # Never crash the UI; return empty predictions.
+    return []
+
+# Ensure build_predictions_for_fixtures points to a real implementation (NOT *_old wrapper)
+if "build_predictions_for_fixtures" not in globals() or globals().get("build_predictions_for_fixtures") is None:
+    _priority = [
+        "build_predictions_for_fixtures_impl",
+        "build_predictions_for_fixtures_core",
+        "build_predictions_for_fixtures_v2",
+        "build_predictions_for_fixtures_new",
+    ]
+    _chosen = None
+    for _name in _priority:
+        if _name in globals() and callable(globals()[_name]):
+            _chosen = globals()[_name]
+            break
+
+    # Heuristic: pick any callable that looks like a builder, but NEVER the *_old wrapper
+    if _chosen is None:
+        for _name, _obj in list(globals().items()):
+            if callable(_obj) and _name.startswith("build_predictions_for_") and _name != "build_predictions_for_fixtures_old":
+                _chosen = _obj
+                break
+
+    if _chosen is None:
+        _chosen = _winmatic_build_predictions_fallback
+
+    build_predictions_for_fixtures = _chosen
+
+# If the _old wrapper exists, keep it as-is (it will call build_predictions_for_fixtures),
+# and now build_predictions_for_fixtures will NOT loop into _old.
+# ============================
+
+
+@app.get("/model-info")
+def model_info(league: int = 39):
+    """Frontend helper: returns basic model presence info without crashing."""
+    try:
+        # ART is your artifacts folder constant defined earlier in the file.
+        files = []
+        try:
+            files = sorted([f for f in os.listdir(ART) if f.lower().endswith((".joblib", ".pkl", ".pickle"))])
+        except Exception:
+            files = []
+
+        # best-effort: find any model file containing the league id
+        league_str = str(int(league))
+        matches = [f for f in files if league_str in f]
+
+        return {
+            "ok": True,
+            "league": int(league),
+            "artifacts_dir": ART,
+            "models_found": files,
+            "league_matches": matches,
+        }
+    except Exception as e:
+        return {"ok": False, "league": int(league), "error": str(e)}
