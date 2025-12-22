@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+# --- Added by patch: safe TrainRequest model (prevents Render import crash) ---
+from typing import Optional, List
+from pydantic import BaseModel, Field
+
+class TrainRequest(BaseModel):
+    league: Optional[int] = Field(default=None, description="League ID (e.g., 39 for EPL)")
+    seasons: Optional[List[int]] = Field(default=None, description="List of season years to train on")
+    force: bool = Field(default=False, description="Force retrain even if model exists")
+    model_config = {"extra": "allow"}
+# --- end patch ---
+
 """
 WinMatic backend — cleaned and patched:
 - Serve /static correctly
@@ -2899,7 +2911,7 @@ def health():
     return {"ok": True, "ts": datetime.utcnow().isoformat(), "version": PATCH_VERSION}
 
 @app.post("/train", dependencies=[Depends(require_admin)])
-def api_train(req: TrainRequest):
+def api_train(req: "TrainRequest"):
     seasons = req.seasons or DEFAULT_SEASONS
     logger.info("[TRAIN API] league=%s seasons=%s", req.league, seasons)
     info = train_model(req.league, seasons)
