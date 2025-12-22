@@ -5546,3 +5546,40 @@ try:
 except Exception:
     globals()["build_predictions_for_fixtures"] = _winmatic_empty_builder
 # ============================
+
+
+# ============================
+# WINMATIC_API_GET_WRAPPER
+# Guarantees api_get never returns None and always has dict shape.
+# ============================
+try:
+    _api_get_original = api_get
+    def api_get(path, params=None):
+        try:
+            data = _api_get_original(path, params or {})
+        except Exception as e:
+            try:
+                logger.warning("[API_GET] exception: %s", e)
+            except Exception:
+                pass
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        # normalize response/errors keys so callers can safely do .get("response")
+        if "response" not in data or data.get("response") is None:
+            data["response"] = []
+        if "errors" not in data or data.get("errors") is None:
+            data["errors"] = []
+        return data
+except Exception:
+    pass
+# ============================
+
+
+@app.get("/debug/preflight")
+def debug_preflight():
+    checks = {}
+    checks["has_api_get"] = callable(globals().get("api_get"))
+    checks["has_get_fixture_logos"] = callable(globals().get("get_fixture_logos"))
+    checks["has_builder"] = callable(globals().get("build_predictions_for_fixtures")) or callable(globals().get("build_predictions_for_fixtures_old"))
+    return {"ok": True, "checks": checks}
