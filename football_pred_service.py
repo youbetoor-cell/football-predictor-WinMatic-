@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 WinMatic backend — cleaned and patched:
 - Serve /static correctly
@@ -46,6 +47,23 @@ import pandas as pd
 import requests
 from joblib import dump, load
 from pydantic import BaseModel, Field
+
+
+# --- Added by patch: safe TrainRequest model (prevents Render import crash) ---
+from typing import Any, Optional, List, Dict
+from pydantic import BaseModel, Field
+
+class TrainRequest(BaseModel):
+    """
+    Safe default TrainRequest model.
+    Extra fields are allowed so older frontends/scripts won't break.
+    """
+    league: Optional[int] = Field(default=None, description="League ID (e.g., 39 for EPL)")
+    seasons: Optional[List[int]] = Field(default=None, description="List of season years to train on")
+    force: bool = Field(default=False, description="Force retrain even if model exists")
+    model_config = {"extra": "allow"}
+# --- end patch ---
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Depends, Header, Path as ApiPath
 from fastapi.middleware.cors import CORSMiddleware
