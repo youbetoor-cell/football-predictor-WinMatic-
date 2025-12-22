@@ -5431,3 +5431,7 @@ def api_update_results(
         "updated": updated,
         "message": f"Updated {updated} finished fixtures for league {league}.",
     }
+
+# --- Added by patch: alias old function name for backwards compatibility ---
+build_predictions_for_fixtures = build_predictions_for_fixtures_old
+# --- end patch ---
