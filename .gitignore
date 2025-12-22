@@ -26,3 +26,20 @@ static/predictor_16:12*.html
 static/value_16:12*.html
 static/results_16:12*.html
 static/bets_16:12*.html
+
+# Never commit local virtualenvs
+env/
+.venv/
+venv/
+
+# Local data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# backups
+*.bak
+*.patchbak
+Terminal Saved Output
+recent_*.json
