@@ -5639,3 +5639,43 @@ async def _winmatic_normalize_predict_payload(request: Request, call_next):
     headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
     return JSONResponse(content=data, status_code=resp.status_code, headers=headers)
 # ============================
+
+
+# ============================
+# WINMATIC_PREDICTIONS_ALIAS_MIDDLEWARE_V1
+# Frontend compatibility: if API returns fixtures[], also expose predictions[].
+# Works even if handler function names change.
+# ============================
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import json as _json
+
+@app.middleware("http")
+async def _winmatic_predictions_alias_mw(request: Request, call_next):
+    resp = await call_next(request)
+
+    if request.url.path not in ("/predict/upcoming", "/value/upcoming"):
+        return resp
+
+    ctype = (resp.headers.get("content-type") or "").lower()
+    if "application/json" not in ctype:
+        return resp
+
+    body = b""
+    async for chunk in resp.body_iterator:
+        body += chunk
+
+    try:
+        data = _json.loads(body.decode("utf-8") or "{}")
+    except Exception:
+        # If JSON invalid, return original body
+        return JSONResponse(content={"ok": False, "error": "Invalid JSON"}, status_code=200)
+
+    if isinstance(data, dict):
+        fx = data.get("fixtures")
+        if isinstance(fx, list) and "predictions" not in data:
+            data["predictions"] = fx
+
+    headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
+    return JSONResponse(content=data, status_code=resp.status_code, headers=headers)
+# ============================
