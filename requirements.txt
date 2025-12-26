@@ -2,10 +2,10 @@ fastapi
 uvicorn[standard]
 numpy
 pandas
-scikit-learn
 joblib
 requests
 python-dotenv
 pydantic
 psycopg2-binary
 gunicorn==23.0.0
+scikit-learn==1.7.2
