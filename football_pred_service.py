@@ -1,168 +1,3 @@
-
-
-def _safe_int(x, default=None):
-    try:
-        return int(x)
-    except Exception:
-        return default
-
-def _poisson_1x2_probs_from_xg(home_xg: float, away_xg: float, max_goals: int = 8):
-    hx = max(0.05, min(float(home_xg or 0.0), 6.5))
-    ax = max(0.05, min(float(away_xg or 0.0), 6.5))
-    hp = [poisson(hx, i) for i in range(max_goals + 1)]
-    ap = [poisson(ax, i) for i in range(max_goals + 1)]
-    hs = sum(hp) or 1.0
-    as_ = sum(ap) or 1.0
-    hp = [p / hs for p in hp]
-    ap = [p / as_ for p in ap]
-    home = draw = away = 0.0
-    for i in range(max_goals + 1):
-        for j in range(max_goals + 1):
-            p = hp[i] * ap[j]
-            if i > j:
-                home += p
-            elif i == j:
-                draw += p
-            else:
-                away += p
-    s = home + draw + away
-    if s:
-        home, draw, away = home / s, draw / s, away / s
-    return home, draw, away
-
-def _fetch_last_finished_fixtures(league: int, season: int, last_n: int = 240):
-    params = {"league": league, "season": season, "last": last_n}
-    data = api_get("/fixtures", params)
-    items = (data or {}).get("response") or []
-    finished = []
-    for it in items:
-        st = (it.get("fixture") or {}).get("status") or {}
-        short = (st.get("short") or "").upper()
-        if short in {"FT", "AET", "PEN"}:
-            finished.append(it)
-    return finished
-
-def _league_team_goal_tables(league: int, season: int):
-    finished = _fetch_last_finished_fixtures(league, season, last_n=240)
-    if not finished:
-        return {"league_home_avg": 1.45, "league_away_avg": 1.10, "teams": {}}
-
-    teams = {}
-    home_goals = []
-    away_goals = []
-
-    def get_team(tid):
-        if tid not in teams:
-            teams[tid] = {"home_for": 0, "home_against": 0, "home_n": 0, "away_for": 0, "away_against": 0, "away_n": 0}
-        return teams[tid]
-
-    for it in finished:
-        t = it.get("teams") or {}
-        h = t.get("home") or {}
-        a = t.get("away") or {}
-        hid = _safe_int(h.get("id"))
-        aid = _safe_int(a.get("id"))
-        g = it.get("goals") or {}
-        hg = _safe_int(g.get("home"), 0)
-        ag = _safe_int(g.get("away"), 0)
-        if hid is None or aid is None:
-            continue
-        home_goals.append(hg)
-        away_goals.append(ag)
-        th = get_team(hid)
-        ta = get_team(aid)
-        th["home_for"] += hg
-        th["home_against"] += ag
-        th["home_n"] += 1
-        ta["away_for"] += ag
-        ta["away_against"] += hg
-        ta["away_n"] += 1
-
-    league_home_avg = (sum(home_goals) / len(home_goals)) if home_goals else 1.45
-    league_away_avg = (sum(away_goals) / len(away_goals)) if away_goals else 1.10
-    return {"league_home_avg": league_home_avg, "league_away_avg": league_away_avg, "teams": teams}
-
-def baseline_build_predictions_for_fixtures(fixtures: list, league: int, season: int, window_start=None, window_end=None):
-    """Baseline predictor used when ML artifacts are missing."""
-    stats = _league_team_goal_tables(league, season)
-    league_home_avg = stats["league_home_avg"]
-    league_away_avg = stats["league_away_avg"]
-    teams = stats["teams"]
-
-    def rates(tid: int):
-        t = teams.get(tid) or {}
-        hf = (t.get("home_for", 0) / (t.get("home_n") or 1)) if t.get("home_n") else None
-        ha = (t.get("home_against", 0) / (t.get("home_n") or 1)) if t.get("home_n") else None
-        af = (t.get("away_for", 0) / (t.get("away_n") or 1)) if t.get("away_n") else None
-        aa = (t.get("away_against", 0) / (t.get("away_n") or 1)) if t.get("away_n") else None
-        return hf, ha, af, aa
-
-    out = []
-    for fx in fixtures or []:
-        if window_start or window_end:
-            try:
-                kickoff = fx.get("kickoff_utc")
-                if kickoff:
-                    kd = datetime.fromisoformat(str(kickoff).replace("Z", "+00:00"))
-                    if window_start and kd < window_start:
-                        continue
-                    if window_end and kd > window_end:
-                        continue
-            except Exception:
-                pass
-
-        hid = _safe_int(fx.get("home_id"))
-        aid = _safe_int(fx.get("away_id"))
-        hf, ha, _, _ = rates(hid) if hid is not None else (None, None, None, None)
-        _, _, af2, aa2 = rates(aid) if aid is not None else (None, None, None, None)
-
-        home_attack = (hf / league_home_avg) if (hf is not None and league_home_avg) else 1.0
-        away_def = (aa2 / league_home_avg) if (aa2 is not None and league_home_avg) else 1.0
-        away_attack = (af2 / league_away_avg) if (af2 is not None and league_away_avg) else 1.0
-        home_def = (ha / league_away_avg) if (ha is not None and league_away_avg) else 1.0
-
-        home_xg = league_home_avg * home_attack / max(0.3, away_def)
-        away_xg = league_away_avg * away_attack / max(0.3, home_def)
-
-        home_xg = max(0.2, min(home_xg, 4.5))
-        away_xg = max(0.2, min(away_xg, 4.5))
-
-        hw, dr, aw = _poisson_1x2_probs_from_xg(home_xg, away_xg)
-
-        home_sot = max(1.0, min(10.0, home_xg * 2.2 + 1.2))
-        away_sot = max(0.8, min(10.0, away_xg * 2.2 + 1.0))
-        home_corners = max(1.0, min(12.0, home_xg * 1.7 + 3.0))
-        away_corners = max(1.0, min(12.0, away_xg * 1.7 + 3.0))
-
-        out.append({
-            "fixture_id": fx.get("fixture_id"),
-            "kickoff_utc": fx.get("kickoff_utc"),
-            "home": fx.get("home"),
-            "away": fx.get("away"),
-            "home_name": fx.get("home") or fx.get("home_name"),
-            "away_name": fx.get("away") or fx.get("away_name"),
-            "home_id": hid,
-            "away_id": aid,
-            "home_form": fx.get("home_form"),
-            "away_form": fx.get("away_form"),
-            "predictions": {
-                "home_goals": round(float(home_xg), 2),
-                "away_goals": round(float(away_xg), 2),
-                "home_win_p": round(float(hw), 4),
-                "draw_p": round(float(dr), 4),
-                "away_win_p": round(float(aw), 4),
-                "home_sot": round(float(home_sot), 2),
-                "away_sot": round(float(away_sot), 2),
-                "home_corners": round(float(home_corners), 2),
-                "away_corners": round(float(away_corners), 2),
-                "home_yellows": 1.6,
-                "away_yellows": 1.8,
-                "home_reds": 0.05,
-                "away_reds": 0.05,
-            },
-            "players_to_score": fx.get("players_to_score") or [],
-        })
-    return out
 #!/usr/bin/env python3
 """
 WinMatic backend — cleaned and patched:
@@ -380,10 +215,6 @@ CACHE_ONLY_MODE = os.getenv("WINMATIC_CACHE_ONLY", "0") == "1"
 API_QUOTA_EXHAUSTED = False  # becomes True after daily limit is hit
 
 DB_PATH = os.path.join("data", "predictions_history.db")
-
-# Backward-compat: older code referenced HISTORY_DB_PATH
-HISTORY_DB_PATH = DB_PATH
-
 os.makedirs("data", exist_ok=True)
 
 
@@ -539,23 +370,6 @@ def cached_api_response(path: str, params: Dict[str, Any]) -> Optional[Dict[str,
                 logger.info("[API CACHE HIT] %s (api_disk_cache)", key)
                 return {"response": entry["data"]}
     return None
-
-
-def cache_api_response(path: str, params: dict, data: dict) -> None:
-    """Best-effort on-disk cache for upstream API responses."""
-    try:
-        from pathlib import Path
-        import os, json
-        cache_dir = Path(os.getenv("API_CACHE_DIR", "api_cache"))
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        safe_path = path.strip("/").replace("/", "_") or "root"
-        key_items = [(str(k), str(v)) for k, v in (params or {}).items()]
-        key_items.sort()
-        key = "&".join([f"{k}={v}" for k, v in key_items])
-        fp = cache_dir / f"{safe_path}__{hash(key)}.json"
-        fp.write_text(json.dumps({"path": path, "params": params, "data": data}, ensure_ascii=False), encoding="utf-8")
-    except Exception:
-        return
 
 def cached_upcoming_fixtures(league: int, season: int, next_count: int = 50) -> List[Dict[str, Any]]:
     cached = cached_api_response("/fixtures", {"league": league, "season": season, "next": next_count})
@@ -3077,8 +2891,19 @@ def team_logo(team_id: int):
 
 @app.get("/health")
 def health():
-    commit = os.getenv('RENDER_GIT_COMMIT') or os.getenv('GIT_COMMIT')
-    return {'ok': True, 'ts': datetime.utcnow().isoformat(), 'version': PATCH_VERSION, 'commit': commit}
+    return {"ok": True, "ts": datetime.utcnow().isoformat()}
+
+# ============================================================
+# Pydantic
+# ============================================================
+
+class TrainRequest(BaseModel):
+    league: int = Field(DEFAULT_LEAGUE)
+    seasons: Optional[List[int]] = Field(default=None, description="List of seasons to train on (e.g. [2021,2022,2023])")
+
+# ------------------------------------------------------------
+# ⭐ PASTE build_predictions_for_fixtures HERE
+# ------------------------------------------------------------
 
 def build_predictions_for_fixtures(
     fixtures: List[Dict[str, Any]],
@@ -3220,12 +3045,6 @@ def build_predictions_for_fixtures(
 # ============================================================
 
 @app.post("/train", dependencies=[Depends(require_admin)])
-
-
-class TrainRequest(BaseModel):
-    league: int = Field(DEFAULT_LEAGUE, description="League ID")
-    seasons: Optional[List[int]] = Field(default=None, description="Seasons list, e.g. [2023, 2024]")
-
 def api_train(req: TrainRequest):
     seasons = req.seasons or DEFAULT_SEASONS
     logger.info("[TRAIN API] league=%s seasons=%s", req.league, seasons)
@@ -3237,13 +3056,20 @@ def api_predict_upcoming(
     league: int = Query(DEFAULT_LEAGUE),
     days_ahead: int = Query(7, ge=1, le=14),
 ):
-    model = None
-    meta = None
     try:
         model, meta = load_model_and_meta(league)
     except HTTPException:
-        # No trained model artifacts yet; still return live predictions via baseline.
-        model, meta = None, None
+        # Fall back to snapshot if model not available
+        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead)
+        if snapshot:
+            return {
+                "ok": True,
+                "count": len(snapshot),
+                "fixtures": snapshot,
+                "source": "snapshot",
+                "snapshot_file": os.path.basename(snap_path) if snap_path else None,
+            }
+        raise
 
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days_ahead)
@@ -3260,16 +3086,7 @@ def api_predict_upcoming(
 
     results: List[Dict[str, Any]] = []
     if fixtures:
-        if model is None or meta is None:
-            results = baseline_build_predictions_for_fixtures(
-                fixtures=fixtures,
-                league=league,
-                season=season,
-                window_start=now,
-                window_end=end,
-            )
-        else:
-            results = build_predictions_for_fixtures(
+        results = build_predictions_for_fixtures(
             fixtures=fixtures,
             model=model,
             meta=meta,
@@ -3277,16 +3094,73 @@ def api_predict_upcoming(
             season=season,
             window_start=now,
             window_end=end,
-            )
+        )
 
+    # Enrich predictor payload: ensure 1x2 probs + names + (best-effort) 1x2 odds
+    odds_calls = 0
+    for fx in (results or []):
+        if not isinstance(fx, dict):
+            continue
+        # name aliases
+        if fx.get('home_name') is None and fx.get('home') is not None:
+            fx['home_name'] = fx.get('home')
+        if fx.get('away_name') is None and fx.get('away') is not None:
+            fx['away_name'] = fx.get('away')
+
+        preds = fx.get('predictions') or {}
+        if isinstance(preds, dict):
+            hxg = preds.get('home_goals')
+            axg = preds.get('away_goals')
+            if preds.get('home_win_p') is None and hxg is not None and axg is not None:
+                try:
+                    probs = poisson_1x2_probs(float(hxg), float(axg), max_goals=10)
+                    preds['home_win_p'] = round(float(probs.get('home_win_p', 0.0)), 3)
+                    preds['draw_p'] = round(float(probs.get('draw_p', 0.0)), 3)
+                    preds['away_win_p'] = round(float(probs.get('away_win_p', 0.0)), 3)
+                except Exception:
+                    pass
+            fx['predictions'] = preds
+
+        # odds (optional + capped)
+        if (not fx.get('odds_1x2')):
+            ko = fx.get('kickoff_utc')
+            if odds_calls < ODDS_MAX_CALLS_PER_RUN and _within_odds_window(ko):
+                odds_calls += 1
+                try:
+                    odds = fetch_1x2_odds_for_fixture(int(fx.get('fixture_id')))
+                    if odds:
+                        fx['odds_1x2'] = odds
+                        implied = implied_probs_1x2(odds)
+                        if implied and isinstance(implied, dict):
+                            p = fx.get('predictions') or {}
+                            edges = {}
+                            for side, pk in [('home','home_win_p'),('draw','draw_p'),('away','away_win_p')]:
+                                mp = implied.get(side)
+                                pp = p.get(pk)
+                                if mp is not None and pp is not None:
+                                    edges[side] = float(pp) - float(mp)
+                            if edges:
+                                best_side = max(edges, key=lambda k: edges[k])
+                                fx['best_edge'] = round(edges[best_side], 3)
+                                fx['value_side'] = best_side
+                except Exception:
+                    pass
 
     if not results:
+        snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead)
+        if snapshot:
+            return {
+                "ok": True,
+                "count": len(snapshot),
+                "fixtures": snapshot,
+                "source": "snapshot",
+                "snapshot_file": os.path.basename(snap_path) if snap_path else None,
+            }
         return {
             "ok": False,
             "count": 0,
             "fixtures": [],
-            "predictions": [],
-            "detail": "No fixtures available for the requested window.",
+            "detail": "No fixtures available. Train the model or provide cached data.",
         }
 
     # 👉 Add reasoning to each result, keeping your existing structure
@@ -3294,32 +3168,12 @@ def api_predict_upcoming(
         p["reasoning"] = build_reasoning_for_prediction(p, meta)
 
     # Save to history (now including reasoning)
-    # Attach market odds (best-effort) and compute value edges
-    try:
-        odds_rows = scan_odds_1x2_for_fixtures(results, league=league, season=season)
-        odds_map = {r.get("fixture_id"): r for r in (odds_rows or [])}
-        for _fx in results:
-            row = odds_map.get(_fx.get("fixture_id"))
-            if row:
-                _fx["odds_1x2"] = row.get("odds_1x2")
-                _fx["best_edge"] = row.get("best_edge")
-                _fx["value_side"] = row.get("value_side")
-    except Exception:
-        pass
-
-    # Normalize schema fields expected by older frontend clients
-    for _fx in results:
-        if isinstance(_fx, dict):
-            _fx.setdefault("home_name", _fx.get("home"))
-            _fx.setdefault("away_name", _fx.get("away"))
-
     record_predictions_history(league, results)
 
     return {
         "ok": True,
         "count": len(results),
         "fixtures": results,
-        "predictions": results,
         "source": "model",
     }
 
@@ -3579,12 +3433,11 @@ def api_value_upcoming(
     This version is quota-safe: it limits the number of live /odds calls
     per request.
     """
-    model = None
-    meta = None
     try:
         model, meta = load_model_and_meta(league)
     except HTTPException:
-        model, meta = None, None
+        # If no model, we can't compute value
+        raise
 
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days_ahead)
@@ -3604,16 +3457,7 @@ def api_value_upcoming(
         raise HTTPException(status_code=404, detail="No upcoming fixtures found to evaluate value.")
 
     # Model predictions for these fixtures
-    if model is None or meta is None:
-        predictions = baseline_build_predictions_for_fixtures(
-            fixtures=fixtures,
-            league=league,
-            season=season,
-            window_start=start,
-            window_end=end,
-        )
-    else:
-        predictions = build_predictions_for_fixtures(
+    predictions = build_predictions_for_fixtures(
         fixtures=fixtures,
         model=model,
         meta=meta,
@@ -3621,8 +3465,7 @@ def api_value_upcoming(
         season=season,
         window_start=now,
         window_end=end,
-        )
-
+    )
 
     value_rows: List[Dict[str, Any]] = []
 
@@ -3816,7 +3659,6 @@ def api_value_upcoming(
             "ok": True,
             "count": 0,
             "fixtures": [],
-            "predictions": [],
             "detail": f"No fixtures with edge >= {min_edge:.2f} found.",
         }
 
@@ -3828,7 +3670,6 @@ def api_value_upcoming(
         "ok": True,
         "count": len(value_rows),
         "fixtures": value_rows,
-        "predictions": value_rows,
         "source": "model+odds",
         "min_edge": min_edge,
     }
@@ -4846,16 +4687,16 @@ def api_progress_roi(
 @app.get("/predict/by-date")
 def api_predict_by_date(
     league: int = Query(DEFAULT_LEAGUE),
-    date: Optional[str] = Query(None, description="YYYY-MM-DD (alias; sets from_date=to_date)"),
     from_date: Optional[str] = Query(None, description="YYYY-MM-DD start date"),
     to_date: Optional[str] = Query(None, description="YYYY-MM-DD end date (inclusive)"),
+    date: Optional[str] = Query(None, description="YYYY-MM-DD (alias for from_date=to_date)"),
 ):
     # Backward-compatible: allow ?date=YYYY-MM-DD (maps to from_date=to_date)
-    if (from_date is None or to_date is None) and date:
-        from_date = from_date or date
-        to_date = to_date or date
+    if (not from_date and not to_date) and date:
+        from_date = date
+        to_date = date
     if not from_date:
-        raise HTTPException(status_code=422, detail="Missing required query params: from_date (or date=YYYY-MM-DD)")
+        raise HTTPException(status_code=422, detail="Missing required query params: from_date & to_date (or date=YYYY-MM-DD)")
 
     window_start, window_end, from_str, to_str = parse_date_range_or_400(from_date, to_date)
     try:
@@ -5583,13 +5424,6 @@ def debug_pending_results(
 # 📊 RECENT RESULTS (for Results page)
 # =========================================================
 from datetime import datetime, timezone, timedelta  # make sure this is imported at top
-import json as _json
-from typing import Any, Optional
-from fastapi import Request, Query, HTTPException
-from fastapi.responses import JSONResponse
-from typing import Optional, List
-PATCH_VERSION = "patch-2025-12-26-v4"
-
 
 
 @app.get("/results/recent")
@@ -5740,84 +5574,3 @@ def api_update_results(
         "updated": updated,
         "message": f"Updated {updated} finished fixtures for league {league}.",
     }
-
-@app.middleware("http")
-async def _winmatic_frontend_compat_mw(request: Request, call_next):
-    """
-    Frontend compatibility layer (no schema-breaking changes to business logic).
-
-    Ensures the UI keeps working even when the backend returns:
-      - `fixtures` instead of `predictions`
-      - `home` / `away` instead of `home_name` / `away_name`
-      - missing 1X2 probabilities (derive from Poisson using predicted goals)
-    """
-    resp = await call_next(request)
-
-    if request.url.path not in ("/predict/upcoming", "/value/upcoming", "/results/recent"):
-        return resp
-
-    ctype = (resp.headers.get("content-type") or "").lower()
-    if "application/json" not in ctype:
-        return resp
-
-    body = b""
-    async for chunk in resp.body_iterator:
-        body += chunk
-
-    try:
-        data = _json.loads(body.decode("utf-8") or "{}")
-    except Exception:
-        return JSONResponse(content={"ok": False, "error": "Invalid JSON"}, status_code=200)
-
-    def _norm_fixture(fx: Any) -> Any:
-        if not isinstance(fx, dict):
-            return fx
-
-        # Names: support both old+new keys
-        if not fx.get("home_name") and fx.get("home"):
-            fx["home_name"] = fx.get("home")
-        if not fx.get("away_name") and fx.get("away"):
-            fx["away_name"] = fx.get("away")
-
-        # Keep legacy keys too
-        if not fx.get("home") and fx.get("home_name"):
-            fx["home"] = fx.get("home_name")
-        if not fx.get("away") and fx.get("away_name"):
-            fx["away"] = fx.get("away_name")
-
-        preds = fx.get("predictions")
-        if isinstance(preds, dict):
-            hg = preds.get("home_goals")
-            ag = preds.get("away_goals")
-            if hg is not None and ag is not None:
-                try:
-                    probs = poisson_1x2_probs(float(hg), float(ag))
-                    preds.setdefault("home_win_p", probs.get("home"))
-                    preds.setdefault("draw_p", probs.get("draw"))
-                    preds.setdefault("away_win_p", probs.get("away"))
-
-                    # extra aliases (some pages use these)
-                    preds.setdefault("prob_home_win", preds.get("home_win_p"))
-                    preds.setdefault("prob_draw", preds.get("draw_p"))
-                    preds.setdefault("prob_away_win", preds.get("away_win_p"))
-                except Exception:
-                    pass
-
-        # Safe defaults so the UI doesn't hide sections
-        if "odds_1x2" not in fx or fx.get("odds_1x2") is None:
-            fx["odds_1x2"] = {}
-        fx.setdefault("best_edge", None)
-        fx.setdefault("value_side", None)
-
-        return fx
-
-    if isinstance(data, dict):
-        if isinstance(data.get("fixtures"), list):
-            data["fixtures"] = [_norm_fixture(x) for x in (data.get("fixtures") or [])]
-            data.setdefault("predictions", data["fixtures"])
-        elif isinstance(data.get("predictions"), list):
-            data["predictions"] = [_norm_fixture(x) for x in (data.get("predictions") or [])]
-            data.setdefault("fixtures", data["predictions"])
-
-    headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
-    return JSONResponse(content=data, status_code=resp.status_code, headers=headers)
