@@ -3220,6 +3220,12 @@ def build_predictions_for_fixtures(
 # ============================================================
 
 @app.post("/train", dependencies=[Depends(require_admin)])
+
+
+class TrainRequest(BaseModel):
+    league: int = Field(DEFAULT_LEAGUE, description="League ID")
+    seasons: Optional[List[int]] = Field(default=None, description="Seasons list, e.g. [2023, 2024]")
+
 def api_train(req: TrainRequest):
     seasons = req.seasons or DEFAULT_SEASONS
     logger.info("[TRAIN API] league=%s seasons=%s", req.league, seasons)
@@ -5581,6 +5587,7 @@ import json as _json
 from typing import Any, Optional
 from fastapi import Request, Query, HTTPException
 from fastapi.responses import JSONResponse
+from typing import Optional, List
 PATCH_VERSION = "patch-2025-12-26-v4"
 
 
