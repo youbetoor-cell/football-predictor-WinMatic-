@@ -3077,19 +3077,8 @@ def team_logo(team_id: int):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "ts": datetime.utcnow().isoformat()}
-
-# ============================================================
-# Pydantic
-# ============================================================
-
-class TrainRequest(BaseModel):
-    league: int = Field(DEFAULT_LEAGUE)
-    seasons: Optional[List[int]] = Field(default=None, description="List of seasons to train on (e.g. [2021,2022,2023])")
-
-# ------------------------------------------------------------
-# ⭐ PASTE build_predictions_for_fixtures HERE
-# ------------------------------------------------------------
+    commit = os.getenv('RENDER_GIT_COMMIT') or os.getenv('GIT_COMMIT')
+    return {'ok': True, 'ts': datetime.utcnow().isoformat(), 'version': PATCH_VERSION, 'commit': commit}
 
 def build_predictions_for_fixtures(
     fixtures: List[Dict[str, Any]],
@@ -5588,6 +5577,12 @@ def debug_pending_results(
 # 📊 RECENT RESULTS (for Results page)
 # =========================================================
 from datetime import datetime, timezone, timedelta  # make sure this is imported at top
+import json as _json
+from typing import Any, Optional
+from fastapi import Request, Query, HTTPException
+from fastapi.responses import JSONResponse
+PATCH_VERSION = "patch-2025-12-26-v4"
+
 
 
 @app.get("/results/recent")
@@ -5738,3 +5733,84 @@ def api_update_results(
         "updated": updated,
         "message": f"Updated {updated} finished fixtures for league {league}.",
     }
+
+@app.middleware("http")
+async def _winmatic_frontend_compat_mw(request: Request, call_next):
+    """
+    Frontend compatibility layer (no schema-breaking changes to business logic).
+
+    Ensures the UI keeps working even when the backend returns:
+      - `fixtures` instead of `predictions`
+      - `home` / `away` instead of `home_name` / `away_name`
+      - missing 1X2 probabilities (derive from Poisson using predicted goals)
+    """
+    resp = await call_next(request)
+
+    if request.url.path not in ("/predict/upcoming", "/value/upcoming", "/results/recent"):
+        return resp
+
+    ctype = (resp.headers.get("content-type") or "").lower()
+    if "application/json" not in ctype:
+        return resp
+
+    body = b""
+    async for chunk in resp.body_iterator:
+        body += chunk
+
+    try:
+        data = _json.loads(body.decode("utf-8") or "{}")
+    except Exception:
+        return JSONResponse(content={"ok": False, "error": "Invalid JSON"}, status_code=200)
+
+    def _norm_fixture(fx: Any) -> Any:
+        if not isinstance(fx, dict):
+            return fx
+
+        # Names: support both old+new keys
+        if not fx.get("home_name") and fx.get("home"):
+            fx["home_name"] = fx.get("home")
+        if not fx.get("away_name") and fx.get("away"):
+            fx["away_name"] = fx.get("away")
+
+        # Keep legacy keys too
+        if not fx.get("home") and fx.get("home_name"):
+            fx["home"] = fx.get("home_name")
+        if not fx.get("away") and fx.get("away_name"):
+            fx["away"] = fx.get("away_name")
+
+        preds = fx.get("predictions")
+        if isinstance(preds, dict):
+            hg = preds.get("home_goals")
+            ag = preds.get("away_goals")
+            if hg is not None and ag is not None:
+                try:
+                    probs = poisson_1x2_probs(float(hg), float(ag))
+                    preds.setdefault("home_win_p", probs.get("home"))
+                    preds.setdefault("draw_p", probs.get("draw"))
+                    preds.setdefault("away_win_p", probs.get("away"))
+
+                    # extra aliases (some pages use these)
+                    preds.setdefault("prob_home_win", preds.get("home_win_p"))
+                    preds.setdefault("prob_draw", preds.get("draw_p"))
+                    preds.setdefault("prob_away_win", preds.get("away_win_p"))
+                except Exception:
+                    pass
+
+        # Safe defaults so the UI doesn't hide sections
+        if "odds_1x2" not in fx or fx.get("odds_1x2") is None:
+            fx["odds_1x2"] = {}
+        fx.setdefault("best_edge", None)
+        fx.setdefault("value_side", None)
+
+        return fx
+
+    if isinstance(data, dict):
+        if isinstance(data.get("fixtures"), list):
+            data["fixtures"] = [_norm_fixture(x) for x in (data.get("fixtures") or [])]
+            data.setdefault("predictions", data["fixtures"])
+        elif isinstance(data.get("predictions"), list):
+            data["predictions"] = [_norm_fixture(x) for x in (data.get("predictions") or [])]
+            data.setdefault("fixtures", data["predictions"])
+
+    headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
+    return JSONResponse(content=data, status_code=resp.status_code, headers=headers)
