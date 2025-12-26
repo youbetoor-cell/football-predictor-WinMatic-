@@ -28,3 +28,18 @@ Terminal Saved Output
 *.patchbak
 data/*.db
 recent_*.json
+
+# local envs / caches
+.venv/
+env/
+__pycache__/
+*.pyc
+
+# local data
+data/*.db
+*.bak
+*.patchbak
+
+# misc
+Terminal Saved Output
+recent_*.json
