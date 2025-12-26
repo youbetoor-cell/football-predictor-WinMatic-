@@ -21,3 +21,10 @@ data/*.db
 *.patchbak
 Terminal Saved Output
 recent_*.json
+.venv/
+env/
+Terminal Saved Output
+*.bak
+*.patchbak
+data/*.db
+recent_*.json
