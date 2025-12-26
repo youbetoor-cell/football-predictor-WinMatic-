@@ -2917,6 +2917,109 @@ def api_train(req: "TrainRequest"):
     info = train_model(req.league, seasons)
     return {"ok": True, "info": info}
 
+
+# ---------------------------------------------------------------------------
+# Predictor payload normalization (front-end compatibility)
+# Ensures predictor.html can read team names, xG, 1X2 probabilities, odds, etc.
+# ---------------------------------------------------------------------------
+def _ensure_predictor_schema(item: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(item, dict):
+        return item
+
+    # Team names (support both old and new keys)
+    if "home_name" not in item and "home" in item:
+        item["home_name"] = item.get("home")
+    if "away_name" not in item and "away" in item:
+        item["away_name"] = item.get("away")
+    if "home" not in item and "home_name" in item:
+        item["home"] = item.get("home_name")
+    if "away" not in item and "away_name" in item:
+        item["away"] = item.get("away_name")
+
+    preds = item.get("predictions")
+    if not isinstance(preds, dict):
+        preds = {}
+        item["predictions"] = preds
+
+    # xG compatibility (support both nested and top-level)
+    if "home_goals" not in preds:
+        if "xg_home" in item:
+            preds["home_goals"] = item.get("xg_home")
+        elif "home_xg" in item:
+            preds["home_goals"] = item.get("home_xg")
+    if "away_goals" not in preds:
+        if "xg_away" in item:
+            preds["away_goals"] = item.get("xg_away")
+        elif "away_xg" in item:
+            preds["away_goals"] = item.get("away_xg")
+
+    if "xg_home" not in item and "home_goals" in preds:
+        item["xg_home"] = preds.get("home_goals")
+    if "xg_away" not in item and "away_goals" in preds:
+        item["xg_away"] = preds.get("away_goals")
+
+    # 1X2 probabilities (Poisson from xG) if missing.
+    def _poisson_1x2_probs_local(lh: float, la: float, max_goals: int = 10) -> Dict[str, float]:
+        import math
+        lh = float(lh or 0.0)
+        la = float(la or 0.0)
+        ph = [math.exp(-lh) * (lh ** k) / math.factorial(k) for k in range(max_goals + 1)]
+        pa = [math.exp(-la) * (la ** k) / math.factorial(k) for k in range(max_goals + 1)]
+        p_home = p_draw = p_away = 0.0
+        for i in range(max_goals + 1):
+            for j in range(max_goals + 1):
+                p = ph[i] * pa[j]
+                if i > j:
+                    p_home += p
+                elif i == j:
+                    p_draw += p
+                else:
+                    p_away += p
+        s = p_home + p_draw + p_away
+        if s > 0:
+            p_home, p_draw, p_away = p_home / s, p_draw / s, p_away / s
+        return {"home": p_home, "draw": p_draw, "away": p_away}
+
+    need_probs = any(k not in preds for k in ("home_win_p", "draw_p", "away_win_p"))
+    if need_probs:
+        lh = preds.get("home_goals", item.get("xg_home", 0.0))
+        la = preds.get("away_goals", item.get("xg_away", 0.0))
+        probs = _poisson_1x2_probs_local(lh, la)
+
+        # Optional calibration hook, if present in this codebase.
+        _cal = globals().get("apply_1x2_calibration")
+        if callable(_cal):
+            try:
+                probs = _cal(probs, item.get("league_id") or item.get("league"))
+            except TypeError:
+                probs = _cal(probs)
+
+        preds.setdefault("home_win_p", float(probs["home"]))
+        preds.setdefault("draw_p", float(probs["draw"]))
+        preds.setdefault("away_win_p", float(probs["away"]))
+
+    # Convenience aliases used by the UI
+    item.setdefault("home_win_p", preds.get("home_win_p"))
+    item.setdefault("draw_p", preds.get("draw_p"))
+    item.setdefault("away_win_p", preds.get("away_win_p"))
+
+    try:
+        best_side = max(
+            (("home", float(preds.get("home_win_p") or 0.0)),
+             ("draw", float(preds.get("draw_p") or 0.0)),
+             ("away", float(preds.get("away_win_p") or 0.0))),
+            key=lambda x: x[1],
+        )
+        preds.setdefault("best_side", best_side[0])
+        preds.setdefault("best_prob", best_side[1])
+        item.setdefault("best_side", best_side[0])
+        item.setdefault("best_prob", best_side[1])
+        item.setdefault("confidence", round(best_side[1] * 100, 1))
+    except Exception:
+        pass
+
+    return item
+
 @app.get("/predict/upcoming")
 def api_predict_upcoming(
     league: int = Query(DEFAULT_LEAGUE),
@@ -2929,6 +3032,56 @@ def api_predict_upcoming(
             # Fall back to snapshot if model not available
             snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead)
             if snapshot:
+                # Normalize items for predictor.html compatibility
+                _lst = None
+                for _k in ("results", "predictions", "filtered", "fixtures", "out", "items"):
+                    _v = locals().get(_k)
+                    if isinstance(_v, list):
+                        _lst = _v
+                        break
+                if _lst is not None:
+                    for _it in _lst:
+                        _ensure_predictor_schema(_it)
+
+                    # Try to attach bookmaker odds + value edges (cached + capped)
+                    _fetch_odds = globals().get("fetch_1x2_odds_for_fixture")
+                    _compute_edges = globals().get("compute_value_edges")
+                    if callable(_fetch_odds) and callable(_compute_edges):
+                        _calls = 0
+                        for _it in _lst:
+                            if _calls >= 25:
+                                break
+                            if not isinstance(_it, dict):
+                                continue
+                            if _it.get("odds_1x2") or _it.get("odds"):
+                                continue
+                            _fid = _it.get("fixture_id")
+                            if not _fid:
+                                continue
+                            try:
+                                _odds = _fetch_odds(int(_fid))
+                            except Exception:
+                                continue
+                            if not _odds:
+                                continue
+                            _it["odds_1x2"] = _odds
+
+                            _preds = _it.get("predictions") if isinstance(_it.get("predictions"), dict) else {}
+                            _mp = {
+                                "home": float((_preds or {}).get("home_win_p") or 0.0),
+                                "draw": float((_preds or {}).get("draw_p") or 0.0),
+                                "away": float((_preds or {}).get("away_win_p") or 0.0),
+                            }
+                            try:
+                                _edges = _compute_edges(_mp, _odds)
+                                _it.setdefault("value", _edges)
+                                _it.setdefault("best_edge", _edges.get("best_edge"))
+                                _it.setdefault("best_ev", _edges.get("best_ev"))
+                                _it.setdefault("value_side", _edges.get("best_side"))
+                            except Exception:
+                                pass
+
+                            _calls += 1
                 return {
                     "ok": True,
                     "count": len(snapshot),
@@ -3488,6 +3641,56 @@ def api_value_upcoming(
         )
 
     if not value_rows:
+        # Normalize items for predictor.html compatibility
+        _lst = None
+        for _k in ("results", "predictions", "filtered", "fixtures", "out", "items"):
+            _v = locals().get(_k)
+            if isinstance(_v, list):
+                _lst = _v
+                break
+        if _lst is not None:
+            for _it in _lst:
+                _ensure_predictor_schema(_it)
+
+            # Try to attach bookmaker odds + value edges (cached + capped)
+            _fetch_odds = globals().get("fetch_1x2_odds_for_fixture")
+            _compute_edges = globals().get("compute_value_edges")
+            if callable(_fetch_odds) and callable(_compute_edges):
+                _calls = 0
+                for _it in _lst:
+                    if _calls >= 25:
+                        break
+                    if not isinstance(_it, dict):
+                        continue
+                    if _it.get("odds_1x2") or _it.get("odds"):
+                        continue
+                    _fid = _it.get("fixture_id")
+                    if not _fid:
+                        continue
+                    try:
+                        _odds = _fetch_odds(int(_fid))
+                    except Exception:
+                        continue
+                    if not _odds:
+                        continue
+                    _it["odds_1x2"] = _odds
+
+                    _preds = _it.get("predictions") if isinstance(_it.get("predictions"), dict) else {}
+                    _mp = {
+                        "home": float((_preds or {}).get("home_win_p") or 0.0),
+                        "draw": float((_preds or {}).get("draw_p") or 0.0),
+                        "away": float((_preds or {}).get("away_win_p") or 0.0),
+                    }
+                    try:
+                        _edges = _compute_edges(_mp, _odds)
+                        _it.setdefault("value", _edges)
+                        _it.setdefault("best_edge", _edges.get("best_edge"))
+                        _it.setdefault("best_ev", _edges.get("best_ev"))
+                        _it.setdefault("value_side", _edges.get("best_side"))
+                    except Exception:
+                        pass
+
+                    _calls += 1
         return {
             "ok": True,
             "count": 0,
@@ -4551,6 +4754,56 @@ def api_predict_by_date(
                 if window_start <= kickoff_dt <= window_end:
                     filtered.append(fx)
             if filtered:
+                # Normalize items for predictor.html compatibility
+                _lst = None
+                for _k in ("results", "predictions", "filtered", "fixtures", "out", "items"):
+                    _v = locals().get(_k)
+                    if isinstance(_v, list):
+                        _lst = _v
+                        break
+                if _lst is not None:
+                    for _it in _lst:
+                        _ensure_predictor_schema(_it)
+
+                    # Try to attach bookmaker odds + value edges (cached + capped)
+                    _fetch_odds = globals().get("fetch_1x2_odds_for_fixture")
+                    _compute_edges = globals().get("compute_value_edges")
+                    if callable(_fetch_odds) and callable(_compute_edges):
+                        _calls = 0
+                        for _it in _lst:
+                            if _calls >= 25:
+                                break
+                            if not isinstance(_it, dict):
+                                continue
+                            if _it.get("odds_1x2") or _it.get("odds"):
+                                continue
+                            _fid = _it.get("fixture_id")
+                            if not _fid:
+                                continue
+                            try:
+                                _odds = _fetch_odds(int(_fid))
+                            except Exception:
+                                continue
+                            if not _odds:
+                                continue
+                            _it["odds_1x2"] = _odds
+
+                            _preds = _it.get("predictions") if isinstance(_it.get("predictions"), dict) else {}
+                            _mp = {
+                                "home": float((_preds or {}).get("home_win_p") or 0.0),
+                                "draw": float((_preds or {}).get("draw_p") or 0.0),
+                                "away": float((_preds or {}).get("away_win_p") or 0.0),
+                            }
+                            try:
+                                _edges = _compute_edges(_mp, _odds)
+                                _it.setdefault("value", _edges)
+                                _it.setdefault("best_edge", _edges.get("best_edge"))
+                                _it.setdefault("best_ev", _edges.get("best_ev"))
+                                _it.setdefault("value_side", _edges.get("best_side"))
+                            except Exception:
+                                pass
+
+                            _calls += 1
                 return {"ok": True, "count": len(filtered), "range": {"from": from_str, "to": to_str},
                         "fixtures": filtered, "source": "snapshot",
                         "snapshot_file": os.path.basename(snap_path) if snap_path else None}
@@ -5641,11 +5894,6 @@ async def _winmatic_normalize_predict_payload(request: Request, call_next):
 # ============================
 
 
-# ============================
-# WINMATIC_PREDICTIONS_ALIAS_MIDDLEWARE_V1
-# Frontend compatibility: if API returns fixtures[], also expose predictions[].
-# Works even if handler function names change.
-# ============================
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import json as _json
@@ -5675,6 +5923,120 @@ async def _winmatic_predictions_alias_mw(request: Request, call_next):
         fx = data.get("fixtures")
         if isinstance(fx, list) and "predictions" not in data:
             data["predictions"] = fx
+
+    headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
+    return JSONResponse(content=data, status_code=resp.status_code, headers=headers)
+# ============================
+
+
+# ============================
+# WINMATIC_PREDICTIONS_ALIAS_MIDDLEWARE_V2
+# Frontend compatibility + real 1X2 probabilities:
+# - If API returns fixtures[], also expose predictions[] (list alias)
+# - Adds p_home/p_draw/p_away + confidence computed from expected goals (Poisson)
+# ============================
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import json as _json
+import math as _math
+
+def _pois_pmf(k: int, lam: float) -> float:
+    try:
+        if lam < 0:
+            return 0.0
+        return (_math.exp(-lam) * (lam ** k)) / _math.factorial(k)
+    except Exception:
+        return 0.0
+
+def _poisson_1x2(lam_home: float, lam_away: float, max_goals: int = 10):
+    # Returns (p_home_win, p_draw, p_away_win)
+    ph = pd = pa = 0.0
+    for i in range(0, max_goals + 1):
+        pi = _pois_pmf(i, lam_home)
+        for j in range(0, max_goals + 1):
+            pj = _pois_pmf(j, lam_away)
+            p = pi * pj
+            if i > j:
+                ph += p
+            elif i == j:
+                pd += p
+            else:
+                pa += p
+
+    tot = ph + pd + pa
+    if tot > 0:
+        ph, pd, pa = ph / tot, pd / tot, pa / tot
+    return ph, pd, pa
+
+@app.middleware("http")
+async def _winmatic_predictions_alias_mw_v2(request: Request, call_next):
+    resp = await call_next(request)
+
+    if request.url.path not in ("/predict/upcoming", "/value/upcoming"):
+        return resp
+
+    ctype = (resp.headers.get("content-type") or "").lower()
+    if "application/json" not in ctype:
+        return resp
+
+    body = b""
+    async for chunk in resp.body_iterator:
+        body += chunk
+
+    try:
+        data = _json.loads(body.decode("utf-8") or "{}")
+    except Exception:
+        return JSONResponse(content={"ok": False, "error": "Invalid JSON"}, status_code=200)
+
+    if isinstance(data, dict):
+        fx = data.get("fixtures")
+        if isinstance(fx, list):
+            # List alias (frontend often expects predictions[])
+            data.setdefault("predictions", fx)
+
+            # Enrich each fixture with 1X2 probabilities
+            for f in fx:
+                if not isinstance(f, dict):
+                    continue
+                pred = f.get("predictions") or {}
+                if not isinstance(pred, dict):
+                    pred = {}
+
+                lam_h = pred.get("home_goals")
+                lam_a = pred.get("away_goals")
+
+                try:
+                    lam_h = float(lam_h) if lam_h is not None else None
+                    lam_a = float(lam_a) if lam_a is not None else None
+                except Exception:
+                    lam_h = lam_a = None
+
+                if lam_h is None or lam_a is None:
+                    continue
+
+                p_home, p_draw, p_away = _poisson_1x2(lam_h, lam_a, max_goals=10)
+                conf = max(p_home, p_draw, p_away)
+
+                # Provide lots of aliases so predictor.html will find what it wants
+                f.setdefault("p_home", p_home)
+                f.setdefault("p_draw", p_draw)
+                f.setdefault("p_away", p_away)
+
+                f.setdefault("home_win_prob", p_home)
+                f.setdefault("draw_prob", p_draw)
+                f.setdefault("away_win_prob", p_away)
+
+                f.setdefault("home_prob", p_home)
+                f.setdefault("away_prob", p_away)
+
+                f.setdefault("home_pct", round(p_home * 100))
+                f.setdefault("draw_pct", round(p_draw * 100))
+                f.setdefault("away_pct", round(p_away * 100))
+
+                f.setdefault("confidence", conf)
+                f.setdefault("confidence_pct", round(conf * 100))
+
+                f.setdefault("win_probs", {"home": p_home, "draw": p_draw, "away": p_away})
 
     headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
     return JSONResponse(content=data, status_code=resp.status_code, headers=headers)
