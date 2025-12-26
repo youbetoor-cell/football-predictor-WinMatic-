@@ -5583,3 +5583,59 @@ def debug_preflight():
     checks["has_get_fixture_logos"] = callable(globals().get("get_fixture_logos"))
     checks["has_builder"] = callable(globals().get("build_predictions_for_fixtures")) or callable(globals().get("build_predictions_for_fixtures_old"))
     return {"ok": True, "checks": checks}
+
+
+# ============================
+# WINMATIC_RESPONSE_NORMALIZER_V1
+# Makes frontend resilient to backend schema changes:
+# ensures key 'predictions' exists for predictor/value endpoints.
+# ============================
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import json as _json
+
+@app.middleware("http")
+async def _winmatic_normalize_predict_payload(request: Request, call_next):
+    resp = await call_next(request)
+
+    if request.url.path not in ("/predict/upcoming", "/value/upcoming", "/results/recent"):
+        return resp
+
+    ctype = (resp.headers.get("content-type") or "").lower()
+    if "application/json" not in ctype:
+        return resp
+
+    body = b""
+    async for chunk in resp.body_iterator:
+        body += chunk
+
+    # If body is not valid JSON, return as-is
+    try:
+        data = _json.loads(body.decode("utf-8") or "{}")
+    except Exception:
+        return JSONResponse(content={"ok": False, "error": "Invalid JSON from backend"}, status_code=200)
+
+    if isinstance(data, dict):
+        # Try to find the array under common keys
+        arr = data.get("predictions")
+        if not isinstance(arr, list):
+            for k in ("results", "fixtures", "data", "items"):
+                v = data.get(k)
+                if isinstance(v, list):
+                    arr = v
+                    break
+
+        if isinstance(arr, list):
+            data.setdefault("predictions", arr)
+
+        # Ensure ok exists (some older code may not include it)
+        data.setdefault("ok", True)
+
+        # Helpful hint for UI when empty
+        if isinstance(data.get("predictions"), list) and len(data["predictions"]) == 0:
+            data.setdefault("warning", "No predictions returned (API may have no fixtures or quota/network issue).")
+
+    # Return normalized JSON (strip content-length so it recalculates)
+    headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
+    return JSONResponse(content=data, status_code=resp.status_code, headers=headers)
+# ============================
