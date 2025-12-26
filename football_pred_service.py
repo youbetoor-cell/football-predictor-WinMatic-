@@ -3045,7 +3045,7 @@ def build_predictions_for_fixtures(
 # ============================================================
 
 @app.post("/train", dependencies=[Depends(require_admin)])
-def api_train(req: TrainRequest):
+def api_train(req: "TrainRequest"):
     seasons = req.seasons or DEFAULT_SEASONS
     logger.info("[TRAIN API] league=%s seasons=%s", req.league, seasons)
     info = train_model(req.league, seasons)
@@ -3056,12 +3056,68 @@ def api_predict_upcoming(
     league: int = Query(DEFAULT_LEAGUE),
     days_ahead: int = Query(7, ge=1, le=14),
 ):
+    # --- ODDS ENRICH: upcoming ---
+    def _enrich_upcoming_odds(fixtures):
+        """Attach odds_1x2 + best_edge/value_side to fixtures when possible."""
+        if not fixtures:
+            return fixtures
+        if "fetch_1x2_odds_for_fixture" not in globals():
+            return fixtures
+        try:
+            max_odds = int(os.getenv("ODDS_MAX_CALLS_PER_RUN", "60"))
+        except Exception:
+            max_odds = 60
+
+        calls = 0
+        for fx in fixtures:
+            if calls >= max_odds:
+                break
+            try:
+                if fx.get("odds_1x2") is not None:
+                    continue
+
+                fid = fx.get("fixture_id") or fx.get("id")
+                if not fid:
+                    continue
+
+                kickoff = fx.get("kickoff_utc") or fx.get("kickoff")
+                if kickoff and "_within_odds_window" in globals() and not _within_odds_window(kickoff):
+                    continue
+
+                odds, meta = fetch_1x2_odds_for_fixture(int(fid), return_meta=True)
+                if not odds:
+                    continue
+
+                fx["odds_1x2"] = odds
+                fx["odds_meta"] = meta
+
+                preds = fx.get("predictions") or {}
+                model_probs = {
+                    "home": preds.get("home_win_p"),
+                    "draw": preds.get("draw_p"),
+                    "away": preds.get("away_win_p"),
+                }
+
+                if "compute_value_edges" in globals():
+                    ve = compute_value_edges(model_probs, odds)
+                    fx["best_edge"] = ve.get("best_edge")
+                    fx["value_side"] = ve.get("best_side")
+                    fx["edges_1x2"] = ve.get("edges")
+                    fx["evs_1x2"] = ve.get("evs")
+                    fx["market_probs_1x2"] = ve.get("market_probs")
+
+                calls += 1
+            except Exception:
+                continue
+
+        return fixtures
     try:
         model, meta = load_model_and_meta(league)
     except HTTPException:
         # Fall back to snapshot if model not available
         snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead)
         if snapshot:
+            snapshot = _enrich_upcoming_odds(snapshot)
             return {
                 "ok": True,
                 "count": len(snapshot),
@@ -3149,6 +3205,7 @@ def api_predict_upcoming(
     if not results:
         snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead)
         if snapshot:
+            snapshot = _enrich_upcoming_odds(snapshot)
             return {
                 "ok": True,
                 "count": len(snapshot),
@@ -3156,6 +3213,7 @@ def api_predict_upcoming(
                 "source": "snapshot",
                 "snapshot_file": os.path.basename(snap_path) if snap_path else None,
             }
+        results = _enrich_upcoming_odds(results)
         return {
             "ok": False,
             "count": 0,
@@ -3170,6 +3228,7 @@ def api_predict_upcoming(
     # Save to history (now including reasoning)
     record_predictions_history(league, results)
 
+    results = _enrich_upcoming_odds(results)
     return {
         "ok": True,
         "count": len(results),
