@@ -14,3 +14,10 @@ Terminal Saved Output
 
 # macOS
 .DS_Store
+.venv/
+env/
+data/*.db
+*.bak
+*.patchbak
+Terminal Saved Output
+recent_*.json
