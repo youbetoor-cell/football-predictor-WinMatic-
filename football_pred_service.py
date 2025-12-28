@@ -5703,3 +5703,36 @@ def api_update_results(
         "updated": updated,
         "message": f"Updated {updated} finished fixtures for league {league}.",
     }
+
+
+# === PATCH FIX: _within_odds_window override (prevents datetime.datetime bug) ===
+
+from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+def _within_odds_window(kickoff_utc) -> bool:
+    """
+    True if kickoff is within the odds-fetch window.
+    Accepts str (ISO), datetime, or None.
+    This overrides a buggy duplicate definition later in the file that used `datetime.datetime`.
+    """
+    try:
+        if kickoff_utc is None:
+            return False
+
+        if isinstance(kickoff_utc, str):
+            dt_str = kickoff_utc.strip().replace("Z", "+00:00")
+            ko = _dt.fromisoformat(dt_str)
+        else:
+            ko = kickoff_utc
+
+        # Ensure timezone-aware UTC
+        if getattr(ko, "tzinfo", None) is None:
+            ko = ko.replace(tzinfo=_tz.utc)
+        ko = ko.astimezone(_tz.utc)
+
+        now = _dt.now(_tz.utc)
+        # allow a small “just started” grace window + 7 days ahead
+        return (now - _td(hours=3)) <= ko <= (now + _td(days=7))
+    except Exception:
+        return False
+
