@@ -3130,6 +3130,49 @@ def api_predict_upcoming(
     def _enrich_upcoming_odds(fixtures):
         """Attach odds_1x2 + best_edge/value_side to fixtures when possible."""
         if not fixtures:
+
+            # --- SAFE_UPCOMING_VALUE_FIELDS_V1 ---
+            try:
+                # Prefer explicit response dict name if present
+                _out = locals().get("out") or locals().get("resp") or None
+                if isinstance(_out, dict) and isinstance(_out.get("fixtures"), list):
+                    _fxs = _out["fixtures"]
+                else:
+                    # Fall back to common list variable names
+                    _fxs = locals().get("fixtures") or locals().get("xs") or []
+            
+                if isinstance(_fxs, list):
+                    for f in _fxs:
+                        if not isinstance(f, dict):
+                            continue
+                        odds = f.get("odds_1x2") or {}
+                        pred = f.get("predictions") or {}
+                        model = {
+                            "home": pred.get("home_win_p"),
+                            "draw": pred.get("draw_p"),
+                            "away": pred.get("away_win_p"),
+                        }
+                        # Guard: only compute when everything is numeric and odds > 0
+                        if not (isinstance(odds, dict) and all(isinstance(model[k], (int,float)) for k in ("home","draw","away"))):
+                            continue
+                        inv = {}
+                        for k in ("home","draw","away"):
+                            v = odds.get(k)
+                            if isinstance(v, (int,float)) and float(v) > 0:
+                                inv[k] = 1.0/float(v)
+                        total = float(sum(inv.values()))
+                        if total <= 0:
+                            continue
+                        implied = {k: float(inv.get(k,0.0))/total for k in ("home","draw","away")}
+                        edges = {k: float(model[k]) - float(implied[k]) for k in ("home","draw","away")}
+                        best_side = max(edges, key=lambda kk: edges[kk])
+                        f["implied_1x2"] = implied
+                        f["value_edges"] = edges
+                        f["value_side"] = best_side
+                        f["best_edge"] = float(edges[best_side])
+            except Exception:
+                pass
+            # --- end SAFE_UPCOMING_VALUE_FIELDS_V1 ---
             return fixtures
         if "fetch_1x2_odds_for_fixture" not in globals():
             return fixtures
