@@ -2654,6 +2654,72 @@ def compute_value_edges(model_probs: dict, odds: dict) -> dict:
 
    
 
+
+
+def _attach_odds_and_value_fields_upcoming(
+    fixtures: List[Dict[str, Any]],
+    *,
+    include_odds: int,
+    odds_limit: int,
+    min_edge: float,
+) -> List[Dict[str, Any]]:
+    """
+    Attach odds_1x2 + best_edge/value_side onto fixture dicts (in-place).
+    Safe: never raises; skips if odds/model probs missing.
+    """
+    try:
+        fixtures = list(fixtures or [])
+    except Exception:
+        return fixtures or []
+
+    if not include_odds:
+        return fixtures
+
+    out: List[Dict[str, Any]] = []
+    fetched = 0
+
+    for fx in fixtures:
+        try:
+            fxid = fx.get("fixture_id")
+            if fxid and fetched < max(0, int(odds_limit)):
+                # Don't refetch if already present
+                odds = fx.get("odds_1x2") or fetch_1x2_odds_for_fixture(int(fxid))
+                if odds:
+                    fx["odds_1x2"] = odds
+
+                    pred = fx.get("predictions") or {}
+                    p_model = {
+                        "home": pred.get("home_win_p"),
+                        "draw": pred.get("draw_p"),
+                        "away": pred.get("away_win_p"),
+                    }
+
+                    if all(isinstance(p_model[k], (int, float)) for k in ("home","draw","away")):
+                        p_imp = scan_market_odds_1x2(odds) or {}
+                        if all(isinstance(p_imp.get(k), (int, float)) for k in ("home","draw","away")):
+                            edges = compute_value_edges(p_model, p_imp)
+                            fx["market_probs_1x2"] = p_imp
+                            fx["edges_1x2"] = edges
+                            best_side = max(edges.keys(), key=lambda k: edges.get(k, -1e9))
+                            fx["value_side"] = best_side
+                            fx["best_edge"] = float(edges.get(best_side, 0.0))
+                fetched += 1
+
+            if min_edge and (fx.get("best_edge") is not None):
+                try:
+                    if float(fx["best_edge"]) < float(min_edge):
+                        continue
+                except Exception:
+                    pass
+
+            out.append(fx)
+        except Exception:
+            out.append(fx)
+            continue
+
+    return out
+
+
 def filter_fixtures_by_window(fixtures: List[Dict[str, Any]], window_start: datetime, window_end: datetime) -> List[Dict[str, Any]]:
     filtered = []
     for fx in fixtures:
@@ -3055,6 +3121,10 @@ def api_train(req: "TrainRequest"):
 def api_predict_upcoming(
     league: int = Query(DEFAULT_LEAGUE),
     days_ahead: int = Query(7, ge=1, le=14),
+
+    include_odds: int = Query(1, ge=0, le=1, description="Attach odds_1x2 + value fields"),
+    odds_limit: int = Query(25, ge=0, le=50, description="Max fixtures to fetch odds for"),
+    min_edge: float = Query(0.0, ge=0.0, le=1.0, description="Filter out fixtures with best_edge < min_edge"),
 ):
     # --- ODDS ENRICH: upcoming ---
     def _enrich_upcoming_odds(fixtures):
