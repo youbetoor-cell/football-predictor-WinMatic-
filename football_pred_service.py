@@ -3342,6 +3342,8 @@ def api_predict_upcoming(
                         fx['odds_1x2'] = odds
                         implied = implied_probs_1x2(odds)
                         if implied and isinstance(implied, dict):
+                            # --- STORE_UPCOMING_IMPLIED_EDGES_V1 ---
+                            fx['implied_1x2'] = implied
                             p = fx.get('predictions') or {}
                             edges = {}
                             for side, pk in [('home','home_win_p'),('draw','draw_p'),('away','away_win_p')]:
@@ -3349,10 +3351,13 @@ def api_predict_upcoming(
                                 pp = p.get(pk)
                                 if mp is not None and pp is not None:
                                     edges[side] = float(pp) - float(mp)
+
                             if edges:
                                 best_side = max(edges, key=lambda k: edges[k])
+                                fx['value_edges'] = edges
                                 fx['best_edge'] = round(edges[best_side], 3)
                                 fx['value_side'] = best_side
+                            # --- end STORE_UPCOMING_IMPLIED_EDGES_V1 ---
                 except Exception:
                     pass
 
