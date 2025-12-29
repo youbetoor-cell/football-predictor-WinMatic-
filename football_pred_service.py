@@ -6156,6 +6156,7 @@ def admin_backfill_market_from_payload(
     rows = cur.fetchall()
 
     updated = 0
+    skipped = 0
     errors = 0
 
     for row_id, payload in rows:
@@ -6208,7 +6209,7 @@ def admin_backfill_market_from_payload(
         conn.commit()
     conn.close()
 
-    return {"ok": True, "league": league, "window_days": window_days, "scanned": len(rows), "updated": updated, "errors": errors, "dry_run": dry_run}
+    return {"ok": True, "league": league, "window_days": window_days, "scanned": len(rows), "updated": updated, "errors": errors, "skipped": skipped, "dry_run": dry_run}
 
 @app.get("/debug/market-finished-sample")
 def debug_market_finished_sample(league: int = 39, window_days: int = 60, limit: int = 10):
