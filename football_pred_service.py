@@ -6163,6 +6163,13 @@ def admin_backfill_market_from_payload(
             f = json.loads(payload)
             preds = f.get("predictions") or {}
             odds = f.get("odds_1x2") or {}
+
+            # Guard: skip rows where payload has implied/odds keys but values are all null/empty
+            if (
+                not any(v is not None for v in implied.values())
+                and not any(v is not None for v in odds.values())
+            ):
+                continue
             implied = f.get("implied_1x2") or {}
 
             predicted_side = (preds.get("best_side") or "").strip().lower() or None
