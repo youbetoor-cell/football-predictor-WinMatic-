@@ -675,26 +675,28 @@ def init_history_db() -> None:
 init_history_db()
 
 def record_predictions_history(league: int, fixtures: list[dict]) -> None:
-    """
-    Persist predictions into predictions_history.
+    """Persist predictions to predictions_history.
 
-    Key points:
-    - Upserts on (league, fixture_id, kickoff_utc)
-    - Always writes payload JSON (backward compatible)
-    - ALSO writes structured columns used by /results/recent, /progress/metrics, ROI, etc.
-    - Never overwrites actual_result (settlement stays safe)
+    - Upserts by (league, fixture_id, kickoff_utc).
+    - Stores bet-side pick when available:
+        predicted_side = value_side (if present) else predictions.best_side.
+      This keeps ROI/PnL endpoints consistent with edge_value/best_edge.
+    - Stores market columns when odds/implied fields are present.
     """
     if not fixtures:
         return
 
-    ensure_predictions_db()
+    try:
+        ensure_predictions_db()
+    except Exception as e:
+        logger.warning("[DB] ensure_predictions_db failed: %s", e)
 
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
 
-        # Ensure unique key exists (needed for ON CONFLICT)
+        # Ensure unique index for conflict target
         try:
             cur.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_history_key "
@@ -703,57 +705,43 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
         except Exception as e:
             logger.warning("[DB] Could not ensure unique index: %s", e)
 
-        # Detect available columns (schema evolves)
-        cur.execute("PRAGMA table_info(predictions_history);")
-        cols = {row[1] for row in cur.fetchall()}
-
-        wanted = [
-            "league", "fixture_id", "kickoff_utc", "payload",
-            "home_team", "away_team",
-            "model_home_p", "model_draw_p", "model_away_p",
-            "predicted_side",
-            "edge_value",
-            "market_home_p", "market_draw_p", "market_away_p",
-            "market_home_odds", "market_draw_odds", "market_away_odds",
-            "market_bookmaker", "market_bet_name",
-            "value_side", "best_edge",
-        ]
-        insert_cols = [c for c in wanted if c in cols]
-        if not insert_cols:
-            return
-
-        placeholders = ",".join(["?"] * len(insert_cols))
-
-        # Update clause: keep old value if the new one is NULL
-        update_parts = ["payload = excluded.payload"]
-        for c in insert_cols:
-            if c in ("league", "fixture_id", "kickoff_utc", "payload"):
-                continue
-            if c == "actual_result":
-                continue
-            update_parts.append(f"{c} = COALESCE(excluded.{c}, predictions_history.{c})")
-
-        # Preserve created_at if it exists
-        has_created_at = "created_at" in cols
-        if has_created_at:
-            update_parts.append(
-                "created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)"
+        sql = """
+            INSERT INTO predictions_history (
+                league, fixture_id, home_team, away_team, kickoff_utc,
+                model_home_p, model_draw_p, model_away_p,
+                predicted_side, edge_value,
+                market_home_p, market_draw_p, market_away_p,
+                market_home_odds, market_draw_odds, market_away_odds,
+                market_bookmaker, market_bet_name,
+                payload, created_at
+            ) VALUES (
+                ?, ?, ?, ?, ?,
+                ?, ?, ?,
+                ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                ?, ?,
+                ?, datetime('now')
             )
-
-        if has_created_at:
-            sql = f"""
-            INSERT INTO predictions_history ({",".join(insert_cols)}, created_at)
-            VALUES ({placeholders}, datetime('now'))
             ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
-              {", ".join(update_parts)}
-            """
-        else:
-            sql = f"""
-            INSERT INTO predictions_history ({",".join(insert_cols)})
-            VALUES ({placeholders})
-            ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
-              {", ".join(update_parts)}
-            """
+                home_team = excluded.home_team,
+                away_team = excluded.away_team,
+                model_home_p = excluded.model_home_p,
+                model_draw_p = excluded.model_draw_p,
+                model_away_p = excluded.model_away_p,
+                predicted_side = COALESCE(excluded.predicted_side, predictions_history.predicted_side),
+                edge_value = COALESCE(excluded.edge_value, predictions_history.edge_value),
+                market_home_p = COALESCE(excluded.market_home_p, predictions_history.market_home_p),
+                market_draw_p = COALESCE(excluded.market_draw_p, predictions_history.market_draw_p),
+                market_away_p = COALESCE(excluded.market_away_p, predictions_history.market_away_p),
+                market_home_odds = COALESCE(excluded.market_home_odds, predictions_history.market_home_odds),
+                market_draw_odds = COALESCE(excluded.market_draw_odds, predictions_history.market_draw_odds),
+                market_away_odds = COALESCE(excluded.market_away_odds, predictions_history.market_away_odds),
+                market_bookmaker = COALESCE(excluded.market_bookmaker, predictions_history.market_bookmaker),
+                market_bet_name = COALESCE(excluded.market_bet_name, predictions_history.market_bet_name),
+                payload = excluded.payload,
+                created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)
+        """
 
         rows = []
         for f in fixtures:
@@ -762,77 +750,67 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
             if fixture_id is None or kickoff_utc is None:
                 continue
 
+            home_team = f.get("home_team") or f.get("home_name") or (f.get("teams") or {}).get("home", {}).get("name")
+            away_team = f.get("away_team") or f.get("away_name") or (f.get("teams") or {}).get("away", {}).get("name")
+
             preds = f.get("predictions") or {}
-            odds = f.get("odds_1x2") or {}
-            implied = f.get("implied_1x2") or {}
-            v_edges = f.get("value_edges") or {}
+            ph = preds.get("home_win_p")
+            pd = preds.get("draw_p")
+            pa = preds.get("away_win_p")
 
-            home_team = f.get("home_name") or f.get("home_team")
-            away_team = f.get("away_name") or f.get("away_team")
-
-            predicted_side = (preds.get("best_side") or "").strip().lower() or None
-
-            # edge_value for ROI: edge of the MODEL pick
-            edge_value = None
-            if predicted_side in ("home", "draw", "away"):
-                try:
-                    edge_value = float(v_edges.get(predicted_side)) if v_edges.get(predicted_side) is not None else None
-                except Exception:
-                    edge_value = None
-
-            value_side = (f.get("value_side") or "").strip().lower() or None
-            best_edge = f.get("best_edge")
+            # bet-side + edge
+            predicted_side = (f.get("value_side") or preds.get("best_side") or f.get("predicted_side"))
             try:
-                best_edge = float(best_edge) if best_edge is not None else None
+                predicted_side = (predicted_side or "").strip().lower() or None
             except Exception:
-                best_edge = None
+                predicted_side = None
+
+            edge_value = f.get("best_edge")
+            if edge_value is None:
+                edge_value = f.get("edge_value")
+
+            # market fields
+            implied = f.get("implied_1x2") or {}
+            odds = f.get("odds_1x2") or {}
+            mhp = implied.get("home")
+            mdp = implied.get("draw")
+            map_ = implied.get("away")
+            mho = odds.get("home")
+            mdo = odds.get("draw")
+            mao = odds.get("away")
+
+            mbook = f.get("market_bookmaker")
+            mbet = f.get("market_bet_name")
 
             payload = json.dumps(f, ensure_ascii=False)
 
-            d = {
-                "league": int(league),
-                "fixture_id": int(fixture_id),
-                "kickoff_utc": str(kickoff_utc),
-                "payload": payload,
+            rows.append(
+                (
+                    int(league), int(fixture_id), home_team, away_team, str(kickoff_utc),
+                    ph, pd, pa,
+                    predicted_side, edge_value,
+                    mhp, mdp, map_,
+                    mho, mdo, mao,
+                    mbook, mbet,
+                    payload,
+                )
+            )
 
-                "home_team": home_team,
-                "away_team": away_team,
-
-                "model_home_p": preds.get("home_win_p"),
-                "model_draw_p": preds.get("draw_p"),
-                "model_away_p": preds.get("away_win_p"),
-
-                "predicted_side": predicted_side,
-                "edge_value": edge_value,
-
-                "market_home_p": implied.get("home"),
-                "market_draw_p": implied.get("draw"),
-                "market_away_p": implied.get("away"),
-
-                "market_home_odds": odds.get("home"),
-                "market_draw_odds": odds.get("draw"),
-                "market_away_odds": odds.get("away"),
-
-                "value_side": value_side,
-                "best_edge": best_edge,
-            }
-
-            rows.append(tuple(d.get(c) for c in insert_cols))
-
-        if not rows:
-            return
-
-        cur.executemany(sql, rows)
-        conn.commit()
+        if rows:
+            cur.executemany(sql, rows)
+            conn.commit()
 
     except Exception as e:
-        logger.warning("Failed to record history: %s", e)
+        logger.exception("[DB] record_predictions_history failed: %s", e)
     finally:
-        if conn is not None:
-            try:
+        try:
+            if conn:
                 conn.close()
-            except Exception:
-                pass
+        except Exception:
+            pass
+
+
+def model_paths
 
 def model_paths(league_id: int) -> Tuple[str, str]:
     model_path = os.path.join(ART, f"model_{league_id}.joblib")
@@ -3513,10 +3491,10 @@ def api_predict_upcoming(
     for p in results:
         p["reasoning"] = build_reasoning_for_prediction(p, meta)
 
-    # Save to history (now including reasoning)
-    record_predictions_history(league, results)
-
     results = _enrich_upcoming_odds(results)
+
+    # Save to history (includes odds/value if present)
+    record_predictions_history(league, results)
     return {
         "ok": True,
         "count": len(results),
@@ -5949,8 +5927,8 @@ def _within_odds_window(kickoff_utc) -> bool:
         ko = ko.astimezone(_tz.utc)
 
         now = _dt.now(_tz.utc)
-        # allow a small “just started” grace window + 7 days ahead
-        return (now - _td(hours=3)) <= ko <= (now + _td(days=7))
+        # allow a small “just started” grace window + configurable lookback/future
+        return (now - _td(days=int(ODDS_LOOKBACK_DAYS))) <= ko <= (now + _td(days=int(ODDS_FUTURE_DAYS)))
     except Exception:
         return False
 
@@ -6141,3 +6119,88 @@ def debug_market_samples(league: int = 39, window_days: int = 60):
         "finished_rows": finished,
         "finished_rows_with_market": with_market,
     }
+
+@app.post("/admin/backfill-market-from-payload")
+def admin_backfill_market_from_payload(
+    league: int = 39,
+    window_days: int = 120,
+    limit: int = 5000,
+    dry_run: bool = False,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+):
+    require_admin(x_admin_token)
+    ensure_predictions_db()
+
+    from datetime import datetime, timedelta
+    cutoff = (datetime.utcnow() - timedelta(days=int(window_days))).isoformat()
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT id, payload
+        FROM predictions_history
+        WHERE league = ?
+          AND kickoff_utc >= ?
+          AND payload IS NOT NULL
+          AND (
+            market_home_p IS NULL OR market_draw_p IS NULL OR market_away_p IS NULL
+            OR market_home_odds IS NULL OR market_draw_odds IS NULL OR market_away_odds IS NULL
+            OR predicted_side IS NULL
+            OR model_home_p IS NULL OR model_draw_p IS NULL OR model_away_p IS NULL
+          )
+        ORDER BY kickoff_utc DESC
+        LIMIT ?
+        """,
+        (int(league), cutoff, int(limit)),
+    )
+    rows = cur.fetchall()
+
+    updated = 0
+    errors = 0
+
+    for row_id, payload in rows:
+        try:
+            f = json.loads(payload)
+            preds = f.get("predictions") or {}
+            odds = f.get("odds_1x2") or {}
+            implied = f.get("implied_1x2") or {}
+
+            predicted_side = (preds.get("best_side") or "").strip().lower() or None
+
+            sets = []
+            vals = []
+
+            def put(col, val):
+                sets.append(f"{col} = COALESCE({col}, ?)")
+                vals.append(val)
+
+            put("model_home_p", preds.get("home_win_p"))
+            put("model_draw_p", preds.get("draw_p"))
+            put("model_away_p", preds.get("away_win_p"))
+            put("predicted_side", predicted_side)
+
+            put("market_home_p", implied.get("home"))
+            put("market_draw_p", implied.get("draw"))
+            put("market_away_p", implied.get("away"))
+
+            put("market_home_odds", odds.get("home"))
+            put("market_draw_odds", odds.get("draw"))
+            put("market_away_odds", odds.get("away"))
+
+            if not dry_run:
+                cur.execute(
+                    f"UPDATE predictions_history SET {', '.join(sets)} WHERE id = ?",
+                    tuple(vals) + (row_id,),
+                )
+            updated += 1
+
+        except Exception:
+            errors += 1
+
+    if not dry_run:
+        conn.commit()
+    conn.close()
+
+    return {"ok": True, "league": league, "window_days": window_days, "scanned": len(rows), "updated": updated, "errors": errors, "dry_run": dry_run}
