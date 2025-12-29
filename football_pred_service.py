@@ -810,8 +810,7 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
             pass
 
 
-def model_paths
-
+def model_paths():
 def model_paths(league_id: int) -> Tuple[str, str]:
     model_path = os.path.join(ART, f"model_{league_id}.joblib")
     meta_path = os.path.join(ART, f"meta_{league_id}.json")
