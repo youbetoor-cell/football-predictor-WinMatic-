@@ -678,11 +678,17 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
     """
     Persist prediction payloads for later analysis.
 
-    Upserts on (league, fixture_id, kickoff_utc) so we don't create duplicates,
-    and never writes blank created_at.
+    Upserts on (league, fixture_id, kickoff_utc) so we don't create duplicates.
+
+    IMPORTANT:
+    - Always writes payload (JSON)
+    - Also writes structured columns used by /results/recent, /progress/metrics, ROI, etc.
+    - Does NOT overwrite actual_result (so settlement is safe)
     """
     if not fixtures:
         return
+
+    ensure_predictions_db()
 
     conn = None
     try:
@@ -698,7 +704,60 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
         except Exception as e:
             logger.warning("[DB] Could not ensure unique index: %s", e)
 
-        rows: list[tuple] = []
+        # Detect available columns (schema evolves)
+        cur.execute("PRAGMA table_info(predictions_history);")
+        cols = {row[1] for row in cur.fetchall()}
+
+        # Columns we will attempt to write (only those that exist)
+        wanted = [
+            "league", "fixture_id", "kickoff_utc", "payload",
+            "home_team", "away_team",
+            "model_home_p", "model_draw_p", "model_away_p",
+            "predicted_side",
+            "edge_value",
+            "market_home_p", "market_draw_p", "market_away_p",
+            "market_home_odds", "market_draw_odds", "market_away_odds",
+            "market_bookmaker", "market_bet_name",
+            "value_side", "best_edge",
+        ]
+        insert_cols = [c for c in wanted if c in cols]
+
+        if not insert_cols:
+            return
+
+        placeholders = ",".join(["?"] * len(insert_cols))
+
+        # Build UPDATE clause (keep existing values if new one is NULL)
+        # Also preserve created_at if it already exists.
+        update_parts = ["payload = excluded.payload"]
+        for c in insert_cols:
+            if c in ("league", "fixture_id", "kickoff_utc", "payload"):
+                continue
+            update_parts.append(f"{c} = COALESCE(excluded.{c}, predictions_history.{c})")
+
+        if "created_at" in cols:
+            # Keep created_at if present; otherwise use excluded
+            update_parts.append(
+                "created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)"
+            )
+
+        # INSERT statement
+        if "created_at" in cols:
+            sql = f"""
+            INSERT INTO predictions_history ({",".join(insert_cols)}, created_at)
+            VALUES ({placeholders}, datetime('now'))
+            ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
+              {", ".join(update_parts)}
+            """
+        else:
+            sql = f"""
+            INSERT INTO predictions_history ({",".join(insert_cols)})
+            VALUES ({placeholders})
+            ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
+              {", ".join(update_parts)}
+            """
+
+        rows = []
         for f in fixtures:
             fixture_id = f.get("fixture_id") or (f.get("fixture") or {}).get("id")
             kickoff_utc = f.get("kickoff_utc") or (f.get("fixture") or {}).get("date")
@@ -706,21 +765,73 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
                 continue
 
             payload = json.dumps(f, ensure_ascii=False)
-            rows.append((int(league), int(fixture_id), str(kickoff_utc), payload))
+
+            preds = f.get("predictions") or {}
+            odds = f.get("odds_1x2") or {}
+            implied = f.get("implied_1x2") or {}
+            v_edges = f.get("value_edges") or {}
+
+            home_team = f.get("home_name") or f.get("home_team")
+            away_team = f.get("away_name") or f.get("away_team")
+            if not home_team:
+                home_team = ((f.get("teams") or {}).get("home") or {}).get("name")
+            if not away_team:
+                away_team = ((f.get("teams") or {}).get("away") or {}).get("name")
+
+            predicted_side = (preds.get("best_side") or "").strip().lower() or None
+
+            # For ROI/PnL we want edge_value to match the bet side.
+            # Here: edge of the MODEL pick vs market implied (value_edges already computed that way).
+            edge_value = None
+            if predicted_side in ("home", "draw", "away"):
+                try:
+                    edge_value = float(v_edges.get(predicted_side)) if v_edges.get(predicted_side) is not None else None
+                except Exception:
+                    edge_value = None
+
+            # Optional value-bet info (best edge across all sides)
+            value_side = (f.get("value_side") or "").strip().lower() or None
+            best_edge = f.get("best_edge")
+            try:
+                best_edge = float(best_edge) if best_edge is not None else None
+            except Exception:
+                best_edge = None
+
+            # Row dict
+            d = {
+                "league": int(league),
+                "fixture_id": int(fixture_id),
+                "kickoff_utc": str(kickoff_utc),
+                "payload": payload,
+
+                "home_team": home_team,
+                "away_team": away_team,
+
+                "model_home_p": preds.get("home_win_p"),
+                "model_draw_p": preds.get("draw_p"),
+                "model_away_p": preds.get("away_win_p"),
+
+                "predicted_side": predicted_side,
+                "edge_value": edge_value,
+
+                "market_home_p": implied.get("home"),
+                "market_draw_p": implied.get("draw"),
+                "market_away_p": implied.get("away"),
+
+                "market_home_odds": odds.get("home"),
+                "market_draw_odds": odds.get("draw"),
+                "market_away_odds": odds.get("away"),
+
+                "value_side": value_side,
+                "best_edge": best_edge,
+            }
+
+            rows.append(tuple(d.get(c) for c in insert_cols))
 
         if not rows:
             return
 
-        cur.executemany(
-            """
-            INSERT INTO predictions_history (league, fixture_id, kickoff_utc, payload, created_at)
-            VALUES (?, ?, ?, ?, datetime('now'))
-            ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
-              payload = excluded.payload,
-              created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)
-            """,
-            rows,
-        )
+        cur.executemany(sql, rows)
         conn.commit()
 
     except Exception as e:
@@ -5852,3 +5963,21 @@ def _within_odds_window(kickoff_utc) -> bool:
     except Exception:
         return False
 
+@app.get("/debug/history-count")
+def debug_history_count(league: int | None = None):
+    import sqlite3
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        if league is None:
+            cur.execute("SELECT COUNT(*) FROM predictions_history")
+            n = cur.fetchone()[0]
+            conn.close()
+            return {"ok": True, "predictions_history_count": int(n)}
+        else:
+            cur.execute("SELECT COUNT(*) FROM predictions_history WHERE league = ?", (int(league),))
+            n = cur.fetchone()[0]
+            conn.close()
+            return {"ok": True, "league": int(league), "predictions_history_count": int(n)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
