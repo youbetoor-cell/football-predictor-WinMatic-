@@ -6092,3 +6092,52 @@ def admin_backfill_history(
         "errors": errors,
         "dry_run": dry_run,
     }
+
+@app.get("/debug/market-samples")
+def debug_market_samples(league: int = 39, window_days: int = 60):
+    import sqlite3
+    from datetime import datetime, timedelta
+
+    ensure_predictions_db()
+    cutoff = (datetime.utcnow() - timedelta(days=int(window_days))).isoformat()
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    # total finished rows in window
+    cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM predictions_history
+        WHERE league = ?
+          AND kickoff_utc >= ?
+          AND actual_result IS NOT NULL
+        """,
+        (int(league), cutoff),
+    )
+    finished = int(cur.fetchone()[0])
+
+    # finished rows with complete market probs
+    cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM predictions_history
+        WHERE league = ?
+          AND kickoff_utc >= ?
+          AND actual_result IS NOT NULL
+          AND market_home_p IS NOT NULL
+          AND market_draw_p IS NOT NULL
+          AND market_away_p IS NOT NULL
+        """,
+        (int(league), cutoff),
+    )
+    with_market = int(cur.fetchone()[0])
+
+    conn.close()
+    return {
+        "ok": True,
+        "league": league,
+        "window_days": window_days,
+        "finished_rows": finished,
+        "finished_rows_with_market": with_market,
+    }
