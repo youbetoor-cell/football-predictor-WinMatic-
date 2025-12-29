@@ -3280,6 +3280,33 @@ def api_predict_upcoming(
                 "snapshot_file": os.path.basename(snap_path) if snap_path else None,
             }
         raise
+    
+       # Always compute implied_1x2/value_edges/best_edge if we have odds + probs
+    try:
+        odds = fx.get("odds_1x2") or {}
+        p = fx.get("predictions") or {}
+        if isinstance(odds, dict) and isinstance(p, dict):
+            if all(k in odds for k in ("home","draw","away")) and all(k in p for k in ("home_win_p","draw_p","away_win_p")):
+                inv = {}
+                for k in ("home","draw","away"):
+                    v = odds.get(k)
+                    if isinstance(v, (int,float)) and float(v) > 0:
+                        inv[k] = 1.0/float(v)
+                tot = float(sum(inv.values()))
+                if tot > 0:
+                    implied = {k: float(inv.get(k,0.0))/tot for k in ("home","draw","away")}
+                    edges = {
+                        "home": float(p["home_win_p"]) - implied["home"],
+                        "draw": float(p["draw_p"]) - implied["draw"],
+                        "away": float(p["away_win_p"]) - implied["away"],
+                    }
+                    best = max(edges, key=edges.get)
+                    fx["implied_1x2"] = implied
+                    fx["value_edges"] = edges
+                    fx["value_side"] = best
+                    fx["best_edge"] = round(float(edges[best]), 3)
+    except Exception:
+        pass
 
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days_ahead)
