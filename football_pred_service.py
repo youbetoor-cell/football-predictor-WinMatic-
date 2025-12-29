@@ -6202,3 +6202,65 @@ def admin_backfill_market_from_payload(
     conn.close()
 
     return {"ok": True, "league": league, "window_days": window_days, "scanned": len(rows), "updated": updated, "errors": errors, "dry_run": dry_run}
+
+@app.get("/debug/market-finished-sample")
+def debug_market_finished_sample(league: int = 39, window_days: int = 60, limit: int = 10):
+    from datetime import datetime, timedelta
+    ensure_predictions_db()
+    cutoff = (datetime.utcnow() - timedelta(days=int(window_days))).isoformat()
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    # Counts
+    cur.execute("""
+        SELECT COUNT(*)
+        FROM predictions_history
+        WHERE league = ?
+          AND kickoff_utc >= ?
+          AND actual_result IS NOT NULL
+    """, (int(league), cutoff))
+    finished = int(cur.fetchone()[0])
+
+    cur.execute("""
+        SELECT COUNT(*)
+        FROM predictions_history
+        WHERE league = ?
+          AND kickoff_utc >= ?
+          AND actual_result IS NOT NULL
+          AND market_home_p IS NOT NULL
+          AND market_draw_p IS NOT NULL
+          AND market_away_p IS NOT NULL
+    """, (int(league), cutoff))
+    finished_with_market = int(cur.fetchone()[0])
+
+    # Sample rows to inspect what is NULL
+    cur.execute("""
+        SELECT id, fixture_id, kickoff_utc, actual_result,
+               market_home_p, market_draw_p, market_away_p,
+               market_home_odds, market_draw_odds, market_away_odds
+        FROM predictions_history
+        WHERE league = ?
+          AND kickoff_utc >= ?
+          AND actual_result IS NOT NULL
+        ORDER BY kickoff_utc DESC
+        LIMIT ?
+    """, (int(league), cutoff, int(limit)))
+    sample = [
+        {
+            "id": r[0], "fixture_id": r[1], "kickoff_utc": r[2], "actual_result": r[3],
+            "market_p": {"home": r[4], "draw": r[5], "away": r[6]},
+            "market_odds": {"home": r[7], "draw": r[8], "away": r[9]},
+        }
+        for r in cur.fetchall()
+    ]
+
+    conn.close()
+    return {
+        "ok": True,
+        "league": league,
+        "window_days": window_days,
+        "finished_rows": finished,
+        "finished_rows_with_market": finished_with_market,
+        "sample": sample,
+    }
