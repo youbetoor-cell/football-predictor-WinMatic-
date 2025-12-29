@@ -5972,3 +5972,123 @@ def debug_history_count(league: int | None = None):
             return {"ok": True, "league": int(league), "predictions_history_count": int(n)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+@app.post("/admin/backfill-history")
+def admin_backfill_history(
+    league: int = 39,
+    window_days: int = 60,
+    limit: int = 5000,
+    dry_run: bool = False,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+):
+    """
+    Backfill structured columns from payload JSON for rows missing market/model fields.
+    This lets /progress/metrics compute market baseline immediately.
+    """
+    require_admin(x_admin_token)
+
+    ensure_predictions_db()
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    # Which columns exist?
+    cur.execute("PRAGMA table_info(predictions_history);")
+    cols = {row[1] for row in cur.fetchall()}
+
+    need_cols = {"payload", "market_home_p", "market_draw_p", "market_away_p", "model_home_p", "model_draw_p", "model_away_p"}
+    if not need_cols.issubset(cols):
+        conn.close()
+        return {"ok": False, "error": f"Missing required columns: {sorted(need_cols - cols)}"}
+
+    cutoff = (datetime.utcnow() - timedelta(days=int(window_days))).isoformat()
+
+    cur.execute(
+        """
+        SELECT id, payload
+        FROM predictions_history
+        WHERE league = ?
+          AND kickoff_utc >= ?
+          AND payload IS NOT NULL
+          AND (
+            market_home_p IS NULL OR market_draw_p IS NULL OR market_away_p IS NULL
+            OR model_home_p IS NULL OR model_draw_p IS NULL OR model_away_p IS NULL
+            OR predicted_side IS NULL
+          )
+        ORDER BY kickoff_utc DESC
+        LIMIT ?
+        """,
+        (int(league), cutoff, int(limit)),
+    )
+    rows = cur.fetchall()
+
+    updated = 0
+    errors = 0
+
+    for row_id, payload in rows:
+        try:
+            f = json.loads(payload)
+
+            preds = f.get("predictions") or {}
+            odds = f.get("odds_1x2") or {}
+            implied = f.get("implied_1x2") or {}
+            v_edges = f.get("value_edges") or {}
+
+            predicted_side = (preds.get("best_side") or "").strip().lower() or None
+
+            edge_value = None
+            if predicted_side in ("home", "draw", "away"):
+                try:
+                    edge_value = float(v_edges.get(predicted_side)) if v_edges.get(predicted_side) is not None else None
+                except Exception:
+                    edge_value = None
+
+            sets = []
+            vals = []
+
+            def set_if(col, val):
+                if col in cols:
+                    sets.append(f"{col} = COALESCE({col}, ?)")
+                    vals.append(val)
+
+            set_if("home_team", f.get("home_name") or f.get("home_team"))
+            set_if("away_team", f.get("away_name") or f.get("away_team"))
+
+            set_if("model_home_p", preds.get("home_win_p"))
+            set_if("model_draw_p", preds.get("draw_p"))
+            set_if("model_away_p", preds.get("away_win_p"))
+
+            set_if("predicted_side", predicted_side)
+            set_if("edge_value", edge_value)
+
+            set_if("market_home_p", implied.get("home"))
+            set_if("market_draw_p", implied.get("draw"))
+            set_if("market_away_p", implied.get("away"))
+
+            set_if("market_home_odds", odds.get("home"))
+            set_if("market_draw_odds", odds.get("draw"))
+            set_if("market_away_odds", odds.get("away"))
+
+            set_if("value_side", f.get("value_side"))
+            set_if("best_edge", f.get("best_edge"))
+
+            if sets and not dry_run:
+                cur.execute(f"UPDATE predictions_history SET {', '.join(sets)} WHERE id = ?", tuple(vals) + (row_id,))
+                updated += 1
+
+        except Exception:
+            errors += 1
+
+    if not dry_run:
+        conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "league": league,
+        "window_days": window_days,
+        "scanned": len(rows),
+        "updated": updated,
+        "errors": errors,
+        "dry_run": dry_run,
+    }
