@@ -676,14 +676,13 @@ init_history_db()
 
 def record_predictions_history(league: int, fixtures: list[dict]) -> None:
     """
-    Persist prediction payloads for later analysis.
+    Persist predictions into predictions_history.
 
-    Upserts on (league, fixture_id, kickoff_utc) so we don't create duplicates.
-
-    IMPORTANT:
-    - Always writes payload (JSON)
-    - Also writes structured columns used by /results/recent, /progress/metrics, ROI, etc.
-    - Does NOT overwrite actual_result (so settlement is safe)
+    Key points:
+    - Upserts on (league, fixture_id, kickoff_utc)
+    - Always writes payload JSON (backward compatible)
+    - ALSO writes structured columns used by /results/recent, /progress/metrics, ROI, etc.
+    - Never overwrites actual_result (settlement stays safe)
     """
     if not fixtures:
         return
@@ -708,7 +707,6 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
         cur.execute("PRAGMA table_info(predictions_history);")
         cols = {row[1] for row in cur.fetchall()}
 
-        # Columns we will attempt to write (only those that exist)
         wanted = [
             "league", "fixture_id", "kickoff_utc", "payload",
             "home_team", "away_team",
@@ -721,28 +719,28 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
             "value_side", "best_edge",
         ]
         insert_cols = [c for c in wanted if c in cols]
-
         if not insert_cols:
             return
 
         placeholders = ",".join(["?"] * len(insert_cols))
 
-        # Build UPDATE clause (keep existing values if new one is NULL)
-        # Also preserve created_at if it already exists.
+        # Update clause: keep old value if the new one is NULL
         update_parts = ["payload = excluded.payload"]
         for c in insert_cols:
             if c in ("league", "fixture_id", "kickoff_utc", "payload"):
                 continue
+            if c == "actual_result":
+                continue
             update_parts.append(f"{c} = COALESCE(excluded.{c}, predictions_history.{c})")
 
-        if "created_at" in cols:
-            # Keep created_at if present; otherwise use excluded
+        # Preserve created_at if it exists
+        has_created_at = "created_at" in cols
+        if has_created_at:
             update_parts.append(
                 "created_at = COALESCE(NULLIF(predictions_history.created_at,''), excluded.created_at)"
             )
 
-        # INSERT statement
-        if "created_at" in cols:
+        if has_created_at:
             sql = f"""
             INSERT INTO predictions_history ({",".join(insert_cols)}, created_at)
             VALUES ({placeholders}, datetime('now'))
@@ -764,8 +762,6 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
             if fixture_id is None or kickoff_utc is None:
                 continue
 
-            payload = json.dumps(f, ensure_ascii=False)
-
             preds = f.get("predictions") or {}
             odds = f.get("odds_1x2") or {}
             implied = f.get("implied_1x2") or {}
@@ -773,15 +769,10 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
 
             home_team = f.get("home_name") or f.get("home_team")
             away_team = f.get("away_name") or f.get("away_team")
-            if not home_team:
-                home_team = ((f.get("teams") or {}).get("home") or {}).get("name")
-            if not away_team:
-                away_team = ((f.get("teams") or {}).get("away") or {}).get("name")
 
             predicted_side = (preds.get("best_side") or "").strip().lower() or None
 
-            # For ROI/PnL we want edge_value to match the bet side.
-            # Here: edge of the MODEL pick vs market implied (value_edges already computed that way).
+            # edge_value for ROI: edge of the MODEL pick
             edge_value = None
             if predicted_side in ("home", "draw", "away"):
                 try:
@@ -789,7 +780,6 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
                 except Exception:
                     edge_value = None
 
-            # Optional value-bet info (best edge across all sides)
             value_side = (f.get("value_side") or "").strip().lower() or None
             best_edge = f.get("best_edge")
             try:
@@ -797,7 +787,8 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
             except Exception:
                 best_edge = None
 
-            # Row dict
+            payload = json.dumps(f, ensure_ascii=False)
+
             d = {
                 "league": int(league),
                 "fixture_id": int(fixture_id),
