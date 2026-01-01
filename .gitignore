@@ -43,3 +43,37 @@ data/*.db
 # misc
 Terminal Saved Output
 recent_*.json
+
+# Local backups / patch artifacts
+*.bak
+*.BACKUP.py
+football_pred_service*.py
+football_pred_service.py.bak*
+history_backup.json
+winmatic_dump.sql
+tools/
+scripts/
+
+# Backup / patch artifacts
+*.bak
+*.BACKUP.py
+football_pred_service*.py
+football_pred_service.py.bak*
+history_backup.json
+winmatic_dump.sql
+
+# Local backups / patch artifacts
+football_pred_service*.bak*
+football_pred_service*.BACKUP*
+football_pred_service*copy*
+football_pred_service_*_REPAIR*.py
+football_pred_service*broken*.py
+history_backup.json
+winmatic_dump.sql
+
+# Generated static snapshots
+static/*_16:12:2025.*
+static/js/status_16:12*.js
+
+# Local folders
+app/
