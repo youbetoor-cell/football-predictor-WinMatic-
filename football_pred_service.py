@@ -6272,3 +6272,12 @@ def debug_market_finished_sample(league: int = 39, window_days: int = 60, limit:
         "finished_rows_with_market": finished_with_market,
         "sample": sample,
     }
+
+@app.get("/debug/versions")
+def debug_versions():
+    import sys
+    import sklearn
+    return {
+        "python": sys.version,
+        "sklearn": sklearn.__version__,
+    }
