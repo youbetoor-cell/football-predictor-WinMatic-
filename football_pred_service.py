@@ -6156,12 +6156,23 @@ def admin_backfill_market_from_payload(
     rows = cur.fetchall()
 
     updated = 0
+
+    skipped = 0
+
+    error_samples = []  # first N errors
+
     skipped = 0
     errors = 0
 
     for row_id, payload in rows:
         try:
-            f = json.loads(payload)
+            try:
+                f = json.loads(payload)
+            except Exception as e:
+                skipped += 1
+                if len(error_samples) < 10:
+                    error_samples.append({"stage":"json_loads","err":str(e)})
+                continue
             preds = f.get("predictions") or {}
             odds = f.get("odds_1x2") or {}
 
@@ -6298,4 +6309,7 @@ def debug_build_info():
 def versions_root():
     import sys
     import sklearn
-    return {"python": sys.version, "sklearn": sklearn.__version__}
+    return {"python": sys.version, "sklearn": sklearn.__version__,
+        "skipped": skipped,
+        "error_samples": error_samples
+    }
