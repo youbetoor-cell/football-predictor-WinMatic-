@@ -6281,3 +6281,21 @@ def debug_versions():
         "python": sys.version,
         "sklearn": sklearn.__version__,
     }
+
+@app.get("/debug/build-info")
+def debug_build_info():
+    import os, sys
+    try:
+        import sklearn
+        sklearn_v = sklearn.__version__
+    except Exception:
+        sklearn_v = None
+
+    sha = os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_COMMIT") or None
+    return {"python": sys.version, "sklearn": sklearn_v, "commit": sha}
+
+@app.get("/__versions")
+def versions_root():
+    import sys
+    import sklearn
+    return {"python": sys.version, "sklearn": sklearn.__version__}
