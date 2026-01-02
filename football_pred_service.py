@@ -32,6 +32,63 @@ import threading
 import base64
 import logging
 import sqlite3
+
+import os
+
+# === History DB backend (SQLite file OR Neon Postgres) ===
+# If DATABASE_URL starts with postgresql://, we use Neon.
+# We keep your existing SQL mostly unchanged by translating '?' -> '%s' for psycopg.
+
+def _is_pg_url(url: str) -> bool:
+    return bool(url) and url.startswith("postgresql://")
+
+class PGCursor:
+    def __init__(self, cur):
+        self._cur = cur
+
+    def execute(self, sql, params=None):
+        sql = sql.replace("?", "%s")
+        return self._cur.execute(sql, params or ())
+
+    def executemany(self, sql, seq_of_params):
+        sql = sql.replace("?", "%s")
+        return self._cur.executemany(sql, seq_of_params)
+
+    def fetchone(self):
+        return self._cur.fetchone()
+
+    def fetchall(self):
+        return self._cur.fetchall()
+
+    def close(self):
+        return self._cur.close()
+
+    @property
+    def rowcount(self):
+        return getattr(self._cur, "rowcount", -1)
+
+class PGConnection:
+    def __init__(self, conn):
+        self._conn = conn
+        self.is_pg = True
+
+    def cursor(self):
+        return PGCursor(self._conn.cursor())
+
+    def commit(self):
+        return self._conn.commit()
+
+    def close(self):
+        return self._conn.close()
+
+def db_connect():
+    url = os.environ.get("DATABASE_URL", "")
+    if _is_pg_url(url):
+        import psycopg
+        return PGConnection(psycopg.connect(url))
+    # fallback: sqlite
+    return db_connect()
+
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, Tuple
 from functools import lru_cache
@@ -97,7 +154,7 @@ def ensure_predictions_db() -> None:
         db_dir = os.path.dirname(DB_PATH) or "."
         os.makedirs(db_dir, exist_ok=True)
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
 
         # 1) Create the table if it doesn't exist at all.
@@ -653,7 +710,50 @@ def current_season() -> int:
 
 def init_history_db() -> None:
     os.makedirs(ART, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
+
+    # If we're on Neon (Postgres), create the table with a proper UNIQUE constraint.
+    if getattr(conn, "is_pg", False):
+        cur = conn.cursor()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS predictions_history (
+          id BIGSERIAL PRIMARY KEY,
+          fixture_id BIGINT NOT NULL,
+          league INT NOT NULL,
+          home_team TEXT,
+          away_team TEXT,
+          kickoff_utc TIMESTAMPTZ NOT NULL,
+
+          model_home_p DOUBLE PRECISION,
+          model_draw_p DOUBLE PRECISION,
+          model_away_p DOUBLE PRECISION,
+
+          predicted_side TEXT,
+          edge_value DOUBLE PRECISION,
+
+          actual_result TEXT,
+
+          payload TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+
+          market_home_p DOUBLE PRECISION,
+          market_draw_p DOUBLE PRECISION,
+          market_away_p DOUBLE PRECISION,
+
+          market_home_odds DOUBLE PRECISION,
+          market_draw_odds DOUBLE PRECISION,
+          market_away_odds DOUBLE PRECISION,
+
+          market_bookmaker TEXT,
+          market_bet_name TEXT,
+
+          CONSTRAINT uq_predictions_history UNIQUE (league, fixture_id, kickoff_utc)
+        );
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+        return
     cur = conn.cursor()
     cur.execute(
         """
@@ -693,7 +793,7 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
 
     conn = None
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
 
         # Ensure unique index for conflict target
@@ -2893,7 +2993,7 @@ def debug_db():
     }
 
     try:
-        con = sqlite3.connect(DB_PATH)
+        con = db_connect()
         try:
             cols = [r[1] for r in con.execute("PRAGMA table_info(predictions_history)").fetchall()]
             info["predictions_history_cols"] = cols
@@ -4083,7 +4183,7 @@ def api_results_sync(
 
     # 1) read candidate fixture_ids
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
         cur.execute(
             """
@@ -4173,7 +4273,7 @@ def api_results_sync(
                 continue
 
             try:
-                conn = sqlite3.connect(DB_PATH)
+                conn = db_connect()
                 cur = conn.cursor()
                 cur.execute(
                     """
@@ -4499,7 +4599,7 @@ def api_backtest_1x2(
             db_writes_attempted += 1
             try:
                 ensure_predictions_db()
-                conn = sqlite3.connect(DB_PATH)
+                conn = db_connect()
                 cur = conn.cursor()
 
                 # Existing columns (schema-flexible)
@@ -4648,7 +4748,7 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=int(window_days))
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
 
         # detect optional market columns (schema evolves)
@@ -4886,7 +4986,7 @@ def api_progress_roi(
     since_ts = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
 
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
         # We ALSO select the primary key id so we can pick the latest row per fixture
         cur.execute(
@@ -5103,7 +5203,7 @@ def api_history(
     try:
         ensure_predictions_db()
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
         cur.execute(
             """
@@ -5196,7 +5296,7 @@ def api_pnl_history(
     ensure_predictions_db()
 
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
         cur.execute(
             """
@@ -5315,7 +5415,7 @@ def api_roi_by_league(
     """
     ensure_predictions_db()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     edge_filter = ""
@@ -5371,7 +5471,7 @@ def api_pnl_debug(
     - Only rows with actual_result IS NOT NULL
     """
     ensure_predictions_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
     cur.execute(
         """
@@ -5442,7 +5542,7 @@ def api_predictions_sanity(
     """
     ensure_predictions_db()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
     cur.execute(
         """
@@ -5702,7 +5802,7 @@ def debug_pending_results(
     """
     ensure_predictions_db()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
     cur.execute(
         """
@@ -5762,7 +5862,7 @@ def api_recent_results(league: int = 39, limit: int = 20):
         ensure_predictions_db()
         limit = max(1, min(int(limit), 100))
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
 
         cur.execute(
@@ -5820,7 +5920,7 @@ def api_update_results(
     """
     ensure_predictions_db()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
     cur.execute(
         """
@@ -5840,7 +5940,7 @@ def api_update_results(
 
     updated = 0
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     for fx_id in pending_ids:
@@ -5934,7 +6034,7 @@ def _within_odds_window(kickoff_utc) -> bool:
 def debug_history_count(league: int | None = None):
     import sqlite3
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         cur = conn.cursor()
         if league is None:
             cur.execute("SELECT COUNT(*) FROM predictions_history")
@@ -5965,7 +6065,7 @@ def admin_backfill_history(
 
     ensure_predictions_db()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     # Which columns exist?
@@ -6077,7 +6177,7 @@ def debug_market_samples(league: int = 39, window_days: int = 60):
     ensure_predictions_db()
     cutoff = (datetime.utcnow() - timedelta(days=int(window_days))).isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     # total finished rows in window
@@ -6132,7 +6232,7 @@ def admin_backfill_market_from_payload(
     from datetime import datetime, timedelta
     cutoff = (datetime.utcnow() - timedelta(days=int(window_days))).isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     cur.execute(
@@ -6224,7 +6324,7 @@ def debug_market_finished_sample(league: int = 39, window_days: int = 60, limit:
     ensure_predictions_db()
     cutoff = (datetime.utcnow() - timedelta(days=int(window_days))).isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     # Counts
@@ -6315,7 +6415,7 @@ def debug_payload_market_stats(league: int = 39, window_days: int = 180):
     import datetime as dt
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=window_days)).isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     cur = conn.cursor()
 
     cur.execute(
