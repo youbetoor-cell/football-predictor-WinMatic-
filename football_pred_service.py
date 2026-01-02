@@ -6167,7 +6167,18 @@ def admin_backfill_market_from_payload(
     for row_id, payload in rows:
         try:
             try:
+            try:
                 f = json.loads(payload)
+            except Exception:
+                try:
+                    import ast
+                    f = ast.literal_eval(payload)
+                except Exception as e2:
+                    errors += 1
+                    if "error_samples" in locals() and len(error_samples) < 10:
+                        error_samples.append({"stage":"payload_parse","err":str(e2)})
+                    continue
+
             except Exception as e:
                 skipped += 1
                 if len(error_samples) < 10:
@@ -6211,8 +6222,7 @@ def admin_backfill_market_from_payload(
                     f"UPDATE predictions_history SET {', '.join(sets)} WHERE id = ?",
                     tuple(vals) + (row_id,),
                 )
-            updated += 1
-
+            updated += 1  # only counted when we applied a non-empty update
         except Exception as e:
             errors += 1
 
