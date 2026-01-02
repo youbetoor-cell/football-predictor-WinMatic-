@@ -4791,68 +4791,52 @@ def api_backtest_1x2(
 @app.get("/progress/metrics")
 def progress_metrics(league: int, window_days: int = 60):
     """
-    Counts completed rows in predictions_history within the window,
-    and (if schema supports it) how many have market columns populated.
-    Works on both SQLite and Postgres (Neon).
+    Works for both Postgres (Neon) and SQLite.
     """
     try:
-        from datetime import datetime, timezone, timedelta
-
         conn = db_connect()
         cur = conn.cursor()
-        is_sqlite = isinstance(conn, sqlite3.Connection)
 
-        # Read schema columns
-        if is_sqlite:
-            # Backend-aware column list
-            try:
-                # Postgres: information_schema
-                cur.execute("""
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public'
-                      AND table_name = 'predictions_history'
-                    ORDER BY ordinal_position
-                """)
-                cols = [r[0] for r in cur.fetchall()]
-            except Exception:
-                # SQLite fallback
-                cur.execute("PRAGMA table_info(predictions_history)")
-                cols = [r[1] for r in cur.fetchall()]else:
+        # Fetch column list (Postgres first, fallback to SQLite PRAGMA)
+        try:
             cur.execute("""
                 SELECT column_name
                 FROM information_schema.columns
-                WHERE table_schema='public' AND table_name='predictions_history'
+                WHERE table_schema = 'public'
+                  AND table_name = 'predictions_history'
                 ORDER BY ordinal_position
             """)
             cols = [r[0] for r in cur.fetchall()]
+        except Exception:
+            cur.execute("PRAGMA table_info(predictions_history)")
+            cols = [r[1] for r in cur.fetchall()]
 
-        market_cols = {
+        has_market_cols = all(c in cols for c in (
             "market_home_p","market_draw_p","market_away_p",
             "market_home_odds","market_draw_odds","market_away_odds",
-            "market_bookmaker","market_bet_name",
-        }
-        has_market_cols = market_cols.issubset(set(cols))
+        ))
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
-
-        # Finished rows = actual_result NOT NULL
-        cur.execute(
-            "SELECT COUNT(*) FROM predictions_history "
-            "WHERE league=? AND kickoff_utc>=? AND actual_result IS NOT NULL",
-            (league, cutoff),
-        )
-        finished_rows = (cur.fetchone() or [0])[0] or 0
+        # Finished rows in last window_days for the league
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM predictions_history
+            WHERE league = %s
+              AND kickoff_utc >= (NOW() - (%s || ' days')::interval)
+        """, (league, window_days))
+        finished_rows = cur.fetchone()[0] or 0
 
         finished_rows_with_market = 0
         if has_market_cols:
-            cur.execute(
-                "SELECT COUNT(*) FROM predictions_history "
-                "WHERE league=? AND kickoff_utc>=? AND actual_result IS NOT NULL "
-                "AND (market_home_p IS NOT NULL OR market_draw_p IS NOT NULL OR market_away_p IS NOT NULL)",
-                (league, cutoff),
-            )
-            finished_rows_with_market = (cur.fetchone() or [0])[0] or 0
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM predictions_history
+                WHERE league = %s
+                  AND kickoff_utc >= (NOW() - (%s || ' days')::interval)
+                  AND market_home_p IS NOT NULL
+                  AND market_draw_p IS NOT NULL
+                  AND market_away_p IS NOT NULL
+            """, (league, window_days))
+            finished_rows_with_market = cur.fetchone()[0] or 0
 
         cur.close()
         conn.close()
@@ -4865,9 +4849,9 @@ def progress_metrics(league: int, window_days: int = 60):
             "finished_rows": int(finished_rows),
             "finished_rows_with_market": int(finished_rows_with_market),
         }
+
     except Exception as e:
         return {"ok": False, "league": league, "window_days": window_days, "error": str(e)}
-
 
 @app.get("/progress/roi")
 
