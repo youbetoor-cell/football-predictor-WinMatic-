@@ -790,9 +790,6 @@ def init_history_db() -> None:
     conn.commit()
     conn.close()
     logger.info("[DB] history.db ready")
-
-init_history_db()
-
 def record_predictions_history(league: int, fixtures: list[dict]) -> None:
     """Persist predictions to predictions_history.
 
@@ -2996,6 +2993,16 @@ def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
 # ============================================================
 
 app = FastAPI(title="WinMatic Predictor (Clean Backend)")
+
+@app.on_event("startup")
+def _startup_init_history_db():
+    try:
+        init_history_db()
+        print("init_history_db: OK")
+    except Exception as e:
+        # Don't crash the whole service if DB is temporarily unreachable.
+        print("init_history_db: WARN (continuing without DB init):", repr(e))
+
 
 
 def _history_table_columns(conn) -> list[str]:
