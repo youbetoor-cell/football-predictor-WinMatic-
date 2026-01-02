@@ -6167,32 +6167,16 @@ def admin_backfill_market_from_payload(
     for row_id, payload in rows:
         try:
             try:
-            try:
                 f = json.loads(payload)
             except Exception:
-                try:
-                    import ast
-                    f = ast.literal_eval(payload)
-                except Exception as e2:
-                    errors += 1
-                    if "error_samples" in locals() and len(error_samples) < 10:
-                        error_samples.append({"stage":"payload_parse","err":str(e2)})
-                    continue
+                import ast
+                f = ast.literal_eval(payload)
+        except Exception as e:
+            errors += 1
+            if len(error_samples) < 10:
+                error_samples.append({"stage":"payload_parse","err":str(e),"row_id":row_id})
+            continue
 
-            except Exception as e:
-                skipped += 1
-                if len(error_samples) < 10:
-                    error_samples.append({"stage":"json_loads","err":str(e)})
-                continue
-            preds = f.get("predictions") or {}
-            odds = f.get("odds_1x2") or {}
-
-            # Guard: skip rows where payload has implied/odds keys but values are all null/empty
-            if (
-                not any(v is not None for v in implied.values())
-                and not any(v is not None for v in odds.values())
-            ):
-                continue
             implied = f.get("implied_1x2") or {}
 
             predicted_side = (preds.get("best_side") or "").strip().lower() or None
