@@ -6213,14 +6213,16 @@ def admin_backfill_market_from_payload(
                 )
             updated += 1
 
-        except Exception:
+        except Exception as e:
             errors += 1
 
     if not dry_run:
         conn.commit()
     conn.close()
 
-    return {"ok": True, "league": league, "window_days": window_days, "scanned": len(rows), "updated": updated, "errors": errors, "skipped": skipped, "dry_run": dry_run}
+    return {"ok": True, "league": league, "window_days": window_days, "scanned": len(rows), "updated": updated, "errors": errors, "skipped": skipped, "dry_run": dry_run,
+        "error_samples": error_samples
+    }
 
 @app.get("/debug/market-finished-sample")
 def debug_market_finished_sample(league: int = 39, window_days: int = 60, limit: int = 10):
