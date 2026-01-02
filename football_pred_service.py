@@ -3002,7 +3002,7 @@ def _startup_init_history_db():
 @app.on_event("startup")
 def _startup_init_history_db():
     try:
-        init_history_db()
+# init_history_db()  # moved to startup
     except Exception as e:
         print("WARN: init_history_db failed:", repr(e))
         print("init_history_db: OK")
