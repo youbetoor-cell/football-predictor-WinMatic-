@@ -6486,3 +6486,222 @@ def debug_payload_market_stats(league: int = 39, window_days: int = 180):
         "payload_has_odds_1x2_key": has_odds_key,
         "payload_has_implied_1x2_key": has_implied_key,
     }
+
+import time
+from urllib.parse import urlparse
+
+def _get_api_sports_key():
+    # Try common env var names you may already be using
+    for k in ("API_SPORTS_KEY","APISPORTS_KEY","API_FOOTBALL_KEY","FOOTBALL_API_KEY"):
+        v = os.environ.get(k)
+        if v:
+            return v
+    return None
+
+def _extract_1x2_from_odds_api(payload: dict):
+    """
+    API-Sports odds response shape varies by plan/endpoint; this tries to find:
+    bookmaker -> bet ("Match Winner"/"1X2") -> values {Home/Draw/Away}.
+    Returns (odds_dict, bookmaker_name, bet_name) or (None, None, None).
+    """
+    resp = payload.get("response") or []
+    if not resp:
+        return None, None, None
+
+    # Sometimes response is list with one element
+    node = resp[0] if isinstance(resp, list) else resp
+    bookmakers = node.get("bookmakers") or []
+    if not bookmakers:
+        return None, None, None
+
+    preferred_bets = {"Match Winner", "1X2", "1x2", "Full Time Result"}
+
+    for bm in bookmakers:
+        bm_name = bm.get("name")
+        bets = bm.get("bets") or []
+        for bet in bets:
+            bet_name = bet.get("name")
+            if bet_name not in preferred_bets and (bet_name or "").lower() not in {b.lower() for b in preferred_bets}:
+                continue
+            values = bet.get("values") or []
+            odds = {"home": None, "draw": None, "away": None}
+            for v in values:
+                label = (v.get("value") or "").strip().lower()
+                odd = v.get("odd")
+                try:
+                    oddf = float(odd) if odd is not None else None
+                except Exception:
+                    oddf = None
+                if label in ("home", "1"):
+                    odds["home"] = oddf
+                elif label in ("draw", "x"):
+                    odds["draw"] = oddf
+                elif label in ("away", "2"):
+                    odds["away"] = oddf
+
+            if odds["home"] and odds["draw"] and odds["away"]:
+                return odds, bm_name, bet_name
+
+    return None, None, None
+
+def _implied_probs_from_odds(odds: dict):
+    # Normalize implieds to sum to 1 (removes overround)
+    inv = {}
+    for k in ("home","draw","away"):
+        o = odds.get(k)
+        inv[k] = (1.0 / o) if o and o > 0 else None
+    if not inv["home"] or not inv["draw"] or not inv["away"]:
+        return None
+    s = inv["home"] + inv["draw"] + inv["away"]
+    return {"home": inv["home"]/s, "draw": inv["draw"]/s, "away": inv["away"]/s}
+
+@app.post("/admin/backfill-market-from-api")
+def admin_backfill_market_from_api(
+    league: int | None = None,
+    window_days: int = 180,
+    limit: int = 5000,
+    sleep_ms: int = 200,
+    dry_run: bool = False,
+    admin=Depends(require_admin),
+):
+    """
+    Backfill market odds/probabilities for finished fixtures by calling API-Sports odds endpoint.
+    If league is omitted, it will backfill for ALL leagues present in predictions_history.
+    """
+    key = _get_api_sports_key()
+    if not key:
+        raise HTTPException(status_code=500, detail="Missing API-Sports key env var (API_SPORTS_KEY/APISPORTS_KEY/etc).")
+
+    import requests
+
+    conn = db_connect()
+    cur = conn.cursor()
+
+    # Determine leagues to process
+    leagues = []
+    if league is not None:
+        leagues = [int(league)]
+    else:
+        cur.execute("SELECT DISTINCT league FROM predictions_history ORDER BY league")
+        leagues = [int(r[0]) for r in cur.fetchall()]
+
+    scanned = updated = skipped = errors = 0
+    error_samples = []
+
+    cutoff_expr = None
+    # Postgres vs sqlite date math
+    if getattr(conn, "is_pg", False):
+        cutoff_expr = f"NOW() - INTERVAL '{int(window_days)} days'"
+        where_time = f"kickoff_utc >= {cutoff_expr}"
+    else:
+        # sqlite stores kickoff_utc as text; compare lexicographically works for ISO8601
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=int(window_days))).isoformat()
+        where_time = "kickoff_utc >= ?"
+
+    def select_rows_for_league(lg: int):
+        if getattr(conn, "is_pg", False):
+            cur.execute(f"""
+                SELECT id, fixture_id
+                FROM predictions_history
+                WHERE league = %s
+                  AND {where_time}
+                  AND actual_result IS NOT NULL
+                  AND (
+                       market_home_odds IS NULL OR market_draw_odds IS NULL OR market_away_odds IS NULL
+                    OR market_home_p   IS NULL OR market_draw_p   IS NULL OR market_away_p   IS NULL
+                  )
+                ORDER BY kickoff_utc DESC
+                LIMIT %s
+            """, (lg, int(limit)))
+        else:
+            cur.execute(f"""
+                SELECT id, fixture_id
+                FROM predictions_history
+                WHERE league = ?
+                  AND {where_time}
+                  AND actual_result IS NOT NULL
+                  AND (
+                       market_home_odds IS NULL OR market_draw_odds IS NULL OR market_away_odds IS NULL
+                    OR market_home_p   IS NULL OR market_draw_p   IS NULL OR market_away_p   IS NULL
+                  )
+                ORDER BY kickoff_utc DESC
+                LIMIT ?
+            """, (lg, cutoff, int(limit)))
+        return cur.fetchall()
+
+    for lg in leagues:
+        rows = select_rows_for_league(lg)
+        for row_id, fixture_id in rows:
+            scanned += 1
+            try:
+                r = requests.get(
+                    "https://v3.football.api-sports.io/odds",
+                    headers={"x-apisports-key": key},
+                    params={"fixture": int(fixture_id)},
+                    timeout=20,
+                )
+                if r.status_code != 200:
+                    skipped += 1
+                    if len(error_samples) < 10:
+                        error_samples.append({"stage":"http", "fixture_id":int(fixture_id), "status":r.status_code})
+                    continue
+
+                data = r.json()
+                odds, bm_name, bet_name = _extract_1x2_from_odds_api(data)
+                if not odds:
+                    skipped += 1
+                    continue
+
+                implied = _implied_probs_from_odds(odds)
+                if not implied:
+                    skipped += 1
+                    continue
+
+                if not dry_run:
+                    cur.execute("""
+                        UPDATE predictions_history
+                        SET market_home_odds = ?, market_draw_odds = ?, market_away_odds = ?,
+                            market_home_p = ?,    market_draw_p = ?,    market_away_p = ?,
+                            market_bookmaker = ?, market_bet_name = ?
+                        WHERE id = ?
+                    """, (
+                        odds["home"], odds["draw"], odds["away"],
+                        implied["home"], implied["draw"], implied["away"],
+                        bm_name, bet_name,
+                        row_id
+                    ))
+                updated += 1
+
+                if sleep_ms:
+                    time.sleep(max(0, int(sleep_ms)) / 1000.0)
+
+            except Exception as e:
+                errors += 1
+                if len(error_samples) < 10:
+                    error_samples.append({"stage":"exception", "fixture_id":int(fixture_id), "err":str(e)})
+
+    if not dry_run:
+        conn.commit()
+    try:
+        cur.close()
+    except Exception:
+        pass
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "leagues": leagues,
+        "window_days": window_days,
+        "limit": limit,
+        "sleep_ms": sleep_ms,
+        "scanned": scanned,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors,
+        "dry_run": dry_run,
+        "error_samples": error_samples,
+    }
