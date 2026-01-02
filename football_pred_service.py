@@ -89,6 +89,26 @@ def db_connect():
     # fallback: sqlite
     return db_connect()
 
+
+def get_table_columns(conn, cur, table: str) -> list[str]:
+    """
+    Return column names for `table` for both Postgres (Neon) and SQLite.
+    """
+    if getattr(conn, "is_pg", False):
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = %s
+            ORDER BY ordinal_position
+            """,
+            (table,),
+        )
+        return [r[0] for r in cur.fetchall()]
+
+    cur.execute(f"PRAGMA table_info({table})")
+    return [r[1] for r in cur.fetchall()]
+
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, Tuple
 from functools import lru_cache
