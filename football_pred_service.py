@@ -2997,7 +2997,14 @@ app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 @app.on_event("startup")
 def _startup_init_history_db():
     try:
+# NOTE: Do not initialize the DB at import time (Gunicorn import must not crash).
+# Initialize on startup, and keep the app alive even if DB is temporarily unreachable.
+@app.on_event("startup")
+def _startup_init_history_db():
+    try:
         init_history_db()
+    except Exception as e:
+        print("WARN: init_history_db failed:", repr(e))
         print("init_history_db: OK")
     except Exception as e:
         # Don't crash the whole service if DB is temporarily unreachable.
