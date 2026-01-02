@@ -4804,9 +4804,21 @@ def progress_metrics(league: int, window_days: int = 60):
 
         # Read schema columns
         if is_sqlite:
-            cur.execute("PRAGMA table_info(predictions_history)")
-            cols = [r[1] for r in cur.fetchall()]
-        else:
+            # Backend-aware column list
+            try:
+                # Postgres: information_schema
+                cur.execute("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'predictions_history'
+                    ORDER BY ordinal_position
+                """)
+                cols = [r[0] for r in cur.fetchall()]
+            except Exception:
+                # SQLite fallback
+                cur.execute("PRAGMA table_info(predictions_history)")
+                cols = [r[1] for r in cur.fetchall()]else:
             cur.execute("""
                 SELECT column_name
                 FROM information_schema.columns
