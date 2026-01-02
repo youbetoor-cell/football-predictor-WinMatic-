@@ -6312,6 +6312,42 @@ def versions_root():
 
 @app.get("/debug/payload-market-stats")
 def debug_payload_market_stats(league: int = 39, window_days: int = 180):
+    import datetime as dt
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=window_days)).isoformat()
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT COUNT(*) FROM predictions_history WHERE league = ? AND kickoff_utc >= ?",
+        (int(league), cutoff),
+    )
+    total = int(cur.fetchone()[0])
+
+    # Robust: treat payload as text and count presence of keys
+    cur.execute(
+        "SELECT COUNT(*) FROM predictions_history WHERE league = ? AND kickoff_utc >= ? AND payload LIKE '%\"odds_1x2\"%'",
+        (int(league), cutoff),
+    )
+    has_odds_key = int(cur.fetchone()[0])
+
+    cur.execute(
+        "SELECT COUNT(*) FROM predictions_history WHERE league = ? AND kickoff_utc >= ? AND payload LIKE '%\"implied_1x2\"%'",
+        (int(league), cutoff),
+    )
+    has_implied_key = int(cur.fetchone()[0])
+
+    conn.close()
+    return {
+        "ok": True,
+        "league": league,
+        "window_days": window_days,
+        "rows_total": total,
+        "payload_has_odds_1x2_key": has_odds_key,
+        "payload_has_implied_1x2_key": has_implied_key,
+    }
+
+def debug_payload_market_stats(league: int = 39, window_days: int = 180):
     """
     Quick sanity: do we even have odds/implied stored inside payload JSON strings?
     Uses SQL LIKE (no JSON parsing needed).
