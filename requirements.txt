@@ -6,9 +6,7 @@ joblib
 requests
 python-dotenv
 pydantic
-psycopg2-binary
 gunicorn==23.0.0
 scikit-learn==1.8.0
 sqlalchemy>=2.0
-psycopg[binary]>=3.1
-psycopg[binary]==3.2.3
+psycopg[binary]==3.2.9
