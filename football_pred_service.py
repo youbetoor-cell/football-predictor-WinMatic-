@@ -2978,6 +2978,33 @@ def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
 
 app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
+
+def _history_table_columns(conn) -> list[str]:
+    """
+    Return predictions_history column names for both Postgres (Neon) and SQLite.
+    """
+    try:
+        mod = conn.__class__.__module__ or ""
+    except Exception:
+        mod = ""
+    is_pg = mod.startswith("psycopg") or bool(getattr(conn, "is_pg", False))
+
+    cur = conn.cursor()
+    if is_pg:
+        cur.execute("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'predictions_history'
+            ORDER BY ordinal_position
+        """)
+        cols = [r[0] for r in cur.fetchall()]
+    else:
+    cols = _history_table_columns(conn)
+        cols = [r[1] for r in cur.fetchall()]
+    cur.close()
+    return cols
+
+
 @app.get("/debug/db")
 def debug_db():
     import os
@@ -4752,7 +4779,7 @@ def api_progress_metrics(league: int = 39, window_days: int = 60):
         cur = conn.cursor()
 
         # detect optional market columns (schema evolves)
-        cur.execute("PRAGMA table_info(predictions_history)")
+    cols = _history_table_columns(conn)
         cols = {r[1] for r in cur.fetchall()}
         has_market = {"market_home_p", "market_draw_p", "market_away_p"}.issubset(cols)
 
