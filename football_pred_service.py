@@ -289,6 +289,13 @@ API_CACHE_FILE = os.path.join(ART, "api_cache.json")
 API_DISK_CACHE_FILE = os.path.join(ART, "api_disk_cache.json")
 CACHE_ONLY_MODE = os.getenv("WINMATIC_CACHE_ONLY", "0") == "1"
 API_QUOTA_EXHAUSTED = False  # becomes True after daily limit is hit
+API_QUOTA_EXHAUSTED_UNTIL = 0.0  # unix ts (UTC midnight-ish)
+API_RATE_LIMIT_UNTIL = 0.0       # unix ts (short cooldown)
+
+def _next_utc_midnight_ts() -> float:
+    dt = datetime.now(timezone.utc)
+    next_mid = (dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
+    return next_mid.timestamp()
 
 DB_PATH = os.path.join("data", "predictions_history.db")
 os.makedirs("data", exist_ok=True)
@@ -522,8 +529,21 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
             detail="API_FOOTBALL_KEY not configured in environment"
         )
 
-    # --- Stop if daily quota already hit ------------------------------------
-    if API_QUOTA_EXHAUSTED:
+    # --- Stop if rate limit / daily quota already hit ------------------------
+    now = time.time()
+
+    # Short cooldown: rate limit (seconds/minutes)
+    if API_RATE_LIMIT_UNTIL and now < API_RATE_LIMIT_UNTIL:
+        cached = try_cache("rate-limited")
+        if cached:
+            return cached
+        raise HTTPException(
+            status_code=429,
+            detail=f"API-FOOTBALL rate limit active; retry in {int(API_RATE_LIMIT_UNTIL - now)}s"
+        )
+
+    # Daily quota (until next UTC midnight-ish)
+    if API_QUOTA_EXHAUSTED_UNTIL and now < API_QUOTA_EXHAUSTED_UNTIL:
         cached = try_cache("quota-exhausted")
         if cached:
             return cached
@@ -531,6 +551,11 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
             status_code=429,
             detail="API-FOOTBALL daily request limit already reached (quota exhausted)."
         )
+
+    # Legacy boolean (avoid permanent lock if it was set incorrectly)
+    if API_QUOTA_EXHAUSTED:
+        API_QUOTA_EXHAUSTED_UNTIL = max(API_QUOTA_EXHAUSTED_UNTIL, _next_utc_midnight_ts())
+        API_QUOTA_EXHAUSTED = False
 
     # --- Cache-only mode toggle ---------------------------------------------
     if CACHE_ONLY_MODE:
@@ -587,6 +612,28 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
 
     # --- Non-200 status codes -----------------------------------------------
     if resp.status_code != 200:
+        # If 429, treat as short rate-limit cooldown unless daily quota headers indicate otherwise
+        if resp.status_code == 429:
+            try:
+                daily_rem = (resp.headers.get("x-requests-remaining") or "").strip()
+                rate_rem = (resp.headers.get("x-ratelimit-remaining") or resp.headers.get("x-rate-limit-remaining") or "").strip()
+                rate_reset = (resp.headers.get("x-ratelimit-reset") or resp.headers.get("x-rate-limit-reset") or "").strip()
+                now = time.time()
+                if daily_rem == "0":
+                    globals()["API_QUOTA_EXHAUSTED_UNTIL"] = max(globals()["API_QUOTA_EXHAUSTED_UNTIL"], _next_utc_midnight_ts())
+                else:
+                    wait = 60
+                    if rate_reset.isdigit():
+                        # Some APIs provide epoch seconds; some provide seconds-from-now. Handle both.
+                        rr = int(rate_reset)
+                        if rr > now:
+                            wait = max(wait, int(rr - now))
+                        else:
+                            wait = max(wait, rr)
+                    globals()["API_RATE_LIMIT_UNTIL"] = max(globals()["API_RATE_LIMIT_UNTIL"], now + wait)
+            except Exception:
+                pass
+
         cached = try_cache(f"http-{resp.status_code}")
         if cached:
             return cached
@@ -3144,12 +3191,26 @@ def parse_date_range_or_400(from_date: str, to_date: Optional[str]) -> Tuple[dat
 # ============================================================
 
 TOPSCORERS_CACHE: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
+TOPSCORERS_FAIL_UNTIL: Dict[Tuple[int, int], float] = {}
 
 def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
     key = (league_id, season)
+    now = time.time()
+    if key in TOPSCORERS_FAIL_UNTIL and now < TOPSCORERS_FAIL_UNTIL[key]:
+        return TOPSCORERS_CACHE.get(key, [])
     if key in TOPSCORERS_CACHE:
         return TOPSCORERS_CACHE[key]
-    data = api_get("/players/topscorers", {"league": league_id, "season": season})
+    try:
+        data = api_get("/players/topscorers", {"league": league_id, "season": season})
+    except HTTPException as e:
+        # Cache failure briefly to avoid log/request storms
+        TOPSCORERS_FAIL_UNTIL[key] = time.time() + 900
+        TOPSCORERS_CACHE[key] = []
+        return []
+    except Exception:
+        TOPSCORERS_FAIL_UNTIL[key] = time.time() + 900
+        TOPSCORERS_CACHE[key] = []
+        return []
     resp = data.get("response", [])
     out: List[Dict[str, Any]] = []
     for row in resp:
