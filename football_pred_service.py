@@ -2769,6 +2769,69 @@ def apply_1x2_calibration(probs: dict, cal: dict) -> dict:
     return pt
 
 
+def _avg_logloss_1x2(samples: list[dict], cal: dict | None = None) -> float | None:
+    """Average negative log likelihood for 1X2 samples.
+    samples: [{"actual": "home|draw|away", "probs": {"home":..,"draw":..,"away":..}}, ...]
+    If cal provided, apply_1x2_calibration() before scoring.
+    """
+    if not samples:
+        return None
+    eps = 1e-12
+    s = 0.0
+    n = 0
+    for row in samples:
+        try:
+            actual = row.get("actual")
+            probs = row.get("probs") or {}
+            if cal:
+                probs = apply_1x2_calibration(dict(probs), cal) or probs
+            p_true = float((probs or {}).get(actual, 0.0))
+            s += -math.log(max(eps, p_true))
+            n += 1
+        except Exception:
+            continue
+    return (s / n) if n else None
+
+
+def fit_1x2_calibration(samples: list[dict]) -> dict:
+    """Fit temperature + draw_mult by minimizing logloss on provided samples (grid search)."""
+    # Guard to avoid overfitting on tiny sets
+    if not samples or len(samples) < 30:
+        return {"temperature": 1.0, "draw_mult": 1.0, "note": "insufficient_samples"}
+
+    best = None
+    best_ll = None
+
+    # Coarse-but-effective grid (tighten later if you want).
+    T_values = [round(x, 2) for x in [0.6 + 0.05*i for i in range(int((2.0-0.6)/0.05)+1)]]
+    dm_values = [round(x, 2) for x in [0.6 + 0.05*i for i in range(int((1.6-0.6)/0.05)+1)]]
+
+    for T in T_values:
+        for dm in dm_values:
+            cal = {"temperature": T, "draw_mult": dm}
+            ll = _avg_logloss_1x2(samples, cal=cal)
+            if ll is None:
+                continue
+            if (best_ll is None) or (ll < best_ll):
+                best_ll = ll
+                best = cal
+
+    return best or {"temperature": 1.0, "draw_mult": 1.0}
+
+
+def save_1x2_calibration(league: int, cal: dict) -> str:
+    """Save calibration to artifacts/calibration_<league>.json and refresh in-process cache."""
+    path = Path("artifacts")
+    path.mkdir(parents=True, exist_ok=True)
+    file_path = path / f"calibration_{int(league)}.json"
+    file_path.write_text(json.dumps(cal, indent=2, sort_keys=True), encoding="utf-8")
+
+    # refresh cache
+    global _CAL_CACHE
+    _CAL_CACHE[int(league)] = dict(cal) if isinstance(cal, dict) else {}
+    return str(file_path)
+
+
 def compute_value_edges(model_probs: dict, odds: dict) -> dict:
     """
     Compute 3-way market implied probs, edges, and expected value (EV) for:
@@ -4394,6 +4457,7 @@ def api_backtest_1x2(
     write_db: bool = Query(False, description="If true, write actual_result + model probs into predictions_history"),
     dry_run: bool = Query(False, description="If true, do not write to DB even if write_db=true"),
     sample_limit: int = Query(300, ge=0, le=2000, description="How many per-game rows to include in sample (0 disables sample)"),
+    fit_calibration: bool = Query(False, description="Fit & save 1X2 calibration_<league>.json using this backtest set"),
 ):
     """
     Backtest your model on FINISHED fixtures (FT), computing accuracy + logloss.
@@ -4520,6 +4584,7 @@ def api_backtest_1x2(
     db_write_errors = []
 
     cal = load_1x2_calibration(league) or {}
+    samples_for_cal: list[dict] = []
 
 
     for pred in preds:
@@ -4554,6 +4619,9 @@ def api_backtest_1x2(
             rph, rpd, rpa = rph / rs, rpd / rs, rpa / rs
         else:
             rph = rpd = rpa = 1.0 / 3.0
+
+        if fit_calibration:
+            samples_for_cal.append({"actual": actual, "probs": {"home": rph, "draw": rpd, "away": rpa}})
 
         # ---- CALIBRATED probs (what your API serves) ----
         probs = {"home": rph, "draw": rpd, "away": rpa}
@@ -4763,6 +4831,25 @@ def api_backtest_1x2(
 
     if n == 0:
         return {"ok": False, "message": "No scorable fixtures (missing goals/xG).", "league": league, "season": season}
+    cal_fit_stats = None
+    if fit_calibration:
+        try:
+            raw_ll = _avg_logloss_1x2(samples_for_cal, cal=None)
+            cal_new = fit_1x2_calibration(samples_for_cal)
+            cal_path = save_1x2_calibration(league, cal_new)
+            cal_ll = _avg_logloss_1x2(samples_for_cal, cal=cal_new)
+            cal_fit_stats = {
+                "saved_to": cal_path,
+                "params": cal_new,
+                "raw_logloss": (round(raw_ll, 6) if isinstance(raw_ll, (int, float)) else None),
+                "cal_logloss": (round(cal_ll, 6) if isinstance(cal_ll, (int, float)) else None),
+            }
+        except Exception as e:
+            try:
+                logger.exception("Calibration fit failed")
+            except Exception:
+                pass
+            cal_fit_stats = {"error": repr(e)}
 
     return {
         "ok": True,
@@ -4771,6 +4858,7 @@ def api_backtest_1x2(
         "fixtures_scored": n,
         "accuracy": round(correct / n, 4),
         "logloss": round(logloss_sum / n, 4),
+        "calibration_fit": cal_fit_stats,
         "market_samples": int(market_n),
         "market_accuracy": (round(market_correct / market_n, 4) if market_n else None),
         "market_logloss": (round(market_logloss_sum / market_n, 4) if market_n else None),
