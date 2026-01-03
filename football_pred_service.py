@@ -3000,21 +3000,6 @@ def _startup_init_history_db():
         init_history_db()
     except Exception:
         logger.exception("init_history_db failed (continuing to boot)")
-# NOTE: Do not initialize the DB at import time (Gunicorn import must not crash).
-# Initialize on startup, and keep the app alive even if DB is temporarily unreachable.
-@app.on_event("startup")
-def _startup_init_history_db():
-    try:
-        pass  # AUTO-FIX: inserted missing block body to restore valid syntax
-# init_history_db()  # moved to startup
-    except Exception as e:
-        print("WARN: init_history_db failed:", repr(e))
-        print("init_history_db: OK")
-    except Exception as e:
-        # Don't crash the whole service if DB is temporarily unreachable.
-        print("init_history_db: WARN (continuing without DB init):", repr(e))
-
-
 
 def _history_table_columns(conn) -> list[str]:
     cur = conn.cursor()
