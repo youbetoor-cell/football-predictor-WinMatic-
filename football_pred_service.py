@@ -941,7 +941,7 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
             pass
 
 
-def record_odds_snapshot(snap: OddsSnapshot) -> None:
+def record_odds_snapshot(snap: "OddsSnapshot") -> None:
     """Upsert a snapshot into odds_history (Postgres or SQLite)."""
     conn = db_connect()
     try:
@@ -5053,7 +5053,7 @@ def api_backtest_1x2(
 
 
 @app.post("/odds/snapshot")
-def api_odds_snapshot(snap: OddsSnapshot):
+def api_odds_snapshot(snap: "OddsSnapshot"):
     """Store an odds snapshot you provide."""
     try:
         record_odds_snapshot(snap)
