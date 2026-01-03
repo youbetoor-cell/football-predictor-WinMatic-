@@ -769,6 +769,21 @@ def init_history_db() -> None:
           CONSTRAINT uq_predictions_history UNIQUE (league, fixture_id, kickoff_utc)
         );
         """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS odds_history (
+          id BIGSERIAL PRIMARY KEY,
+          fixture_id BIGINT NOT NULL,
+          league INT NOT NULL,
+          kickoff_utc TIMESTAMPTZ NOT NULL,
+          snapshot_type TEXT NOT NULL,
+          bookmaker TEXT,
+          odds_home DOUBLE PRECISION,
+          odds_draw DOUBLE PRECISION,
+          odds_away DOUBLE PRECISION,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          CONSTRAINT uq_odds_history UNIQUE (league, fixture_id, kickoff_utc, snapshot_type)
+        );
+        """)
         conn.commit()
         cur.close()
         conn.close()
@@ -922,6 +937,117 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
         try:
             if conn:
                 conn.close()
+        except Exception:
+            pass
+
+
+def record_odds_snapshot(snap: OddsSnapshot) -> None:
+    """Upsert a snapshot into odds_history (Postgres or SQLite)."""
+    conn = db_connect()
+    try:
+        cur = conn.cursor()
+        if getattr(conn, "is_pg", False):
+            cur.execute(
+                """
+                INSERT INTO odds_history (
+                    league, fixture_id, kickoff_utc, snapshot_type, bookmaker,
+                    odds_home, odds_draw, odds_away, created_at
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s, NOW())
+                ON CONFLICT (league, fixture_id, kickoff_utc, snapshot_type)
+                DO UPDATE SET
+                    bookmaker=EXCLUDED.bookmaker,
+                    odds_home=EXCLUDED.odds_home,
+                    odds_draw=EXCLUDED.odds_draw,
+                    odds_away=EXCLUDED.odds_away,
+                    created_at=NOW()
+                """,
+                (
+                    int(snap.league),
+                    int(snap.fixture_id),
+                    snap.kickoff_utc,
+                    snap.snapshot_type,
+                    snap.bookmaker,
+                    float(snap.odds_home),
+                    float(snap.odds_draw),
+                    float(snap.odds_away),
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO odds_history (
+                    league, fixture_id, kickoff_utc, snapshot_type, bookmaker,
+                    odds_home, odds_draw, odds_away, created_at
+                )
+                VALUES (?,?,?,?,?,?,?,?, datetime('now'))
+                ON CONFLICT(league, fixture_id, kickoff_utc, snapshot_type)
+                DO UPDATE SET
+                    bookmaker=excluded.bookmaker,
+                    odds_home=excluded.odds_home,
+                    odds_draw=excluded.odds_draw,
+                    odds_away=excluded.odds_away,
+                    created_at=datetime('now')
+                """,
+                (
+                    int(snap.league),
+                    int(snap.fixture_id),
+                    snap.kickoff_utc,
+                    snap.snapshot_type,
+                    snap.bookmaker,
+                    float(snap.odds_home),
+                    float(snap.odds_draw),
+                    float(snap.odds_away),
+                ),
+            )
+        conn.commit()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def get_odds_snapshot(league: int, fixture_id: int, kickoff_utc: str, snapshot_type: str) -> dict | None:
+    """Fetch a single snapshot from odds_history."""
+    conn = db_connect()
+    try:
+        cur = conn.cursor()
+        if getattr(conn, "is_pg", False):
+            cur.execute(
+                """
+                SELECT bookmaker, odds_home, odds_draw, odds_away, created_at
+                FROM odds_history
+                WHERE league=%s AND fixture_id=%s AND kickoff_utc=%s AND snapshot_type=%s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (int(league), int(fixture_id), kickoff_utc, snapshot_type),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT bookmaker, odds_home, odds_draw, odds_away, created_at
+                FROM odds_history
+                WHERE league=? AND fixture_id=? AND kickoff_utc=? AND snapshot_type=?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (int(league), int(fixture_id), kickoff_utc, snapshot_type),
+            )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "bookmaker": row[0],
+            "odds_home": row[1],
+            "odds_draw": row[2],
+            "odds_away": row[3],
+            "created_at": row[4],
+        }
+    finally:
+        try:
+            conn.close()
         except Exception:
             pass
 
@@ -3274,6 +3400,17 @@ class TrainRequest(BaseModel):
     league: int = Field(DEFAULT_LEAGUE)
     seasons: Optional[List[int]] = Field(default=None, description="List of seasons to train on (e.g. [2021,2022,2023])")
 
+class OddsSnapshot(BaseModel):
+    league: int
+    fixture_id: int
+    kickoff_utc: str
+    snapshot_type: str = Field("pred", description="e.g. pred, close")
+    bookmaker: str | None = None
+    odds_home: float
+    odds_draw: float
+    odds_away: float
+
+
 # ------------------------------------------------------------
 # ⭐ PASTE build_predictions_for_fixtures HERE
 # ------------------------------------------------------------
@@ -4451,7 +4588,7 @@ def api_results_sync(
 @app.get("/backtest/1x2")
 def api_backtest_1x2(
     league: int = Query(39, description="League ID"),
-    season: int = Query(None, description="Season year (e.g. 2025). If omitted, uses current season."),
+    season: str = Query(None, description="Season year (e.g. 2025) or \"all\". If omitted, uses current season."),
     last_n: int = Query(200, ge=20, le=2000, description="How many finished fixtures to evaluate (most recent first)"),
     max_goals: int = Query(10, ge=6, le=15, description="Poisson truncation for 1X2 probs"),
     write_db: bool = Query(False, description="If true, write actual_result + model probs into predictions_history"),
@@ -4473,16 +4610,25 @@ def api_backtest_1x2(
 
     model, meta = load_model_and_meta(league)
 
-    # pick season default
+    # pick season default / allow season=all
     if season is None:
-        season = current_season()
+        seasons_used = [current_season()]
+        season_label = seasons_used[0]
+    elif isinstance(season, str) and season.lower() == "all":
+        cs = current_season()
+        seasons_used = [cs, cs - 1, cs - 2]
+        season_label = "all"
+    else:
+        seasons_used = [int(season)]
+        season_label = seasons_used[0]
 
-    # 1) Fetch finished fixtures
-    # API-FOOTBALL supports status=FT; we then take the most recent last_n by kickoff date.
-    data = api_get("/fixtures", {"league": league, "season": season, "status": "FT"})
-    fixtures = (data.get("response") or [])
+    # 1) Fetch finished fixtures (FT) across seasons_used; take the most recent last_n overall.
+    fixtures = []
+    for s in seasons_used:
+        data = api_get("/fixtures", {"league": league, "season": s, "status": "FT"})
+        fixtures.extend((data.get("response") or []))
     if not fixtures:
-        return {"ok": False, "message": "No finished fixtures found.", "league": league, "season": season}
+        return {"ok": False, "message": "No finished fixtures found.", "league": league, "season": season_label, "seasons_used": seasons_used}
 
     # sort newest first
     def _fx_date(fx):
@@ -4575,6 +4721,11 @@ def api_backtest_1x2(
     market_n = 0
     market_correct = 0
     market_logloss_sum = 0.0
+
+    # --- CLV (Closing Line Value) using odds_history snapshots ---
+    clv_n = 0
+    clv_sum_abs = 0.0
+    clv_sum_pct = 0.0
 
     per_game = []
 
@@ -4673,6 +4824,23 @@ def api_backtest_1x2(
             if ms > 0:
                 mph, mpd, mpa = mph / ms, mpd / ms, mpa / ms
                 market_probs = {"home": mph, "draw": mpd, "away": mpa}
+                # CLV: compare stored 'pred' snapshot odds vs current odds (treated as close/last)
+                try:
+                    kickoff = str(((fx.get("fixture") or {}).get("date")) or "")
+                    snap_pred = get_odds_snapshot(int(league), int(fid), kickoff, "pred") if kickoff else None
+                    if snap_pred and odds:
+                        pred_odds_map = {"home": float(snap_pred.get("odds_home")), "draw": float(snap_pred.get("odds_draw")), "away": float(snap_pred.get("odds_away"))}
+                        close_odds_map = {"home": float(odds.get("home")), "draw": float(odds.get("draw")), "away": float(odds.get("away"))}
+                        po = pred_odds_map.get(pred_side)
+                        co = close_odds_map.get(pred_side)
+                        if po and co and co > 0:
+                            clv_abs = po - co
+                            clv_pct = (po / co) - 1.0
+                            clv_n += 1
+                            clv_sum_abs += clv_abs
+                            clv_sum_pct += clv_pct
+                except Exception:
+                    pass
                 try:
                     market_pick = max(market_probs, key=market_probs.get)
                 except Exception:
@@ -4854,7 +5022,8 @@ def api_backtest_1x2(
     return {
         "ok": True,
         "league": league,
-        "season": season,
+        "season": season_label,
+        "seasons_used": seasons_used,
         "fixtures_scored": n,
         "accuracy": round(correct / n, 4),
         "logloss": round(logloss_sum / n, 4),
@@ -4881,6 +5050,48 @@ def api_backtest_1x2(
     }
 
 
+
+
+@app.post("/odds/snapshot")
+def api_odds_snapshot(snap: OddsSnapshot):
+    """Store an odds snapshot you provide."""
+    try:
+        record_odds_snapshot(snap)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"failed to record snapshot: {e!r}")
+
+
+@app.post("/odds/snapshot/fixture/{fixture_id}")
+def api_odds_snapshot_from_fixture(
+    fixture_id: int = ApiPath(..., description="Fixture ID"),
+    snapshot_type: str = Query("pred", description="e.g. pred or close"),
+):
+    """Fetch current 1X2 odds for a fixture via API-FOOTBALL and store into odds_history."""
+    fx_data = api_get("/fixtures", {"id": fixture_id})
+    fx_list = (fx_data.get("response") or [])
+    if not fx_list:
+        raise HTTPException(status_code=404, detail="fixture not found")
+    fx = fx_list[0]
+    league = int(((fx.get("league") or {}).get("id")) or 0)
+    kickoff = (fx.get("fixture") or {}).get("date")
+    if not league or not kickoff:
+        raise HTTPException(status_code=400, detail="could not infer league/kickoff from fixture")
+    odds, meta = fetch_1x2_odds_for_fixture(int(fixture_id), return_meta=True)
+    if not odds:
+        raise HTTPException(status_code=404, detail="no odds found for fixture")
+    snap = OddsSnapshot(
+        league=league,
+        fixture_id=int(fixture_id),
+        kickoff_utc=str(kickoff),
+        snapshot_type=str(snapshot_type),
+        bookmaker=(meta or {}).get("bookmaker"),
+        odds_home=float(odds.get("home")),
+        odds_draw=float(odds.get("draw")),
+        odds_away=float(odds.get("away")),
+    )
+    record_odds_snapshot(snap)
+    return {"ok": True, "league": league, "fixture_id": int(fixture_id), "snapshot_type": snapshot_type}
 
 @app.get("/progress/metrics")
 def progress_metrics(league: int, window_days: int = 60):
