@@ -499,6 +499,7 @@ def is_cache_only_mode() -> bool:
 
 
 def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    global API_QUOTA_EXHAUSTED_UNTIL, API_RATE_LIMIT_UNTIL, API_QUOTA_EXHAUSTED
     """Call API-FOOTBALL with cache + daily-quota protection."""
     global API_QUOTA_EXHAUSTED
 
