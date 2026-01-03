@@ -2994,6 +2994,25 @@ def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
 
 app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
+@app.get("/debug/neon")
+def debug_neon():
+    conn = db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("select 1")
+        row = cur.fetchone()
+        return {
+            "ok": True,
+            "db": "postgres" if getattr(conn, "is_pg", False) else "sqlite",
+            "select1": (row[0] if row else None),
+        }
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 @app.on_event("startup")
 def _startup_init_history_db():
     try:
