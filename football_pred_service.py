@@ -1096,6 +1096,52 @@ def record_odds_snapshot(snap: "OddsSnapshot") -> None:
             pass
 
 
+
+
+def get_odds_snapshot_by_fixture(league: int, fixture_id: int, snapshot_type: str) -> dict | None:
+    """Fetch a snapshot by (league, fixture_id, snapshot_type) ignoring kickoff_utc string mismatch."""
+    conn = db_connect()
+    try:
+        cur = conn.cursor()
+        if getattr(conn, "is_pg", False):
+            cur.execute(
+                """
+                SELECT kickoff_utc, bookmaker, odds_home, odds_draw, odds_away, created_at
+                FROM odds_history
+                WHERE league=%s AND fixture_id=%s AND snapshot_type=%s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (int(league), int(fixture_id), snapshot_type),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT kickoff_utc, bookmaker, odds_home, odds_draw, odds_away, created_at
+                FROM odds_history
+                WHERE league=? AND fixture_id=? AND snapshot_type=?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (int(league), int(fixture_id), snapshot_type),
+            )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "kickoff_utc": row[0],
+            "bookmaker": row[1],
+            "odds_home": row[2],
+            "odds_draw": row[3],
+            "odds_away": row[4],
+            "created_at": row[5],
+        }
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 def get_odds_snapshot(league: int, fixture_id: int, kickoff_utc: str, snapshot_type: str) -> dict | None:
     """Fetch a single snapshot from odds_history."""
     conn = db_connect()
@@ -4958,7 +5004,7 @@ def api_backtest_1x2(
                 # CLV: compare stored 'pred' snapshot odds vs current odds (treated as close/last)
                 try:
                     kickoff = str(((fx.get("fixture") or {}).get("date")) or "")
-                    snap_pred = get_odds_snapshot(int(league), int(fid), kickoff, "pred") if kickoff else None
+                    snap_pred = get_odds_snapshot_by_fixture(int(league), int(fid), "pred")
                     if snap_pred and odds:
                         pred_odds_map = {"home": float(snap_pred.get("odds_home")), "draw": float(snap_pred.get("odds_draw")), "away": float(snap_pred.get("odds_away"))}
                         close_odds_map = {"home": float(odds.get("home")), "draw": float(odds.get("draw")), "away": float(odds.get("away"))}
