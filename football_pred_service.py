@@ -297,6 +297,40 @@ def _next_utc_midnight_ts() -> float:
     next_mid = (dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
     return next_mid.timestamp()
 
+
+
+LAST_QUOTA_RECHECK_TS = 0.0
+
+def _recheck_api_daily_quota() -> dict:
+    """Recheck daily quota using /status. Returns dict with remaining/current/limit."""
+    global LAST_QUOTA_RECHECK_TS
+    now = time.time()
+    if now - LAST_QUOTA_RECHECK_TS < 10:
+        return {"ok": False, "reason": "throttled"}
+    LAST_QUOTA_RECHECK_TS = now
+
+    try:
+        url = API_BASE + "/status"
+        headers = {"x-apisports-key": API_FOOTBALL_KEY}
+        r = requests.get(url, headers=headers, timeout=10)
+        # Prefer headers if present
+        hdr_rem = r.headers.get("x-ratelimit-requests-remaining") or r.headers.get("x-requests-remaining")
+        if hdr_rem is not None and str(hdr_rem).strip().isdigit():
+            return {"ok": True, "remaining": int(str(hdr_rem).strip()), "source": "headers"}
+        # Fallback to JSON body
+        js = r.json()
+        req = (js.get("response") or {}).get("requests") or {}
+        cur = req.get("current")
+        lim = req.get("limit_day")
+        if isinstance(cur, int) and isinstance(lim, int) and lim >= cur:
+            return {"ok": True, "remaining": lim - cur, "current": cur, "limit_day": lim, "source": "json"}
+        return {"ok": False, "reason": "unparseable"}
+    except Exception as e:
+        return {"ok": False, "error": repr(e)}
+    dt = datetime.now(timezone.utc)
+    next_mid = (dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
+    return next_mid.timestamp()
+
 DB_PATH = os.path.join("data", "predictions_history.db")
 os.makedirs("data", exist_ok=True)
 
@@ -545,9 +579,15 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
 
     # Daily quota (until next UTC midnight-ish)
     if API_QUOTA_EXHAUSTED_UNTIL and now < API_QUOTA_EXHAUSTED_UNTIL:
-        cached = try_cache("quota-exhausted")
-        if cached:
-            return cached
+        # stale quota flag protection: recheck /status once when blocked
+        chk = _recheck_api_daily_quota()
+        if chk.get('ok') and isinstance(chk.get('remaining'), int) and chk['remaining'] > 0:
+            API_QUOTA_EXHAUSTED_UNTIL = 0.0
+            API_QUOTA_EXHAUSTED = False
+        else:
+                cached = try_cache("quota-exhausted")
+                if cached:
+                    return cached
         raise HTTPException(
             status_code=429,
             detail="API-FOOTBALL daily request limit already reached (quota exhausted)."
@@ -3296,6 +3336,35 @@ def _history_table_columns(conn) -> list[str]:
             pass
 
 @app.get("/debug/db")
+
+
+@app.get("/debug/quota")
+def debug_quota():
+    """Show internal quota/rate-limit flags."""
+    if os.getenv("ADMIN_TOKEN"):
+        tok = (getattr(globals().get("request"), "headers", {}) or {}).get("x-admin-token")  # best-effort
+    chk = _recheck_api_daily_quota()
+    return {
+        "API_QUOTA_EXHAUSTED": bool(API_QUOTA_EXHAUSTED),
+        "API_QUOTA_EXHAUSTED_UNTIL": API_QUOTA_EXHAUSTED_UNTIL,
+        "API_RATE_LIMIT_UNTIL": API_RATE_LIMIT_UNTIL,
+        "recheck": chk,
+        "now": time.time(),
+    }
+
+
+@app.post("/debug/quota/reset")
+def debug_quota_reset(admin_token: str = Query(None, description="If ADMIN_TOKEN is set, you must pass it here")):
+    """Reset internal quota/rate-limit flags (useful if they get stuck)."""
+    expected = os.getenv("ADMIN_TOKEN")
+    if expected and admin_token != expected:
+        raise HTTPException(status_code=403, detail="ADMIN_TOKEN required")
+
+    global API_QUOTA_EXHAUSTED, API_QUOTA_EXHAUSTED_UNTIL, API_RATE_LIMIT_UNTIL
+    API_QUOTA_EXHAUSTED = False
+    API_QUOTA_EXHAUSTED_UNTIL = 0.0
+    API_RATE_LIMIT_UNTIL = 0.0
+    return {"ok": True}
 def debug_db():
     import os
     import sqlite3
