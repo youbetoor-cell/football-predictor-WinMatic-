@@ -5166,6 +5166,9 @@ def api_backtest_1x2(
             round((logloss_sum / n) - (market_logloss_sum / market_n), 5)
             if (n and market_n) else None
         ),
+        "clv_n": clv_n,
+        "clv_mean_abs": (round(clv_sum_abs / clv_n, 6) if clv_n else None),
+        "clv_mean_pct": (round(clv_sum_pct / clv_n, 6) if clv_n else None),
         "write_db": bool(write_db),
         "dry_run": bool(dry_run),
                 "fixtures_total": len(fixtures),
