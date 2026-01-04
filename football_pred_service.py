@@ -4227,6 +4227,49 @@ def api_predict_upcoming(
 
     # Save to history (includes odds/value if present)
     record_predictions_history(league, results)
+
+    # --- AUTO-SNAPSHOT PASS: /predict/upcoming (pred + optional close) ---
+    try:
+        _fxs = None
+        # Common shapes in this endpoint: it returns a dict with fixtures, or a list
+        if isinstance(locals().get("results"), list):
+            _fxs = locals().get("results")
+        elif isinstance(locals().get("resp"), dict):
+            _fxs = locals().get("resp", {}).get("fixtures")
+        elif isinstance(locals().get("snapshot"), list):
+            _fxs = locals().get("snapshot")
+        if isinstance(_fxs, list):
+            for _fx in _fxs:
+                try:
+                    _lg = int(_fx.get("league_id") or _fx.get("league") or 0)
+                    _fid = int(_fx.get("fixture_id") or 0)
+                    _ko = str(_fx.get("kickoff_utc") or "")
+                    _od = _fx.get("odds_1x2")
+                    if not (_lg and _fid and _ko and isinstance(_od, dict)):
+                        continue
+                    if not all(k in _od for k in ("home","draw","away")):
+                        continue
+                    save_odds_snapshot_auto(_lg, _fid, _ko, "pred", None, float(_od["home"]), float(_od["draw"]), float(_od["away"]))
+                    # Optional close snapshot if kickoff is soon
+                    try:
+                        close_min = int(os.getenv("CLOSE_SNAPSHOT_MINUTES", "120"))
+                    except Exception:
+                        close_min = 120
+                    try:
+                        ks = _ko.replace("Z", "+00:00")
+                        kdt = datetime.fromisoformat(ks)
+                        if kdt.tzinfo is None:
+                            kdt = kdt.replace(tzinfo=timezone.utc)
+                        mins = (kdt - datetime.now(timezone.utc)).total_seconds() / 60.0
+                        if 0 <= mins <= close_min:
+                            save_odds_snapshot_auto(_lg, _fid, _ko, "close", None, float(_od["home"]), float(_od["draw"]), float(_od["away"]))
+                    except Exception:
+                        pass
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
     return {
         "ok": True,
         "count": len(results),
