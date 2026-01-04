@@ -1,3 +1,4 @@
+import os
 API_BASE = os.getenv("API_BASE", "https://v3.football.api-sports.io")
 #!/usr/bin/env python3
 """
@@ -548,7 +549,7 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(path, str) and (path.startswith("http://") or path.startswith("https://")):
         url = path
     else:
-        base = (API_BASE or "").rstrip("/") + "/"
+        base = ((globals().get("API_BASE") or os.getenv("API_BASE", "https://v3.football.api-sports.io"))).rstrip("/") + "/"
         p = (path or "").lstrip("/")
         url = urljoin(base, p)
     logger.info("[API CALL] %s %s", url, params)
