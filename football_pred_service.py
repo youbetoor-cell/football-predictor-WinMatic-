@@ -3426,6 +3426,34 @@ def debug_neon():
             pass
 
 
+
+@app.post("/debug/odds/insert_test")
+def debug_odds_insert_test(
+    league: int = Query(...),
+    fixture_id: int = Query(...),
+    kickoff_utc: str = Query(..., description="ISO timestamp, e.g. 2026-01-05T12:00:00+00:00"),
+    snapshot_type: str = Query("pred"),
+    odds_home: float = Query(2.0),
+    odds_draw: float = Query(3.0),
+    odds_away: float = Query(4.0),
+):
+    """Directly tests inserting into odds_history and returns any DB error."""
+    try:
+        inserted = save_odds_snapshot_auto(
+            int(league),
+            int(fixture_id),
+            str(kickoff_utc),
+            str(snapshot_type),
+            None,
+            float(odds_home),
+            float(odds_draw),
+            float(odds_away),
+        )
+        return {"ok": True, "inserted": bool(inserted)}
+    except Exception as e:
+        # Do NOT swallow; surface the reason
+        raise HTTPException(status_code=500, detail=f"insert_test failed: {repr(e)}")
+
 @app.on_event("startup")
 def _startup_init_history_db():
     try:
@@ -4014,6 +4042,48 @@ def api_predict_upcoming(
         snapshot, snap_path = load_snapshot_predictions(league=league, days_ahead=days_ahead)
         if snapshot:
             snapshot = _enrich_upcoming_odds(snapshot)
+
+            # --- FINAL AUTO-SNAPSHOT PASS (reliable): store pred + optional close for fixtures that have odds_1x2 ---
+            try:
+                _fxs = (results.get("fixtures") if isinstance(results, dict) else None)
+                if isinstance(_fxs, list):
+                    for _fx in _fxs:
+                        try:
+                            _lg = int(_fx.get("league_id") or _fx.get("league") or 0)
+                            _fid = int(_fx.get("fixture_id") or 0)
+                            _ko = str(_fx.get("kickoff_utc") or "")
+                            _od = _fx.get("odds_1x2")
+                            if not (_lg and _fid and _ko and isinstance(_od, dict)):
+                                continue
+                            if not all(k in _od for k in ("home","draw","away")):
+                                continue
+                            # pred snapshot (idempotent)
+                            save_odds_snapshot_auto(
+                                _lg, _fid, _ko, "pred", None,
+                                float(_od["home"]), float(_od["draw"]), float(_od["away"])
+                            )
+                            # close snapshot window (default 120 minutes)
+                            try:
+                                close_min = int(os.getenv("CLOSE_SNAPSHOT_MINUTES", "120"))
+                            except Exception:
+                                close_min = 120
+                            try:
+                                ks = _ko.replace("Z", "+00:00")
+                                kdt = datetime.fromisoformat(ks)
+                                if kdt.tzinfo is None:
+                                    kdt = kdt.replace(tzinfo=timezone.utc)
+                                mins = (kdt - datetime.now(timezone.utc)).total_seconds() / 60.0
+                                if 0 <= mins <= close_min:
+                                    save_odds_snapshot_auto(
+                                        _lg, _fid, _ko, "close", None,
+                                        float(_od["home"]), float(_od["draw"]), float(_od["away"])
+                                    )
+                            except Exception:
+                                pass
+                        except Exception:
+                            continue
+            except Exception:
+                pass
             return {
                 "ok": True,
                 "count": len(snapshot),
