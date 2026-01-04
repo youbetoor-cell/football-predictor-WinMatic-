@@ -13,13 +13,13 @@ def _sql_pg_fix(q: str) -> str:
     """
     Convert SQLite-style placeholders/functions to Postgres-safe SQL.
     - '?'  -> '%s'
-    - datetime('now') -> now()
+    - {now_fn} -> now()
     """
     try:
         import os
         db = os.getenv("DATABASE_URL", "") or ""
         if db.startswith("postgres"):
-            return q.replace("datetime('now')", "now()").replace("?", "%s")
+            return q.replace("{now_fn}", "now()").replace("?", "%s")
     except Exception:
         pass
     return q
@@ -181,7 +181,7 @@ def ensure_predictions_db() -> None:
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS predictions_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT
+                id INTEGER PRIMARY KEY
             );
             """
         )
@@ -880,7 +880,7 @@ def init_history_db() -> None:
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS predictions_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY,
             league INTEGER NOT NULL,
             fixture_id INTEGER NOT NULL,
             kickoff_utc TEXT NOT NULL,
@@ -924,6 +924,8 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
         except Exception as e:
             logger.warning("[DB] Could not ensure unique index: %s", e)
 
+        now_fn = "NOW()" if getattr(conn, "is_pg", False) else "datetime('now')"
+
         sql = """
             INSERT INTO predictions_history (
                 league, fixture_id, home_team, away_team, kickoff_utc,
@@ -940,7 +942,7 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
                 ?, ?, ?,
                 ?, ?, ?,
                 ?, ?,
-                ?, datetime('now')
+                ?, {now_fn}
             )
             ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
                 home_team = excluded.home_team,
@@ -1068,14 +1070,14 @@ def record_odds_snapshot(snap: "OddsSnapshot") -> None:
                     league, fixture_id, kickoff_utc, snapshot_type, bookmaker,
                     odds_home, odds_draw, odds_away, created_at
                 )
-                VALUES (?,?,?,?,?,?,?,?, datetime('now'))
+                VALUES (?,?,?,?,?,?,?,?, {now_fn})
                 ON CONFLICT(league, fixture_id, kickoff_utc, snapshot_type)
                 DO UPDATE SET
                     bookmaker=excluded.bookmaker,
                     odds_home=excluded.odds_home,
                     odds_draw=excluded.odds_draw,
                     odds_away=excluded.odds_away,
-                    created_at=datetime('now')
+                    created_at={now_fn}
                 """,
                 (
                     int(snap.league),
@@ -3828,11 +3830,11 @@ def api_predict_upcoming(
                         _kick = str(kickoff or "")
                         if _league and _fid and _kick:
                             # Save pred snapshot once
-                            if get_odds_snapshot_by_fixture(_league, _fid, "pred") is None:
+                            if get_odds_snapshot_by_fixture(int(league), int(fid), "pred") is None:
                                 record_odds_snapshot(OddsSnapshot(
-                                    league=_league,
-                                    fixture_id=_fid,
-                                    kickoff_utc=_kick,
+                                    league=int(league),
+                                    fixture_id=int(fid),
+                                    kickoff_utc=str(kickoff),
                                     snapshot_type="pred",
                                     bookmaker=(meta.get("bookmaker") if isinstance(meta, dict) else None),
                                     odds_home=float(odds["home"]),
@@ -3847,16 +3849,16 @@ def api_predict_upcoming(
                                 close_min = 120
                 
                             try:
-                                ks = _kick.replace("Z", "+00:00")
+                                ks = str(kickoff).replace("Z", "+00:00")
                                 kdt = datetime.fromisoformat(ks)
                                 if kdt.tzinfo is None:
                                     kdt = kdt.replace(tzinfo=timezone.utc)
                                 mins = (kdt - datetime.now(timezone.utc)).total_seconds() / 60.0
-                                if 0 <= mins <= close_min and get_odds_snapshot_by_fixture(_league, _fid, "close") is None:
+                                if 0 <= mins <= close_min and get_odds_snapshot_by_fixture(int(league), int(fid), "close") is None:
                                     record_odds_snapshot(OddsSnapshot(
-                                    league=_league,
-                                    fixture_id=_fid,
-                                    kickoff_utc=_kick,
+                                    league=int(league),
+                                    fixture_id=int(fid),
+                                    kickoff_utc=str(kickoff),
                                     snapshot_type="close",
                                     bookmaker=(meta.get("bookmaker") if isinstance(meta, dict) else None),
                                     odds_home=float(odds["home"]),
