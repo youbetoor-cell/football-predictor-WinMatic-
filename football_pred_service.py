@@ -24,6 +24,9 @@ def _sql_pg_fix(q: str) -> str:
         pass
     return q
 import os
+
+API_FOOTBALL_KEY = os.getenv('API_FOOTBALL_KEY', '')
+
 import io
 import json
 import math
