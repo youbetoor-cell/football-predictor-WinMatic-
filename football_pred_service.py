@@ -1106,6 +1106,74 @@ def record_odds_snapshot(snap: "OddsSnapshot") -> None:
 
 
 
+
+def save_odds_snapshot_auto(
+    league: int,
+    fixture_id: int,
+    kickoff_utc: str,
+    snapshot_type: str,
+    bookmaker: str | None,
+    odds_home: float,
+    odds_draw: float,
+    odds_away: float,
+) -> bool:
+    """Insert into odds_history. Postgres uses ON CONFLICT DO NOTHING."""
+    conn = db_connect()
+    try:
+        cur = conn.cursor()
+        if getattr(conn, "is_pg", False):
+            sql = '''
+            INSERT INTO odds_history
+              (league, fixture_id, kickoff_utc, snapshot_type, bookmaker, odds_home, odds_draw, odds_away)
+            VALUES
+              (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (league, fixture_id, kickoff_utc, snapshot_type) DO NOTHING
+            '''
+            cur.execute(sql, (league, fixture_id, kickoff_utc, snapshot_type, bookmaker, odds_home, odds_draw, odds_away))
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            return bool(getattr(cur, "rowcount", 0))
+        else:
+            # SQLite fallback (best effort)
+            cur.execute('''
+            CREATE TABLE IF NOT EXISTS odds_history (
+                id INTEGER PRIMARY KEY,
+                fixture_id INTEGER NOT NULL,
+                league INTEGER NOT NULL,
+                kickoff_utc TEXT NOT NULL,
+                snapshot_type TEXT NOT NULL,
+                bookmaker TEXT,
+                odds_home REAL,
+                odds_draw REAL,
+                odds_away REAL,
+                created_at TEXT
+            )
+            ''')
+            cur.execute('''
+            INSERT OR IGNORE INTO odds_history
+              (league, fixture_id, kickoff_utc, snapshot_type, bookmaker, odds_home, odds_draw, odds_away, created_at)
+            VALUES
+              (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ''', (league, fixture_id, kickoff_utc, snapshot_type, bookmaker, odds_home, odds_draw, odds_away))
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            return True
+    except Exception:
+        try:
+            logger.exception("[ODDS] save_odds_snapshot_auto failed")
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 def get_odds_snapshot_by_fixture(league: int, fixture_id: int, snapshot_type: str) -> dict | None:
     """Fetch a snapshot by (league, fixture_id, snapshot_type) ignoring kickoff_utc string mismatch."""
     conn = db_connect()
@@ -3839,25 +3907,21 @@ def api_predict_upcoming(
 
                 fx["odds_1x2"] = odds
                 fx["odds_meta"] = meta
-                # --- AUTO-SNAPSHOT (robust): write pred + optional close to Neon odds_history ---
+                                # --- AUTO-SNAPSHOT (robust): write pred + optional close to Neon odds_history ---
                 try:
                     if isinstance(odds, dict) and all(k in odds for k in ("home","draw","away")):
                         _lg = int(league)
                         _fid = int(fid)
                         _ko = str(kickoff or "")
                         if _lg and _fid and _ko:
-                            if get_odds_snapshot_by_fixture(_lg, _fid, "pred") is None:
-                                record_odds_snapshot(OddsSnapshot(
-                                    league=_lg,
-                                    fixture_id=_fid,
-                                    kickoff_utc=_ko,
-                                    snapshot_type="pred",
-                                    bookmaker=(meta.get("bookmaker") if isinstance(meta, dict) else None),
-                                    odds_home=float(odds["home"]),
-                                    odds_draw=float(odds["draw"]),
-                                    odds_away=float(odds["away"]),
-                                ))
+                            _book = (meta.get("bookmaker") if isinstance(meta, dict) else None)
+                            # pred snapshot (idempotent via ON CONFLICT)
+                            save_odds_snapshot_auto(
+                                _lg, _fid, _ko, "pred", _book,
+                                float(odds["home"]), float(odds["draw"]), float(odds["away"])
+                            )
                 
+                            # close snapshot if within window
                             try:
                                 close_min = int(os.getenv("CLOSE_SNAPSHOT_MINUTES", "120"))
                             except Exception:
@@ -3869,19 +3933,15 @@ def api_predict_upcoming(
                                 if kdt.tzinfo is None:
                                     kdt = kdt.replace(tzinfo=timezone.utc)
                                 mins = (kdt - datetime.now(timezone.utc)).total_seconds() / 60.0
-                                if 0 <= mins <= close_min and get_odds_snapshot_by_fixture(_lg, _fid, "close") is None:
-                                    record_odds_snapshot(OddsSnapshot(
-                                        league=_lg,
-                                        fixture_id=_fid,
-                                        kickoff_utc=_ko,
-                                        snapshot_type="close",
-                                        bookmaker=(meta.get("bookmaker") if isinstance(meta, dict) else None),
-                                        odds_home=float(odds["home"]),
-                                        odds_draw=float(odds["draw"]),
-                                        odds_away=float(odds["away"]),
-                                    ))
+                                if 0 <= mins <= close_min:
+                                    save_odds_snapshot_auto(
+                                        _lg, _fid, _ko, "close", _book,
+                                        float(odds["home"]), float(odds["draw"]), float(odds["away"])
+                                    )
                             except Exception:
                                 pass
+                except Exception:
+                    pass
                 except Exception:
                     pass
 
