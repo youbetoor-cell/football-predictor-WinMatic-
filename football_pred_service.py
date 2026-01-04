@@ -164,88 +164,29 @@ def _norm_result_label(value):
 
 def ensure_predictions_db() -> None:
     """
-    Ensure predictions_history exists.
-    - On Postgres (Neon), do NOT run SQLite PRAGMA/AUTOINCREMENT.
-    - On SQLite, keep the lightweight PRAGMA flow.
+    Safe wrapper around init_history_db().
+    - Prevents UnboundLocalError on conn
+    - Avoids Postgres/SQLite SQL mismatches inside random callers
     """
-    conn = None
-    cur = None
     try:
-        conn = db_connect()
-        cur = conn.cursor()
-
-        # Postgres path: rely on your Postgres initializer and exit cleanly.
-        if getattr(conn, "is_pg", False):
+        if "init_history_db" in globals():
+            init_history_db()
+        else:
+            # Fallback: at least confirm DB connection works.
+            conn = db_connect()
             try:
-                # This should create/ensure the PG schema (table/indexes) in a PG-safe way
-                init_history_db()
-            except Exception as e:
-                logger.warning("[DB] init_history_db failed (pg): %s", e)
-            return
-
-        # SQLite path
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS predictions_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT
-            );
-        """)
-
-        cur.execute("PRAGMA table_info(predictions_history);")
-        existing_cols = {r[1] for r in cur.fetchall()}
-
-        expected = {
-            "league": "INTEGER",
-            "fixture_id": "INTEGER",
-            "kickoff_utc": "TEXT",
-            "home": "TEXT",
-            "away": "TEXT",
-            "home_win_p": "REAL",
-            "draw_p": "REAL",
-            "away_win_p": "REAL",
-            "home_odds": "REAL",
-            "draw_odds": "REAL",
-            "away_odds": "REAL",
-            "home_edge": "REAL",
-            "draw_edge": "REAL",
-            "away_edge": "REAL",
-            "best_side": "TEXT",
-            "best_edge": "REAL",
-            "created_at": "TEXT"
-        }
-
-        for col, typ in expected.items():
-            if col not in existing_cols:
-                cur.execute(f"ALTER TABLE predictions_history ADD COLUMN {col} {typ};")
-
-        # Unique index on SQLite
-        cur.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_predictions_history
-            ON predictions_history (league, fixture_id, kickoff_utc);
-        """)
-
-        conn.commit()
-
+                pass
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
     except Exception as e:
         try:
             logger.warning("[DB] ensure_predictions_db failed: %s", e)
         except Exception:
             pass
-        try:
-            print("[DB] ensure_predictions_db failed:", e)
-        except Exception:
-            pass
-    finally:
-        try:
-            if cur:
-                cur.close()
-        except Exception:
-            pass
-        try:
-            if conn:
-                conn.close()
-        except Exception:
-            pass
-
+        return
 def _within_odds_window(kickoff_utc: Any) -> bool:
     """Return True if kickoff is within a (now - lookback) .. (now + future) window."""
     try:
@@ -3897,6 +3838,60 @@ def build_predictions_for_fixtures(
 
 # ============================================================
 # API ENDPOINTS
+@app.get("/cron/snapshots")
+def cron_snapshots(
+    admin_token: str = Query(None, description="If ADMIN_TOKEN is set, you must pass it here"),
+    leagues: str = Query(None, description="Comma-separated league IDs. Defaults to CRON_LEAGUES or built-in list."),
+    days_ahead: int = Query(7, ge=1, le=30),
+    include_odds: int = Query(1, ge=0, le=1),
+    odds_limit: int = Query(25, ge=0, le=50),
+    close_snapshot_minutes: int | None = Query(None, description="Override CLOSE_SNAPSHOT_MINUTES for this run"),
+):
+    """
+    Call this on a schedule (Render Cron Job / UptimeRobot / GitHub Actions).
+    It internally triggers /predict/upcoming for each league.
+
+    Your /predict/upcoming code already:
+      - saves "pred" snapshots when odds exist
+      - saves "close" snapshots when kickoff is within CLOSE_SNAPSHOT_MINUTES
+
+    So: schedule this endpoint frequently, and you'll collect close snapshots automatically.
+    """
+    expected = os.getenv("ADMIN_TOKEN")
+    if expected and admin_token != expected:
+        raise HTTPException(status_code=403, detail="ADMIN_TOKEN required")
+
+    if close_snapshot_minutes is not None:
+        os.environ["CLOSE_SNAPSHOT_MINUTES"] = str(int(close_snapshot_minutes))
+
+    if leagues:
+        league_ids = [int(x.strip()) for x in leagues.split(",") if x.strip()]
+    else:
+        env = (os.getenv("CRON_LEAGUES") or "").strip()
+        if env:
+            league_ids = [int(x.strip()) for x in env.split(",") if x.strip()]
+        else:
+            # Defaults (you can override with CRON_LEAGUES)
+            league_ids = [39, 140, 135, 78, 61, 88, 94]
+
+    results = []
+    for lg in league_ids:
+        try:
+            if "api_predict_upcoming" not in globals():
+                raise RuntimeError("api_predict_upcoming() not found")
+            resp = api_predict_upcoming(
+                league=int(lg),
+                days_ahead=int(days_ahead),
+                include_odds=int(include_odds),
+                odds_limit=int(odds_limit),
+            )
+            cnt = resp.get("count") if isinstance(resp, dict) else None
+            results.append({"league": int(lg), "ok": True, "count": cnt})
+        except Exception as e:
+            results.append({"league": int(lg), "ok": False, "error": repr(e)})
+
+    return {"ok": True, "leagues": league_ids, "results": results}
+
 # ============================================================
 
 @app.post("/train", dependencies=[Depends(require_admin)])
