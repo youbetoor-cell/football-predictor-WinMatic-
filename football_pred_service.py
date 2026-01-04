@@ -163,106 +163,88 @@ def _norm_result_label(value):
 
 
 def ensure_predictions_db() -> None:
-    # Postgres does not support PRAGMA; skip sqlite-only checks
-    if getattr(conn, "is_pg", False):
-        return
-
     """
-    Make sure the predictions_history table exists and has all columns
-    used by the API (fixture_id, league, teams, probs, result, etc.).
-    Safe to call many times.
+    Ensure predictions_history exists.
+    - On Postgres (Neon), do NOT run SQLite PRAGMA/AUTOINCREMENT.
+    - On SQLite, keep the lightweight PRAGMA flow.
     """
+    conn = None
+    cur = None
     try:
-        # Make sure the folder for the DB exists
-        db_dir = os.path.dirname(DB_PATH) or "."
-        os.makedirs(db_dir, exist_ok=True)
-
         conn = db_connect()
         cur = conn.cursor()
 
-        # 1) Create the table if it doesn't exist at all.
-        #    We start with an id, then we'll add/ensure all other columns.
-        cur.execute(
-            """
+        # Postgres path: rely on your Postgres initializer and exit cleanly.
+        if getattr(conn, "is_pg", False):
+            try:
+                # This should create/ensure the PG schema (table/indexes) in a PG-safe way
+                init_history_db()
+            except Exception as e:
+                logger.warning("[DB] init_history_db failed (pg): %s", e)
+            return
+
+        # SQLite path
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS predictions_history (
-                id INTEGER PRIMARY KEY
+                id INTEGER PRIMARY KEY AUTOINCREMENT
             );
-            """
-        )
+        """)
 
-        # 2) See what columns we currently have
         cur.execute("PRAGMA table_info(predictions_history);")
-        existing_cols = {row[1] for row in cur.fetchall()}
+        existing_cols = {r[1] for r in cur.fetchall()}
 
-        # 3) Columns we want to be sure exist
-        expected_cols = {
-            "fixture_id": "INTEGER",
+        expected = {
             "league": "INTEGER",
-            "home_team": "TEXT",
-            "away_team": "TEXT",
+            "fixture_id": "INTEGER",
             "kickoff_utc": "TEXT",
-            "model_home_p": "REAL",
-            "model_draw_p": "REAL",
-            "model_away_p": "REAL",
-            "predicted_side": "TEXT",
-            "edge_value": "REAL",
-            "actual_result": "TEXT",
-            # optional JSON payload field for backwards compatibility
-            "payload": "TEXT",
-
-            # --- market implied probs / odds (optional) ---
-            "market_home_p": "REAL",
-            "market_draw_p": "REAL",
-            "market_away_p": "REAL",
-            "market_home_odds": "REAL",
-            "market_draw_odds": "REAL",
-            "market_away_odds": "REAL",
-            "market_bookmaker": "TEXT",
-            "market_bet_name": "TEXT",
+            "home": "TEXT",
+            "away": "TEXT",
+            "home_win_p": "REAL",
+            "draw_p": "REAL",
+            "away_win_p": "REAL",
+            "home_odds": "REAL",
+            "draw_odds": "REAL",
+            "away_odds": "REAL",
+            "home_edge": "REAL",
+            "draw_edge": "REAL",
+            "away_edge": "REAL",
+            "best_side": "TEXT",
+            "best_edge": "REAL",
+            "created_at": "TEXT"
         }
 
-        # 4) Add any missing columns
-        for name, coltype in expected_cols.items():
-            if name not in existing_cols:
-                cur.execute(
-                    f"ALTER TABLE predictions_history "
-                    f"ADD COLUMN {name} {coltype}"
-                )
+        for col, typ in expected.items():
+            if col not in existing_cols:
+                cur.execute(f"ALTER TABLE predictions_history ADD COLUMN {col} {typ};")
+
+        # Unique index on SQLite
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_predictions_history
+            ON predictions_history (league, fixture_id, kickoff_utc);
+        """)
 
         conn.commit()
+
     except Exception as e:
-        # Don't crash the app, just log a warning
         try:
             logger.warning("[DB] ensure_predictions_db failed: %s", e)
         except Exception:
-            # logger might not exist yet at import time in some setups
-            print("[DB] ensure_predictions_db failed:", e)
-    finally:
+            pass
         try:
-            conn.close()
+            print("[DB] ensure_predictions_db failed:", e)
         except Exception:
             pass
-
-
-
-# ============================================================
-# CONFIG
-# ============================================================
-
-load_dotenv()
-
-API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
-
-if not API_FOOTBALL_KEY:
-    raise RuntimeError("API_FOOTBALL_KEY environment variable is not set")
-
-API_BASE = "https://v3.football.api-sports.io"
-
-# Odds endpoints often have limited historical availability.
-# To avoid wasting API quota, we only attempt odds fetches within this window.
-ODDS_LOOKBACK_DAYS = int(os.getenv("ODDS_LOOKBACK_DAYS", "21"))   # past days
-ODDS_FUTURE_DAYS = int(os.getenv("ODDS_FUTURE_DAYS", "10"))       # upcoming days
-ODDS_MAX_CALLS_PER_RUN = int(os.getenv("ODDS_MAX_CALLS_PER_RUN", "60"))
+    finally:
+        try:
+            if cur:
+                cur.close()
+        except Exception:
+            pass
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
 
 def _within_odds_window(kickoff_utc: Any) -> bool:
     """Return True if kickoff is within a (now - lookback) .. (now + future) window."""
@@ -1155,7 +1137,7 @@ def save_odds_snapshot_auto(
             INSERT OR IGNORE INTO odds_history
               (league, fixture_id, kickoff_utc, snapshot_type, bookmaker, odds_home, odds_draw, odds_away, created_at)
             VALUES
-              (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+              (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ''', (league, fixture_id, kickoff_utc, snapshot_type, bookmaker, odds_home, odds_draw, odds_away))
             try:
                 conn.commit()
