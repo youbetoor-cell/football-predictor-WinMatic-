@@ -13,13 +13,13 @@ def _sql_pg_fix(q: str) -> str:
     """
     Convert SQLite-style placeholders/functions to Postgres-safe SQL.
     - '?'  -> '%s'
-    - {now_fn} -> now()
+    - CURRENT_TIMESTAMP -> now()
     """
     try:
         import os
         db = os.getenv("DATABASE_URL", "") or ""
         if db.startswith("postgres"):
-            return q.replace("{now_fn}", "now()").replace("?", "%s")
+            return q.replace("CURRENT_TIMESTAMP", "now()").replace("?", "%s")
     except Exception:
         pass
     return q
@@ -163,6 +163,10 @@ def _norm_result_label(value):
 
 
 def ensure_predictions_db() -> None:
+    # Postgres does not support PRAGMA; skip sqlite-only checks
+    if getattr(conn, "is_pg", False):
+        return
+
     """
     Make sure the predictions_history table exists and has all columns
     used by the API (fixture_id, league, teams, probs, result, etc.).
@@ -395,6 +399,9 @@ FEATURE_COLS_BASE = [
 # ============================================================
 
 logger = logging.getLogger("winmatic")
+
+# --- Snapshot debug counters (local only) ---
+SNAPSHOT_DEBUG = {"pred_attempt":0,"pred_ok":0,"close_attempt":0,"close_ok":0,"last_error":None,"last_fixture":None}
 logger.setLevel(logging.INFO)
 
 # ---- Lightweight API usage tracking (helps with quota + performance debugging) ----
@@ -924,7 +931,6 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
         except Exception as e:
             logger.warning("[DB] Could not ensure unique index: %s", e)
 
-        now_fn = "NOW()" if getattr(conn, "is_pg", False) else "datetime('now')"
 
         sql = """
             INSERT INTO predictions_history (
@@ -942,7 +948,7 @@ def record_predictions_history(league: int, fixtures: list[dict]) -> None:
                 ?, ?, ?,
                 ?, ?, ?,
                 ?, ?,
-                ?, {now_fn}
+                ?, CURRENT_TIMESTAMP
             )
             ON CONFLICT(league, fixture_id, kickoff_utc) DO UPDATE SET
                 home_team = excluded.home_team,
@@ -1070,14 +1076,14 @@ def record_odds_snapshot(snap: "OddsSnapshot") -> None:
                     league, fixture_id, kickoff_utc, snapshot_type, bookmaker,
                     odds_home, odds_draw, odds_away, created_at
                 )
-                VALUES (?,?,?,?,?,?,?,?, {now_fn})
+                VALUES (?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)
                 ON CONFLICT(league, fixture_id, kickoff_utc, snapshot_type)
                 DO UPDATE SET
                     bookmaker=excluded.bookmaker,
                     odds_home=excluded.odds_home,
                     odds_draw=excluded.odds_draw,
                     odds_away=excluded.odds_away,
-                    created_at={now_fn}
+                    created_at=CURRENT_TIMESTAMP
                 """,
                 (
                     int(snap.league),
@@ -3401,6 +3407,12 @@ def debug_quota():
     }
 
 
+
+@app.get("/debug/snapshots")
+def debug_snapshots():
+    """Shows whether auto-snapshot logic is running and what it last did."""
+    return SNAPSHOT_DEBUG
+
 @app.post("/debug/quota/reset")
 def debug_quota_reset(admin_token: str = Query(None, description="If ADMIN_TOKEN is set, you must pass it here")):
     """Reset internal quota/rate-limit flags (useful if they get stuck)."""
@@ -3821,20 +3833,24 @@ def api_predict_upcoming(
                     continue
 
                 odds, meta = fetch_1x2_odds_for_fixture(int(fid), return_meta=True)
-                                # --- AUTO-SNAPSHOT ODDS for CLV tracking (pred + optional close) ---
+
+                if not odds:
+                    continue
+
+                fx["odds_1x2"] = odds
+                fx["odds_meta"] = meta
+                # --- AUTO-SNAPSHOT (robust): write pred + optional close to Neon odds_history ---
                 try:
-                    # This runs only when odds were fetched successfully in this loop iteration
                     if isinstance(odds, dict) and all(k in odds for k in ("home","draw","away")):
-                        _league = int(league)
+                        _lg = int(league)
                         _fid = int(fid)
-                        _kick = str(kickoff or "")
-                        if _league and _fid and _kick:
-                            # Save pred snapshot once
-                            if get_odds_snapshot_by_fixture(int(league), int(fid), "pred") is None:
+                        _ko = str(kickoff or "")
+                        if _lg and _fid and _ko:
+                            if get_odds_snapshot_by_fixture(_lg, _fid, "pred") is None:
                                 record_odds_snapshot(OddsSnapshot(
-                                    league=int(league),
-                                    fixture_id=int(fid),
-                                    kickoff_utc=str(kickoff),
+                                    league=_lg,
+                                    fixture_id=_fid,
+                                    kickoff_utc=_ko,
                                     snapshot_type="pred",
                                     bookmaker=(meta.get("bookmaker") if isinstance(meta, dict) else None),
                                     odds_home=float(odds["home"]),
@@ -3842,39 +3858,33 @@ def api_predict_upcoming(
                                     odds_away=float(odds["away"]),
                                 ))
                 
-                            # Optional close snapshot if near kickoff
                             try:
                                 close_min = int(os.getenv("CLOSE_SNAPSHOT_MINUTES", "120"))
                             except Exception:
                                 close_min = 120
                 
                             try:
-                                ks = str(kickoff).replace("Z", "+00:00")
+                                ks = _ko.replace("Z", "+00:00")
                                 kdt = datetime.fromisoformat(ks)
                                 if kdt.tzinfo is None:
                                     kdt = kdt.replace(tzinfo=timezone.utc)
                                 mins = (kdt - datetime.now(timezone.utc)).total_seconds() / 60.0
-                                if 0 <= mins <= close_min and get_odds_snapshot_by_fixture(int(league), int(fid), "close") is None:
+                                if 0 <= mins <= close_min and get_odds_snapshot_by_fixture(_lg, _fid, "close") is None:
                                     record_odds_snapshot(OddsSnapshot(
-                                    league=int(league),
-                                    fixture_id=int(fid),
-                                    kickoff_utc=str(kickoff),
-                                    snapshot_type="close",
-                                    bookmaker=(meta.get("bookmaker") if isinstance(meta, dict) else None),
-                                    odds_home=float(odds["home"]),
-                                    odds_draw=float(odds["draw"]),
-                                    odds_away=float(odds["away"]),
+                                        league=_lg,
+                                        fixture_id=_fid,
+                                        kickoff_utc=_ko,
+                                        snapshot_type="close",
+                                        bookmaker=(meta.get("bookmaker") if isinstance(meta, dict) else None),
+                                        odds_home=float(odds["home"]),
+                                        odds_draw=float(odds["draw"]),
+                                        odds_away=float(odds["away"]),
                                     ))
                             except Exception:
                                 pass
                 except Exception:
                     pass
 
-                if not odds:
-                    continue
-
-                fx["odds_1x2"] = odds
-                fx["odds_meta"] = meta
 
                 preds = fx.get("predictions") or {}
                 model_probs = {
