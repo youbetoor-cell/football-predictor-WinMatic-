@@ -5272,6 +5272,33 @@ def api_backtest_1x2(
             correct += 1
         logloss_sum += ll
 
+        # --- CLV via odds_history snapshots (pred + close) ---
+        pred_odds = None
+        close_odds = None
+        clv_abs = None
+        clv_pct = None
+        try:
+            _snap = globals().get('get_odds_snapshot_by_fixture')
+            if _snap:
+                _op = _snap(league, int(fid), 'pred')
+                _oc = _snap(league, int(fid), 'close')
+            else:
+                _op = None
+                _oc = None
+            if isinstance(_op, dict) and isinstance(_oc, dict):
+                _side = (value_side or pred_side)  # prefer value side, fallback to model pick
+                pred_odds = float(_op.get(_side) or 0.0)
+                close_odds = float(_oc.get(_side) or 0.0)
+                if pred_odds > 0 and close_odds > 0:
+                    clv_abs = (pred_odds - close_odds)
+                    clv_pct = (pred_odds / close_odds) - 1.0
+                    clv_n += 1
+                    clv_sum_abs += float(clv_abs)
+                    clv_sum_pct += float(clv_pct)
+                    if clv_abs > 0:
+                        clv_pos += 1
+        except Exception:
+            pass
         per_game.append(
             {
                 "fixture_id": fid,
@@ -5280,6 +5307,10 @@ def api_backtest_1x2(
                 "away_name": ((fx.get("teams") or {}).get("away") or {}).get("name"),
                 "actual_result": actual,
                 "model_pick": pred_side,
+                "pred_odds": (round(pred_odds, 4) if isinstance(pred_odds, (int, float)) else None),
+                "close_odds": (round(close_odds, 4) if isinstance(close_odds, (int, float)) else None),
+                "clv_abs": (round(clv_abs, 6) if isinstance(clv_abs, (int, float)) else None),
+                "clv_pct": (round(clv_pct, 6) if isinstance(clv_pct, (int, float)) else None),
                 "model_pick_prob": round(dist[pred_side], 4),
                 "xg_home": round(xg_home, 3),
                 "xg_away": round(xg_away, 3),
@@ -5449,6 +5480,7 @@ def api_backtest_1x2(
         "clv_n": clv_n,
         "clv_mean_abs": (round(clv_sum_abs / clv_n, 6) if clv_n else None),
         "clv_mean_pct": (round(clv_sum_pct / clv_n, 6) if clv_n else None),
+        "clv_pos_rate": (round(clv_pos / clv_n, 4) if clv_n else None),
         "write_db": bool(write_db),
         "dry_run": bool(dry_run),
                 "fixtures_total": len(fixtures),
