@@ -3822,13 +3822,13 @@ def api_predict_upcoming(
                 # --- AUTO-SNAPSHOT ODDS for CLV tracking (pred + optional close) ---
                 try:
                     # Only if we actually have 1X2 odds in the standard shape
-                    if isinstance(locals().get("odds_1x2"), dict) and all(k in odds_1x2 for k in ("home","draw","away")):
+                    if isinstance(locals().get("odds"), dict) and all(k in odds for k in ("home","draw","away")):
                         _fx = locals().get("fx") or locals().get("fixture") or locals().get("f") or {}
                         _kickoff = (locals().get("kickoff_utc") or locals().get("kickoff") or locals().get("kickoff_time")
                                    or str(((_fx.get("fixture") or {}).get("date")) or ""))
                         _league = int(locals().get("league") or locals().get("league_id") or (((_fx.get("league") or {}).get("id")) or 0))
                         _fid = int(locals().get("fixture_id") or locals().get("fid") or (((_fx.get("fixture") or {}).get("id")) or 0))
-                        _meta = locals().get("odds_meta") or locals().get("meta") or {}
+                        _meta = locals().get("meta") or {}
 
                         if _league and _fid and _kickoff:
                             _get_by_fixture = globals().get("get_odds_snapshot_by_fixture")
