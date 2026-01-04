@@ -241,7 +241,7 @@ def _recheck_api_daily_quota() -> dict:
 
     try:
         url = API_BASE + "/status"
-        headers = {"x-apisports-key": API_FOOTBALL_KEY}
+        headers = {"x-apisports-key": os.getenv("API_FOOTBALL_KEY","")}
         r = requests.get(url, headers=headers, timeout=10)
         # Prefer headers if present
         hdr_rem = r.headers.get("x-ratelimit-requests-remaining") or r.headers.get("x-requests-remaining")
@@ -488,7 +488,7 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
         return cached
 
     # --- Handle missing key -------------------------------------------------
-    if not API_FOOTBALL_KEY:
+    if not os.getenv("API_FOOTBALL_KEY",""):
         cached = try_cache("missing-key")
         if cached:
             return cached
@@ -541,7 +541,7 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
             detail="Cache-only mode enabled but no cached data for request."
         )
 
-    headers = {"x-apisports-key": API_FOOTBALL_KEY}
+    headers = {"x-apisports-key": os.getenv("API_FOOTBALL_KEY","")}
     # Build URL robustly (avoid '...ioodds' when path lacks a leading slash)
     from urllib.parse import urljoin
     if isinstance(path, str) and (path.startswith("http://") or path.startswith("https://")):
