@@ -1,6 +1,6 @@
 import os
-API_BASE = os.getenv("API_BASE", "https://v3.football.api-sports.io")
 #!/usr/bin/env python3
+API_BASE = os.getenv("API_BASE", "https://v3.football.api-sports.io")
 """
 WinMatic backend — cleaned and patched:
 - Serve /static correctly
