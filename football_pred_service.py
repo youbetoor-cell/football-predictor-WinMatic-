@@ -3819,68 +3819,55 @@ def api_predict_upcoming(
                     continue
 
                 odds, meta = fetch_1x2_odds_for_fixture(int(fid), return_meta=True)
-                # --- AUTO-SNAPSHOT ODDS for CLV tracking (pred + optional close) ---
+                                # --- AUTO-SNAPSHOT ODDS for CLV tracking (pred + optional close) ---
                 try:
-                    # Only if we actually have 1X2 odds in the standard shape
-                    if isinstance(locals().get("odds"), dict) and all(k in odds for k in ("home","draw","away")):
-                        _fx = locals().get("fx") or locals().get("fixture") or locals().get("f") or {}
-                        _kickoff = (locals().get("kickoff_utc") or locals().get("kickoff") or locals().get("kickoff_time")
-                                   or str(((_fx.get("fixture") or {}).get("date")) or ""))
-                        _league = int(locals().get("league") or locals().get("league_id") or (((_fx.get("league") or {}).get("id")) or 0))
-                        _fid = int(locals().get("fixture_id") or locals().get("fid") or (((_fx.get("fixture") or {}).get("id")) or 0))
-                        _meta = locals().get("meta") or {}
-
-                        if _league and _fid and _kickoff:
-                            _get_by_fixture = globals().get("get_odds_snapshot_by_fixture")
-                            def _has_snap(st: str) -> bool:
-                                try:
-                                    if callable(_get_by_fixture):
-                                        return _get_by_fixture(_league, _fid, st) is not None
-                                except Exception:
-                                    pass
-                                return False
-
-                            # Save "pred" snapshot once (do not overwrite)
-                            if not _has_snap("pred"):
+                    # This runs only when odds were fetched successfully in this loop iteration
+                    if isinstance(odds, dict) and all(k in odds for k in ("home","draw","away")):
+                        _league = int(league)
+                        _fid = int(fid)
+                        _kick = str(kickoff or "")
+                        if _league and _fid and _kick:
+                            # Save pred snapshot once
+                            if get_odds_snapshot_by_fixture(_league, _fid, "pred") is None:
                                 record_odds_snapshot(OddsSnapshot(
                                     league=_league,
                                     fixture_id=_fid,
-                                    kickoff_utc=str(_kickoff),
+                                    kickoff_utc=_kick,
                                     snapshot_type="pred",
-                                    bookmaker=_meta.get("bookmaker"),
-                                    odds_home=float(odds_1x2["home"]),
-                                    odds_draw=float(odds_1x2["draw"]),
-                                    odds_away=float(odds_1x2["away"]),
+                                    bookmaker=(meta.get("bookmaker") if isinstance(meta, dict) else None),
+                                    odds_home=float(odds["home"]),
+                                    odds_draw=float(odds["draw"]),
+                                    odds_away=float(odds["away"]),
                                 ))
-
-                            # Optional: save "close" snapshot if kickoff is soon (default 120 minutes)
+                
+                            # Optional close snapshot if near kickoff
                             try:
                                 close_min = int(os.getenv("CLOSE_SNAPSHOT_MINUTES", "120"))
                             except Exception:
                                 close_min = 120
-
+                
                             try:
-                                ks = str(_kickoff).replace("Z", "+00:00")
+                                ks = _kick.replace("Z", "+00:00")
                                 kdt = datetime.fromisoformat(ks)
                                 if kdt.tzinfo is None:
                                     kdt = kdt.replace(tzinfo=timezone.utc)
                                 mins = (kdt - datetime.now(timezone.utc)).total_seconds() / 60.0
-                                if 0 <= mins <= close_min and not _has_snap("close"):
+                                if 0 <= mins <= close_min and get_odds_snapshot_by_fixture(_league, _fid, "close") is None:
                                     record_odds_snapshot(OddsSnapshot(
-                                        league=_league,
-                                        fixture_id=_fid,
-                                        kickoff_utc=str(_kickoff),
-                                        snapshot_type="close",
-                                        bookmaker=_meta.get("bookmaker"),
-                                        odds_home=float(odds_1x2["home"]),
-                                        odds_draw=float(odds_1x2["draw"]),
-                                        odds_away=float(odds_1x2["away"]),
+                                    league=_league,
+                                    fixture_id=_fid,
+                                    kickoff_utc=_kick,
+                                    snapshot_type="close",
+                                    bookmaker=(meta.get("bookmaker") if isinstance(meta, dict) else None),
+                                    odds_home=float(odds["home"]),
+                                    odds_draw=float(odds["draw"]),
+                                    odds_away=float(odds["away"]),
                                     ))
                             except Exception:
                                 pass
                 except Exception:
-                    # Never break /predict/upcoming because snapshot save failed
                     pass
+
                 if not odds:
                     continue
 
