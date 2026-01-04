@@ -3460,6 +3460,82 @@ def _startup_init_history_db():
         init_history_db()
     except Exception:
         logger.exception("init_history_db failed (continuing to boot)")
+# === AUTO SNAPSHOT SCHEDULER (background) ===
+# Runs /predict/upcoming on a schedule so "close" snapshots are collected automatically (no user traffic needed).
+# Uses a file lock so only ONE worker runs this loop (prevents duplicate API calls).
+try:
+    import fcntl  # Linux/macOS (Render is Linux)
+except Exception:
+    fcntl = None
+
+_AUTO_SNAPSHOT_LOCK_FD = None
+
+def _try_acquire_autosnapshot_lock() -> bool:
+    global _AUTO_SNAPSHOT_LOCK_FD
+    if _AUTO_SNAPSHOT_LOCK_FD is not None:
+        return True
+    if fcntl is None:
+        return True
+    try:
+        fd = open("/tmp/autosnapshot.lock", "w")
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _AUTO_SNAPSHOT_LOCK_FD = fd
+        return True
+    except Exception:
+        return False
+
+async def _autosnapshot_tick():
+    import os, asyncio
+    import requests
+    from datetime import datetime, timezone
+
+    enabled = os.getenv("AUTO_SNAPSHOT", "0").strip() == "1"
+    if not enabled:
+        return
+
+    if not _try_acquire_autosnapshot_lock():
+        logger.info("[autosnapshot] lock held by another worker; scheduler disabled in this worker")
+        return
+
+    leagues_s = os.getenv("AUTO_SNAPSHOT_LEAGUES", "39,61,78,88,94,135,140")
+    leagues = []
+    for part in leagues_s.split(","):
+        part = part.strip()
+        if part.isdigit():
+            leagues.append(int(part))
+
+    interval_min = int(os.getenv("AUTO_SNAPSHOT_INTERVAL_MIN", "15"))
+    days_ahead = int(os.getenv("AUTO_SNAPSHOT_DAYS_AHEAD", "7"))
+    odds_limit = int(os.getenv("AUTO_SNAPSHOT_ODDS_LIMIT", "25"))
+
+    port = os.getenv("PORT") or "8000"
+
+    logger.info("[autosnapshot] enabled=1 leagues=%s interval_min=%s days_ahead=%s odds_limit=%s port=%s",
+                leagues, interval_min, days_ahead, odds_limit, port)
+
+    await asyncio.sleep(3)
+
+    while True:
+        started = datetime.now(timezone.utc).isoformat()
+        for lg in leagues:
+            url = "http://127.0.0.1:{}/predict/upcoming?league={}&days_ahead={}&include_odds=1&odds_limit={}".format(
+                port, lg, days_ahead, odds_limit
+            )
+            try:
+                resp = await asyncio.to_thread(requests.get, url, timeout=90)
+                logger.info("[autosnapshot] %s GET %s -> %s", started, url, resp.status_code)
+            except Exception as e:
+                logger.warning("[autosnapshot] %s GET failed league=%s err=%r", started, lg, e)
+        await asyncio.sleep(max(60, interval_min * 60))
+
+@app.on_event("startup")
+async def _startup_autosnapshot_scheduler():
+    import os, asyncio
+    if os.getenv("AUTO_SNAPSHOT", "0").strip() == "1":
+        asyncio.create_task(_autosnapshot_tick())
+        logger.info("[autosnapshot] scheduler task created")
+
+
 
 def _history_table_columns(conn) -> list[str]:
     cur = conn.cursor()
@@ -7363,4 +7439,103 @@ def admin_backfill_market_from_api(
         "errors": errors,
         "dry_run": dry_run,
         "error_samples": error_samples,
+    }
+
+@app.get("/clv/report")
+def api_clv_report(
+    league: int = Query(DEFAULT_LEAGUE),
+    since_days: int = Query(90, ge=1, le=3650),
+):
+    """
+    CLV report based on odds_history:
+    compares pred vs close odds for the same (league, fixture_id, kickoff_utc).
+    CLV here is (pred_odds - close_odds): positive means you beat the close.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=int(since_days))
+
+    conn = db_connect()
+    try:
+        cur = conn.cursor()
+        is_pg = bool(getattr(conn, "is_pg", False))
+
+        if is_pg:
+            q = (
+                "SELECT p.fixture_id, p.kickoff_utc, p.created_at, c.created_at, "
+                "p.odds_home, p.odds_draw, p.odds_away, "
+                "c.odds_home, c.odds_draw, c.odds_away "
+                "FROM odds_history p "
+                "JOIN odds_history c "
+                "  ON p.league=c.league AND p.fixture_id=c.fixture_id AND p.kickoff_utc=c.kickoff_utc "
+                "WHERE p.league=%s "
+                "  AND p.snapshot_type='pred' AND c.snapshot_type='close' "
+                "  AND p.created_at >= %s "
+                "  AND c.created_at > p.created_at"
+            )
+            cur.execute(q, (int(league), cutoff))
+        else:
+            # best-effort SQLite compatibility
+            q = (
+                "SELECT p.fixture_id, p.kickoff_utc, p.created_at, c.created_at, "
+                "p.odds_home, p.odds_draw, p.odds_away, "
+                "c.odds_home, c.odds_draw, c.odds_away "
+                "FROM odds_history p "
+                "JOIN odds_history c "
+                "  ON p.league=c.league AND p.fixture_id=c.fixture_id AND p.kickoff_utc=c.kickoff_utc "
+                "WHERE p.league=? "
+                "  AND p.snapshot_type='pred' AND c.snapshot_type='close' "
+                "  AND p.created_at >= ?"
+            )
+            cur.execute(q, (int(league), cutoff.isoformat()))
+
+        rows = cur.fetchall()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    def _acc():
+        return {"n": 0, "sum_abs": 0.0, "sum_pct": 0.0}
+
+    out = {"home": _acc(), "draw": _acc(), "away": _acc(), "all": _acc()}
+
+    for r in rows:
+        # r: fixture_id, kickoff_utc, pred_ts, close_ts, pH,pD,pA,cH,cD,cA
+        pH, pD, pA, cH, cD, cA = r[4], r[5], r[6], r[7], r[8], r[9]
+        vals = [("home", pH, cH), ("draw", pD, cD), ("away", pA, cA)]
+        for key, pred, close in vals:
+            if pred is None or close is None:
+                continue
+            pred = float(pred)
+            close = float(close)
+            if pred <= 0 or close <= 0:
+                continue
+            clv_abs = pred - close
+            clv_pct = clv_abs / pred
+
+            out[key]["n"] += 1
+            out[key]["sum_abs"] += clv_abs
+            out[key]["sum_pct"] += clv_pct
+
+            out["all"]["n"] += 1
+            out["all"]["sum_abs"] += clv_abs
+            out["all"]["sum_pct"] += clv_pct
+
+    def фин(x):
+        n = x["n"]
+        return {
+            "n": int(n),
+            "clv_mean_abs": (round(x["sum_abs"] / n, 6) if n else None),
+            "clv_mean_pct": (round(x["sum_pct"] / n, 6) if n else None),
+        }
+
+    return {
+        "ok": True,
+        "league": int(league),
+        "since_days": int(since_days),
+        "pairs": int(len(rows)),
+        "per_outcome": {k: фин(v) for k, v in out.items()},
+        "note": "CLV = pred_odds - close_odds (positive means you beat the close).",
     }
