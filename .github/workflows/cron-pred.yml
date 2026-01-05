@@ -1,38 +1,60 @@
-name: cron-pred
+name: Cron - Pred snapshots
+
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    # Once daily (adjust)
+    - cron: "15 6 * * *"
   workflow_dispatch: {}
 
+concurrency:
+  group: cron-pred
+  cancel-in-progress: true
+
 jobs:
-  run:
+  pred_snapshots:
     runs-on: ubuntu-latest
     steps:
-      - name: Call cron snapshots (pred capture)
+      - name: Call /cron/snapshots (pred snapshots)
         env:
           BASE_URL: ${{ secrets.BASE_URL }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
           set -euo pipefail
-          url="${BASE_URL}/cron/snapshots?admin_token=${ADMIN_TOKEN}&days_ahead=7&odds_limit=25"
+
+          # Keep odds_limit small to preserve quota
+          url="${BASE_URL}/cron/snapshots?admin_token=${ADMIN_TOKEN}&days_ahead=7&odds_limit=3"
           echo "Calling: $url"
+
           resp="$(curl -fsS --max-time 180 "$url")"
           echo "Body:"
           echo "$resp"
-          echo "$resp" | python3 -c 'import sys,json; o=json.load(sys.stdin); bad=[r for r in o.get("results",[]) if not r.get("ok")]; print("OK leagues:", o.get("leagues")) if not bad else (_ for _ in ()).throw(SystemExit("Some leagues failed: "+str(bad[:3])))'
 
-set -euo pipefail
-url="${BASE_URL}/cron/snapshots?admin_token=${ADMIN_TOKEN}&days_ahead=1&odds_limit=5"
-echo "Calling: $url"
-resp="$(curl -fsS --max-time 180 "$url")"
-echo "Body:"
-echo "$resp"
-echo "$resp" | python3 - <<'PY'
-import sys, json
-o=json.load(sys.stdin)
-bad=[r for r in o.get("results",[]) if not r.get("ok")]
-if bad:
-    raise SystemExit("Some leagues failed: "+str(bad[:3]))
-print("OK leagues:", o.get("leagues"))
-PY
+          echo "$resp" | python3 - <<'PY'
+          import sys, json, re
+          o = json.load(sys.stdin)
+          results = o.get("results", []) or []
+          bad = [r for r in results if not r.get("ok")]
+          if not bad:
+              print("All leagues OK:", o.get("leagues"))
+              raise SystemExit(0)
 
+          quota_patterns = [
+              r"quota exhausted",
+              r"daily request limit",
+              r"reached the request limit for the day",
+              r"Too many requests",
+              r"rateLimit",
+          ]
+          def is_quota_err(msg: str) -> bool:
+              msg = (msg or "").lower()
+              return any(re.search(p.lower(), msg) for p in quota_patterns)
+
+          quota_bad = [r for r in bad if is_quota_err(r.get("error",""))]
+          other_bad = [r for r in bad if r not in quota_bad]
+
+          if other_bad:
+              raise SystemExit("Non-quota failures: " + str(other_bad[:3]))
+
+          print("Quota/rate-limit reached; not failing workflow. Examples:", quota_bad[:2])
+          raise SystemExit(0)
+          PY
