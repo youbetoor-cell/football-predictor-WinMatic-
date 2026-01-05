@@ -19,37 +19,33 @@ jobs:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
           set -euo pipefail
-          url="${BASE_URL}/cron/snapshots?admin_token=${ADMIN_TOKEN}&days_ahead=7&odds_limit=10"
+
+          # odds_limit=0 is MUCH cheaper; turn it back up later if your plan supports it
+          url="${BASE_URL}/cron/snapshots?admin_token=${ADMIN_TOKEN}&days_ahead=7&odds_limit=0"
           echo "Calling: $url"
+
           resp="$(curl -fsS --max-time 180 "$url")"
           echo "Body:"
           echo "$resp"
 
-          echo "$resp" | python3 - <<'PY'
-          import sys,json,re
-          o=json.load(sys.stdin)
-          bad=[r for r in o.get("results",[]) if not r.get("ok")]
-          if not bad:
-              print("All leagues OK:", o.get("leagues"))
-              raise SystemExit(0)
+          python3 -c '
+import sys, json
+o=json.load(sys.stdin)
+results=o.get("results") or []
+bad=[r for r in results if not r.get("ok")]
+if not bad:
+    print("All leagues OK:", o.get("leagues"))
+    raise SystemExit(0)
 
-          quota_patterns = [
-              r"quota exhausted",
-              r"daily request limit",
-              r"reached the request limit for the day",
-              r"too many requests",
-              r"ratelimit",
-          ]
-          def is_quota(msg):
-              s=(msg or "").lower()
-              return any(re.search(p, s) for p in quota_patterns)
+pats=("quota exhausted","daily request limit","reached the request limit for the day","too many requests","ratelimit","ratelimit")
+def is_quota(msg):
+    s=(msg or "").lower()
+    return any(p in s for p in pats)
 
-          quota_bad=[r for r in bad if is_quota(r.get("error",""))]
-          other_bad=[r for r in bad if r not in quota_bad]
+other=[r for r in bad if not is_quota(r.get("error",""))]
+if other:
+    raise SystemExit("Non-quota failures: "+str(other[:3]))
 
-          if other_bad:
-              raise SystemExit("Non-quota failures: "+str(other_bad[:3]))
-
-          print("Quota/rate-limit reached; not failing workflow. Examples:", quota_bad[:2])
-          raise SystemExit(0)
-          PY
+print("Quota/rate-limit reached; not failing workflow. Examples:", bad[:2])
+raise SystemExit(0)
+' <<<"$resp"
