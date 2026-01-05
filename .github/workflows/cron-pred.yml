@@ -1,0 +1,35 @@
+name: cron-pred
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"    # every 6 hours (UTC)
+  workflow_dispatch: {}
+
+concurrency:
+  group: cron-pred
+  cancel-in-progress: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call cron snapshots (pred capture)
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          resp="$(curl -fsS --max-time 180 \
+            "${BASE_URL}/cron/snapshots" \
+            --get \
+            --data-urlencode "admin_token=${ADMIN_TOKEN}" \
+            --data-urlencode "days_ahead=7" \
+            --data-urlencode "odds_limit=25")"
+          echo "$resp" | python3 - <<'PY'
+          import sys, json
+          o=json.load(sys.stdin)
+          bad=[r for r in o.get("results",[]) if not r.get("ok")]
+          if bad:
+              raise SystemExit("Some leagues failed: " + str(bad[:3]) + (" ..." if len(bad)>3 else ""))
+          print("OK. leagues:", o.get("leagues"), "results:", len(o.get("results",[])))
+          PY
