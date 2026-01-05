@@ -19,10 +19,8 @@ jobs:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
           set -euo pipefail
-
           url="${BASE_URL}/cron/snapshots?admin_token=${ADMIN_TOKEN}&days_ahead=1&odds_limit=0&close_snapshot_minutes=180"
           echo "Calling: $url"
-
           resp="$(curl -fsS --max-time 180 "$url")"
           echo "Body:"
           echo "$resp"
@@ -36,7 +34,7 @@ if not bad:
     print("All leagues OK:", o.get("leagues"))
     raise SystemExit(0)
 
-pats=("quota exhausted","daily request limit","reached the request limit for the day","too many requests","ratelimit","ratelimit")
+pats=("quota exhausted","daily request limit","reached the request limit for the day","too many requests","ratelimit")
 def is_quota(msg):
     s=(msg or "").lower()
     return any(p in s for p in pats)
