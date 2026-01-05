@@ -2,8 +2,8 @@ name: Cron - Pred snapshots
 
 on:
   schedule:
-    # Once daily (adjust)
-    - cron: "15 6 * * *"
+    # Every 3 hours (adjust as you like)
+    - cron: "0 */3 * * *"
   workflow_dispatch: {}
 
 concurrency:
@@ -14,15 +14,15 @@ jobs:
   pred_snapshots:
     runs-on: ubuntu-latest
     steps:
-      - name: Call /cron/snapshots (pred snapshots)
+      - name: Call /cron/snapshots (pred capture)
         env:
           BASE_URL: ${{ secrets.BASE_URL }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
           set -euo pipefail
 
-          # Keep odds_limit small to preserve quota
-          url="${BASE_URL}/cron/snapshots?admin_token=${ADMIN_TOKEN}&days_ahead=7&odds_limit=3"
+          # Keep odds_limit modest to reduce API load. Increase if your plan supports it.
+          url="${BASE_URL}/cron/snapshots?admin_token=${ADMIN_TOKEN}&days_ahead=7&odds_limit=10"
           echo "Calling: $url"
 
           resp="$(curl -fsS --max-time 180 "$url")"
@@ -44,6 +44,7 @@ jobs:
               r"reached the request limit for the day",
               r"Too many requests",
               r"rateLimit",
+              r"exceeded the limit",
           ]
           def is_quota_err(msg: str) -> bool:
               msg = (msg or "").lower()
