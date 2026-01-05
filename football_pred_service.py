@@ -584,14 +584,7 @@ def api_get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
         cached = try_cache("network-error")
         if cached:
             return cached
-        # Normalize API-FOOTBALL daily-limit payloads (often returned as 502) into quota exhausted (429)
-msg = str(locals().get('data', ''))
-ml = msg.lower()
-if ('reached the request limit for the day' in ml) or ('daily request limit' in ml) or ('quota exhausted' in ml):
-    globals()['API_QUOTA_EXHAUSTED'] = True
-    globals()['API_QUOTA_EXHAUSTED_UNTIL'] = max(globals().get('API_QUOTA_EXHAUSTED_UNTIL', 0.0), _next_utc_midnight_ts())
-    raise HTTPException(status_code=429, detail='API-FOOTBALL daily request limit already reached (quota exhausted).')
-raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=str(e))
 
     # --- Non-200 status codes -----------------------------------------------
     if resp.status_code != 200:
