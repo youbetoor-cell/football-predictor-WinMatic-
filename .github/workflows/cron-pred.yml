@@ -37,12 +37,12 @@ jobs:
               r"quota exhausted",
               r"daily request limit",
               r"reached the request limit for the day",
-              r"Too many requests",
-              r"rateLimit",
+              r"too many requests",
+              r"ratelimit",
           ]
           def is_quota(msg):
               s=(msg or "").lower()
-              return any(re.search(p.lower(), s) for p in quota_patterns)
+              return any(re.search(p, s) for p in quota_patterns)
 
           quota_bad=[r for r in bad if is_quota(r.get("error",""))]
           other_bad=[r for r in bad if r not in quota_bad]
