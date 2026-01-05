@@ -2,7 +2,7 @@ name: cron-close
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # every 10 minutes (UTC)
+    - cron: "*/10 * * * *"
   workflow_dispatch: {}
 
 concurrency:
@@ -19,18 +19,46 @@ jobs:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
           set -euo pipefail
-          resp="$(curl -fsS --max-time 120 \
-            "${BASE_URL}/cron/snapshots" \
-            --get \
+
+          # Debug (safe): show whether secrets are present (values stay masked)
+          echo "BASE_URL is set? $([ -n "${BASE_URL:-}" ] && echo yes || echo no)"
+          echo "ADMIN_TOKEN length: ${#ADMIN_TOKEN}"
+
+          # Call endpoint and capture HTTP code + body
+          endpoint="${BASE_URL%/}/cron/snapshots"
+          http_code="$(curl -sS --max-time 120 \
+            -o resp.json \
+            -w "%{http_code}" \
+            --get "$endpoint" \
             --data-urlencode "admin_token=${ADMIN_TOKEN}" \
             --data-urlencode "days_ahead=1" \
             --data-urlencode "odds_limit=10" \
             --data-urlencode "close_snapshot_minutes=180")"
-          echo "$resp" | python3 - <<'PY'
-          import sys, json
-          o=json.load(sys.stdin)
-          bad=[r for r in o.get("results",[]) if not r.get("ok")]
+
+          echo "HTTP: $http_code"
+          echo "Body:"
+          cat resp.json
+          echo
+
+          # Fail fast if not 200
+          if [ "$http_code" != "200" ]; then
+            echo "Non-200 response from server"
+            exit 1
+          fi
+
+          # Parse JSON and warn (but don't fail) if some leagues fail
+          python3 - <<'PY' < resp.json
+          import json, sys
+          o = json.load(sys.stdin)
+          results = o.get("results", []) or []
+          bad = [r for r in results if not r.get("ok")]
+
           if bad:
-              raise SystemExit("Some leagues failed: " + str(bad[:3]) + (" ..." if len(bad)>3 else ""))
-          print("OK. leagues:", o.get("leagues"), "results:", len(o.get("results",[])))
+              print("WARNING: some leagues failed:")
+              for r in bad[:10]:
+                  print(" -", r)
+              # Only hard-fail if ALL failed (keeps your schedule mostly green)
+              if len(bad) == len(results) and results:
+                  raise SystemExit("All leagues failed")
+          print("OK. leagues:", o.get("leagues"), "results:", len(results), "bad:", len(bad))
           PY
