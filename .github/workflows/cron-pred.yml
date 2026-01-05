@@ -2,7 +2,7 @@ name: cron-pred
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 */6 * * *"  # every 6 hours
   workflow_dispatch: {}
 
 concurrency:
@@ -12,6 +12,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 6
     steps:
       - name: Call cron snapshots (pred capture)
         env:
@@ -20,44 +21,31 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "BASE_URL is set? $([ -n "${BASE_URL:-}" ] && echo yes || echo no)"
+          echo "BASE_URL is set? $([[ -n "${BASE_URL:-}" ]] && echo yes || echo no)"
           echo "ADMIN_TOKEN length: ${#ADMIN_TOKEN}"
 
-          endpoint="${BASE_URL%/}/cron/snapshots"
-          http_code="$(curl -sS --max-time 180 \
-            -o resp.json \
-            -w "%{http_code}" \
-            --get "$endpoint" \
-            --data-urlencode "admin_token=${ADMIN_TOKEN}" \
-            --data-urlencode "days_ahead=7" \
-            --data-urlencode "odds_limit=25")"
+          url="${BASE_URL}/cron/snapshots"
+          echo "Calling: $url"
 
-          echo "HTTP: $http_code"
+          resp="$(
+            curl -sS --max-time 180 \
+              --retry 3 --retry-delay 5 --retry-all-errors \
+              --get "$url" \
+              --data-urlencode "admin_token=${ADMIN_TOKEN}" \
+              --data-urlencode "days_ahead=7" \
+              --data-urlencode "odds_limit=25"
+          )"
+
           echo "Body:"
-          cat resp.json
-          echo
+          echo "$resp"
 
-          if [ "$http_code" != "200" ]; then
-            echo "Non-200 response from server"
-            exit 1
-          fi
-
-          python3 - <<'PY' < resp.json
-          import json, sys
+          echo "$resp" | python3 - <<'PY'
+          import sys, json
           o = json.load(sys.stdin)
-          results = o.get("results", []) or []
-          bad = [r for r in results if not r.get("ok")]
 
+          bad = [r for r in o.get("results", []) if not r.get("ok")]
           if bad:
-              print("WARNING: some leagues failed:")
-              for r in bad[:10]:
-                  print(" -", r)
-              if len(bad) == len(results) and results:
-                  raise SystemExit("All leagues failed")
-          print("OK. leagues:", o.get("leagues"), "results:", len(results), "bad:", len(bad))
-          PY
+              raise SystemExit("Some leagues failed: " + str(bad[:3]) + (" ..." if len(bad) > 3 else ""))
 
-          if bad:
-              raise SystemExit("Some leagues failed: " + str(bad[:3]) + (" ..." if len(bad)>3 else ""))
-          print("OK. leagues:", o.get("leagues"), "results:", len(o.get("results",[])))
+          print("OK. leagues:", o.get("leagues"), "results:", len(o.get("results", [])))
           PY
