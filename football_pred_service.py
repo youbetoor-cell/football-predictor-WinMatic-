@@ -3335,6 +3335,59 @@ def fetch_top_scorers(league_id: int, season: int) -> List[Dict[str, Any]]:
 
 app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 
+
+# ---------------------------
+# WinMatic: incoming request counter (Render path debugging)
+# ---------------------------
+import time
+from collections import defaultdict
+
+try:
+    from fastapi import Request
+except Exception:
+    from starlette.requests import Request
+
+_WM_REQ_STARTED = time.time()
+_WM_REQ_TOTAL = 0
+_WM_REQ_BY_PATH = defaultdict(int)
+_WM_REQ_BY_STATUS = defaultdict(int)
+
+def _wm_require_admin(request: Request):
+    # Enforce admin token only if ADMIN_TOKEN is set in env.
+    import os
+    from fastapi import HTTPException
+    env_tok = os.getenv("ADMIN_TOKEN")
+    if not env_tok:
+        return
+    tok = request.headers.get("X-Admin-Token") or request.query_params.get("admin_token")
+    if tok != env_tok:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+@app.middleware("http")
+async def _wm_count_requests(request: Request, call_next):
+    global _WM_REQ_TOTAL
+    path = request.url.path
+    _WM_REQ_TOTAL += 1
+    _WM_REQ_BY_PATH[path] += 1
+    resp = await call_next(request)
+    _WM_REQ_BY_STATUS[str(resp.status_code)] += 1
+    return resp
+
+@app.get("/debug/req-usage")
+def debug_req_usage(request: Request, limit: int = 50):
+    _wm_require_admin(request)
+    top = sorted(_WM_REQ_BY_PATH.items(), key=lambda kv: kv[1], reverse=True)[: int(limit)]
+    return {
+        "ok": True,
+        "uptime_sec": int(time.time() - _WM_REQ_STARTED),
+        "total_requests": int(_WM_REQ_TOTAL),
+        "by_path_top": top,
+        "by_status": dict(_WM_REQ_BY_STATUS),
+    }
+
+# ---------------------------
+
+
 @app.get("/debug/neon")
 def debug_neon():
     conn = db_connect()
