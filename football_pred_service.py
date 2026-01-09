@@ -7525,8 +7525,25 @@ def api_clv_report(
 
 # === WINMATIC SNAPSHOT-FIRST ENDPOINTS ===
 try:
+    import os
+    from pathlib import Path
     from fastapi import HTTPException
     from wm_snapshots import load_latest_upcoming_snapshot, attach_snapshot_meta
+
+    def _wm_artifacts_dir() -> str:
+        # 1) Prefer any existing globals in this codebase
+        for k in ("ARTIFACTS_DIR", "ARTIFACT_DIR", "ARTIFACTS_PATH", "ARTIFACT_DIR_PATH"):
+            v = globals().get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+
+        # 2) Env vars (handy on Render, etc.)
+        v = os.getenv("ARTIFACTS_DIR") or os.getenv("ARTIFACTS_PATH")
+        if v and v.strip():
+            return v.strip()
+
+        # 3) Fallback: ./artifacts next to this file
+        return str(Path(__file__).resolve().parent / "artifacts")
 
     @app.get("/model-info")
     def model_info(league: int = 39):
@@ -7542,9 +7559,12 @@ try:
 
     @app.get("/snapshots/predict/upcoming")
     def snapshots_predict_upcoming(league: int = 39, days_ahead: int = 7):
-        payload, snapshot_iso, snap_file = load_latest_upcoming_snapshot(ARTIFACTS_DIR, int(league), int(days_ahead))
+        artifacts_dir = _wm_artifacts_dir()
+        payload, snapshot_iso, snap_file = load_latest_upcoming_snapshot(
+            artifacts_dir, int(league), int(days_ahead)
+        )
         if payload is None:
-            raise HTTPException(status_code=404, detail="No snapshot available")
+            raise HTTPException(status_code=404, detail=f"No snapshot available in {artifacts_dir}/snapshots")
         return attach_snapshot_meta(payload, snapshot_iso, snap_file, source="snapshot")
 
 except Exception as _e:
@@ -7552,3 +7572,4 @@ except Exception as _e:
         logger.exception("Failed to register snapshot-first endpoints: %s", _e)
     except Exception:
         pass
+
