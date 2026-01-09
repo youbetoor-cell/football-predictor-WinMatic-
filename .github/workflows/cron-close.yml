@@ -2,8 +2,6 @@ name: Cron - Close snapshots
 
 on:
   workflow_dispatch:
-#   schedule:
-#     - cron: "0 */3 * * *"
 
 concurrency:
   group: cron-close
