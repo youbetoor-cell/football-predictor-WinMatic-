@@ -7521,3 +7521,34 @@ def api_clv_report(
         "per_outcome": {k: фин(v) for k, v in out.items()},
         "note": "CLV = pred_odds - close_odds (positive means you beat the close).",
     }
+
+
+# === WINMATIC SNAPSHOT-FIRST ENDPOINTS ===
+try:
+    from fastapi import HTTPException
+    from wm_snapshots import load_latest_upcoming_snapshot, attach_snapshot_meta
+
+    @app.get("/model-info")
+    def model_info(league: int = 39):
+        # Minimal response to stop UI 404 spam
+        return {
+            "ok": True,
+            "league": league,
+            "info": {
+                "snapshot_first_supported": True,
+                "has_value_endpoints": True
+            }
+        }
+
+    @app.get("/snapshots/predict/upcoming")
+    def snapshots_predict_upcoming(league: int = 39, days_ahead: int = 7):
+        payload, snapshot_iso, snap_file = load_latest_upcoming_snapshot(ARTIFACTS_DIR, int(league), int(days_ahead))
+        if payload is None:
+            raise HTTPException(status_code=404, detail="No snapshot available")
+        return attach_snapshot_meta(payload, snapshot_iso, snap_file, source="snapshot")
+
+except Exception as _e:
+    try:
+        logger.exception("Failed to register snapshot-first endpoints: %s", _e)
+    except Exception:
+        pass

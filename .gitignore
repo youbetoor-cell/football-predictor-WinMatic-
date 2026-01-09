@@ -94,3 +94,5 @@ static/js/status_16:12*.js
 # Local folders
 app/
 .env
+.env.local
+.env
