@@ -102,3 +102,6 @@ winmatic_project.zip
 
 # local backup bundles
 backups/*.bundle
+
+# Local git bundle backups
+backups/*.bundle
