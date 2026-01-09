@@ -1,25 +1,25 @@
-name: Cron - Close snapshots
+name: Cron - Pred snapshots
 
 on:
-#   schedule:
-#     - cron: "0 */3 * * *"
+  schedule:
+    - cron: "0 */3 * * *"
   workflow_dispatch: {}
 
 concurrency:
-  group: cron-close
+  group: cron-pred
   cancel-in-progress: true
 
 jobs:
-  close_snapshots:
+  pred_snapshots:
     runs-on: ubuntu-latest
     steps:
-      - name: Call /cron/snapshots (close snapshots)
+      - name: Call cron snapshots (pred capture)
         env:
           BASE_URL: ${{ secrets.BASE_URL }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
           set -euo pipefail
-          url="${BASE_URL}/cron/snapshots?admin_token=${ADMIN_TOKEN}&days_ahead=1&odds_limit=0&close_snapshot_minutes=180"
+          url="${BASE_URL}/cron/snapshots?admin_token=${ADMIN_TOKEN}&days_ahead=7&odds_limit=0"
           echo "Calling: $url"
           resp="$(curl -fsS --max-time 180 "$url")"
           echo "Body:"
