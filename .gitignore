@@ -99,3 +99,6 @@ app/
 
 # Local WinMatic bundle (too large for GitHub)
 winmatic_project.zip
+
+# local backup bundles
+backups/*.bundle
