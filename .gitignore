@@ -96,3 +96,6 @@ app/
 .env
 .env.local
 .env
+
+# Local WinMatic bundle (too large for GitHub)
+winmatic_project.zip
