@@ -22,7 +22,13 @@ def _pu_cache_get(key):
         return val
 
 def _pu_cache_set(key, ttl_sec, val):
-    exp = time.time() + max(0, int(ttl_sec))
+    try:
+        ttl = int(ttl_sec)
+    except Exception:
+        ttl = 0
+    min_ttl = int(os.getenv("UPCOMING_CACHE_TTL_MIN_S", "300"))
+    ttl = max(ttl, min_ttl)
+    exp = time.time() + ttl
     with _PREDICT_UPCOMING_LOCK:
         _PREDICT_UPCOMING_CACHE[key] = (exp, val)
 # --- end predict/upcoming TTL cache ---
