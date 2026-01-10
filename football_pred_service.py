@@ -3645,6 +3645,32 @@ def _history_table_columns(conn) -> list[str]:
 @app.get("/debug/db")
 
 
+@app.get("/debug/whoami")
+def debug_whoami(request=None):
+    """
+    Identify which worker answered this request.
+    Returns pid/hostname + process boot time.
+    """
+    # Admin gate (match existing convention: X-Admin-Token header vs ADMIN_TOKEN env)
+    admin = os.getenv("ADMIN_TOKEN", "")
+    if admin:
+        hdr = ""
+        try:
+            hdr = (request.headers.get("x-admin-token") if request else "") or ""
+        except Exception:
+            hdr = ""
+        if hdr != admin:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+    return {
+        "ok": True,
+        "pid": os.getpid(),
+        "host": socket.gethostname(),
+        "now": time.time(),
+    }
+
+
+
 @app.get("/debug/quota")
 def debug_quota():
     """Show internal quota/rate-limit flags."""
