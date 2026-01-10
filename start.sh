@@ -4,7 +4,7 @@ set -euo pipefail
 PORT="${PORT:-8000}"
 WEB_CONCURRENCY="${WEB_CONCURRENCY:-2}"
 
-# Always prefer local venv gunicorn
+# Always prefer local venv gunicorn --workers 
 if [ -x ".venv/bin/gunicorn" ]; then
   GUNICORN="./.venv/bin/gunicorn"
 elif [ -x "env/bin/gunicorn" ]; then
