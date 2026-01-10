@@ -3500,6 +3500,14 @@ def debug_odds_insert_test(
 
 @app.on_event("startup")
 def _startup_init_history_db():
+    # --- kill switch: disable internal warmer loop ---
+    if os.getenv('DISABLE_INTERNAL_WARMER') == '1':
+        try:
+            logger.info('Internal warmer disabled by DISABLE_INTERNAL_WARMER=1')
+        except Exception:
+            pass
+        return
+    # --- end kill switch ---
     try:
         init_history_db()
     except Exception:
