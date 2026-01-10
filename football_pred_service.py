@@ -1,4 +1,7 @@
 import os
+import socket
+
+_BOOT_TS = time.time()
 
 # --- predict/upcoming TTL cache ---
 import threading
@@ -3798,7 +3801,11 @@ def debug_api_usage():
         data["by_path_sorted"] = sorted(data["by_path"].items(), key=lambda kv: kv[1], reverse=True)
         return data
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {
+        "pid": __import__("os").getpid(),
+        "host": socket.gethostname(),
+        "boot_ts": _BOOT_TS,
+"ok": False, "error": str(e)}
 
 @app.get("/team-logo/default.png")
 def team_logo_default():
