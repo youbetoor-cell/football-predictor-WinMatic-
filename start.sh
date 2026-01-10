@@ -6,7 +6,7 @@ PORT="${PORT:-8000}"
 # IMPORTANT:
 # Render/Gunicorn may have WEB_CONCURRENCY set but empty -> gunicorn crashes (int("") ValueError).
 # Normalize it here to a valid integer and export it so gunicorn sees it.
-WEB_CONCURRENCY="${WEB_CONCURRENCY:-1}"
+WM_WEB_CONCURRENCY=""
 export WEB_CONCURRENCY
 
 # Always prefer local venv gunicorn
@@ -21,7 +21,7 @@ fi
 
 exec "$GUNICORN" \
   -k uvicorn.workers.UvicornWorker \
-  -w "$WEB_CONCURRENCY" \
+  -w "$WM_WEB_CONCURRENCY" \
   -b "0.0.0.0:${PORT}" \
   --timeout 120 \
   --graceful-timeout 30 \
