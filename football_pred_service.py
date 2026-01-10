@@ -3601,19 +3601,20 @@ async def _autosnapshot_tick():
 
 @app.on_event("startup")
 async def _startup_autosnapshot_scheduler():
-    # --- kill switch: disable internal autosnapshot/warmer ---
-    if os.getenv('DISABLE_INTERNAL_WARMER') == '1':
-        try:
-            logger.info('[autosnapshot] disabled by DISABLE_INTERNAL_WARMER=1')
-        except Exception:
-            pass
-        return
-    # --- end kill switch ---
-
     import os, asyncio
+
+    # Hard kill switch: disables internal self-calls (warmer/autosnapshot) if set on Render.
+    if os.getenv("DISABLE_INTERNAL_WARMER", "0").strip() == "1":
+        logger.info("[autosnapshot] disabled by DISABLE_INTERNAL_WARMER=1")
+        return
+
     if os.getenv("AUTO_SNAPSHOT", "0").strip() == "1":
         asyncio.create_task(_autosnapshot_tick())
         logger.info("[autosnapshot] scheduler task created")
+
+
+
+
 
 
 
