@@ -3646,19 +3646,10 @@ def _history_table_columns(conn) -> list[str]:
 
 
 @app.get("/debug/whoami")
-def debug_whoami(request=None):
-    """
-    Identify which worker answered this request.
-    Returns pid/hostname + process boot time.
-    """
-    # Admin gate (match existing convention: X-Admin-Token header vs ADMIN_TOKEN env)
+def debug_whoami(request: Request):
     admin = os.getenv("ADMIN_TOKEN", "")
     if admin:
-        hdr = ""
-        try:
-            hdr = (request.headers.get("x-admin-token") if request else "") or ""
-        except Exception:
-            hdr = ""
+        hdr = (request.headers.get("x-admin-token") or "").strip()
         if hdr != admin:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -3668,6 +3659,7 @@ def debug_whoami(request=None):
         "host": socket.gethostname(),
         "now": time.time(),
     }
+
 
 
 
