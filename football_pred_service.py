@@ -37,6 +37,8 @@ def _pu_cache_set(key, ttl_sec, val):
         _PREDICT_UPCOMING_CACHE[key] = (exp, val)
 # --- end predict/upcoming TTL cache ---
 
+_api_predict_upcoming_uncached = None
+
 # --- cached wrapper for api_predict_upcoming (prevents repeated upstream calls) ---
 def api_predict_upcoming_cached(league: int, days_ahead: int):
     """Cached wrapper around api_predict_upcoming_cached().
@@ -7784,3 +7786,14 @@ except Exception as _e:
     except Exception:
         pass
 
+
+
+# --- FORCE_API_PREDICT_UPCOMING_CACHED ---
+try:
+    if globals().get("_api_predict_upcoming_uncached") is None:
+        globals()["_api_predict_upcoming_uncached"] = globals().get("api_predict_upcoming")
+    if "api_predict_upcoming_cached" in globals():
+        globals()["api_predict_upcoming"] = globals()["api_predict_upcoming_cached"]
+except Exception:
+    pass
+# --- END FORCE_API_PREDICT_UPCOMING_CACHED ---
