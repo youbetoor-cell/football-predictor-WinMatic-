@@ -1,4 +1,27 @@
 import os
+
+# --- predict/upcoming TTL cache ---
+import threading
+_PREDICT_UPCOMING_CACHE = {}
+_PREDICT_UPCOMING_LOCK = threading.Lock()
+
+def _pu_cache_get(key):
+    now = time.time()
+    with _PREDICT_UPCOMING_LOCK:
+        item = _PREDICT_UPCOMING_CACHE.get(key)
+        if not item:
+            return None
+        exp, val = item
+        if exp <= now:
+            _PREDICT_UPCOMING_CACHE.pop(key, None)
+            return None
+        return val
+
+def _pu_cache_set(key, ttl_sec, val):
+    exp = time.time() + max(0, int(ttl_sec))
+    with _PREDICT_UPCOMING_LOCK:
+        _PREDICT_UPCOMING_CACHE[key] = (exp, val)
+# --- end predict/upcoming TTL cache ---
 #!/usr/bin/env python3
 API_BASE = os.getenv("API_BASE", "https://v3.football.api-sports.io")
 """
@@ -4008,6 +4031,14 @@ def api_predict_upcoming(
     odds_limit: int = Query(25, ge=0, le=50, description="Max fixtures to fetch odds for"),
     min_edge: float = Query(0.0, ge=0.0, le=1.0, description="Filter out fixtures with best_edge < min_edge"),
 ):
+
+    # TTL cache to protect API-Football quota (default 60s). Set PREDICT_UPCOMING_TTL_SEC=0 to disable.
+    ttl_sec = int(os.getenv("PREDICT_UPCOMING_TTL_SEC", "60"))
+    if ttl_sec > 0:
+        _key = ("predict_upcoming", int(league), int(days_ahead))
+        _cached = _pu_cache_get(_key)
+        if _cached is not None:
+            return _cached
     # --- ODDS ENRICH: upcoming ---
     def _enrich_upcoming_odds(fixtures):
         """Attach odds_1x2 + best_edge/value_side to fixtures when possible."""
