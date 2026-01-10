@@ -3,25 +3,27 @@ set -euo pipefail
 
 PORT="${PORT:-8000}"
 
-# IMPORTANT:
-# Render/Gunicorn may have WEB_CONCURRENCY set but empty -> gunicorn crashes (int("") ValueError).
-# Normalize it here to a valid integer and export it so gunicorn sees it.
-WM_WEB_CONCURRENCY=""
-export WEB_CONCURRENCY
+# WEB_CONCURRENCY may be unset or set to an empty string on Render.
+# Force it to a valid integer >=1.
+RAW_WEB_CONCURRENCY="${WEB_CONCURRENCY-}"
+if [[ -z "${RAW_WEB_CONCURRENCY}" || ! "${RAW_WEB_CONCURRENCY}" =~ ^[0-9]+$ ]]; then
+  WEB_CONCURRENCY="1"
+else
+  WEB_CONCURRENCY="${RAW_WEB_CONCURRENCY}"
+fi
 
-# Always prefer local venv gunicorn
+# Prefer local venv gunicorn if present, else fall back to PATH
 if [ -x ".venv/bin/gunicorn" ]; then
   GUNICORN="./.venv/bin/gunicorn"
 elif [ -x "env/bin/gunicorn" ]; then
   GUNICORN="./env/bin/gunicorn"
 else
-  echo "ERROR: gunicorn not found. Install it in .venv or env." >&2
-  exit 1
+  GUNICORN="gunicorn"
 fi
 
 exec "$GUNICORN" \
   -k uvicorn.workers.UvicornWorker \
-  -w "$WM_WEB_CONCURRENCY" \
+  -w "$WEB_CONCURRENCY" \
   -b "0.0.0.0:${PORT}" \
   --timeout 120 \
   --graceful-timeout 30 \
