@@ -36,6 +36,26 @@ def _pu_cache_set(key, ttl_sec, val):
     with _PREDICT_UPCOMING_LOCK:
         _PREDICT_UPCOMING_CACHE[key] = (exp, val)
 # --- end predict/upcoming TTL cache ---
+
+# --- cached wrapper for api_predict_upcoming (prevents repeated upstream calls) ---
+def api_predict_upcoming_cached(league: int, days_ahead: int):
+    """Cached wrapper around api_predict_upcoming_cached().
+    Uses PREDICT_UPCOMING_TTL_SEC (default 60) but enforces UPCOMING_CACHE_TTL_MIN_S (default 300) via _pu_cache_set.
+    """
+    ttl_sec = int(os.getenv("PREDICT_UPCOMING_TTL_SEC", "60"))
+    _key = ("api_predict_upcoming", int(league), int(days_ahead))
+    if ttl_sec > 0:
+        _cached = _pu_cache_get(_key)
+        if _cached is not None:
+            return _cached
+
+    payload = api_predict_upcoming_cached(league=league, days_ahead=days_ahead)
+
+    if ttl_sec > 0:
+        _pu_cache_set(_key, ttl_sec, payload)
+    return payload
+# --- end cached wrapper ---
+
 #!/usr/bin/env python3
 API_BASE = os.getenv("API_BASE", "https://v3.football.api-sports.io")
 """
@@ -4068,8 +4088,8 @@ def cron_snapshots(
     for lg in league_ids:
         try:
             if "api_predict_upcoming" not in globals():
-                raise RuntimeError("api_predict_upcoming() not found")
-            resp = api_predict_upcoming(
+                raise RuntimeError("api_predict_upcoming_cached() not found")
+            resp = api_predict_upcoming_cached(
                 league=int(lg),
                 days_ahead=int(days_ahead),
                 include_odds=int(include_odds),
@@ -4668,7 +4688,7 @@ def dashboard(
     Simple HTML dashboard that shows upcoming predictions (probabilities + reasoning).
     """
     # Reuse the logic from /predict/upcoming directly
-    data = api_predict_upcoming(league=league, days_ahead=days_ahead)
+    data = api_predict_upcoming_cached(league=league, days_ahead=days_ahead)
     fixtures = data.get("fixtures", [])
 
     title = f"League {league} predictions (next {days_ahead} days)"
