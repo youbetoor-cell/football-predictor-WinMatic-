@@ -3373,6 +3373,46 @@ async def _wm_count_requests(request: Request, call_next):
     _WM_REQ_BY_STATUS[str(resp.status_code)] += 1
     return resp
 
+
+# --- recent requests ring buffer (helps debug quota drains) ---
+from collections import deque
+RECENT_REQUESTS_MAX = int(os.getenv("RECENT_REQUESTS_MAX", "200"))
+_recent_requests = deque(maxlen=RECENT_REQUESTS_MAX)
+
+def _client_ip_from_request(request):
+    # Render/Cloudflare commonly sets one of these
+    for h in ("cf-connecting-ip", "x-forwarded-for", "x-real-ip"):
+        v = request.headers.get(h)
+        if v:
+            return v.split(",")[0].strip()
+    return getattr(getattr(request, "client", None), "host", None)
+
+@app.middleware("http")
+async def _capture_recent_requests(request, call_next):
+    start = time.time()
+    resp = await call_next(request)
+    try:
+        _recent_requests.append({
+            "ts": time.time(),
+            "ms": int((time.time() - start) * 1000),
+            "method": request.method,
+            "path": request.url.path,
+            "query": str(request.url.query or ""),
+            "status": getattr(resp, "status_code", None),
+            "ip": _client_ip_from_request(request),
+            "ua": request.headers.get("user-agent", ""),
+        })
+    except Exception:
+        pass
+    return resp
+
+@app.get("/debug/recent-requests")
+def debug_recent_requests(limit: int = 50, admin_ok: bool = Depends(require_admin)):
+    items = list(_recent_requests)[-max(1, min(int(limit), RECENT_REQUESTS_MAX)):]
+    return {"ok": True, "count": len(items), "items": items}
+# --- end recent requests ring buffer ---
+
+
 @app.get("/debug/req-usage")
 def debug_req_usage(request: Request, limit: int = 50):
     _wm_require_admin(request)
