@@ -4,6 +4,10 @@ import time
 
 _BOOT_TS = time.time()
 
+
+# predict/upcoming cache TTL (seconds)
+PREDICT_UPCOMING_TTL_SEC = int(os.getenv("PREDICT_UPCOMING_TTL_SEC","600"))
+
 # --- predict/upcoming TTL cache ---
 import threading
 _PREDICT_UPCOMING_CACHE = {}
