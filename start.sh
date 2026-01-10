@@ -3,23 +3,25 @@ set -euo pipefail
 
 PORT="${PORT:-8000}"
 
-# WEB_CONCURRENCY may be unset or set to an empty string on Render.
-# Force it to a valid integer >=1.
-RAW_WEB_CONCURRENCY="${WEB_CONCURRENCY-}"
-if [[ -z "${RAW_WEB_CONCURRENCY}" || ! "${RAW_WEB_CONCURRENCY}" =~ ^[0-9]+$ ]]; then
-  WEB_CONCURRENCY="1"
-else
-  WEB_CONCURRENCY="${RAW_WEB_CONCURRENCY}"
+# Prefer a single worker so in-memory TTL caches actually work.
+# If WEB_CONCURRENCY is set but empty/non-numeric, force it to 1.
+WC="${WEB_CONCURRENCY:-1}"
+if [[ -z "${WC}" || ! "${WC}" =~ ^[0-9]+$ || "${WC}" -lt 1 ]]; then
+  WC="1"
 fi
+export WEB_CONCURRENCY="$WC"
 
-# Prefer local venv gunicorn if present, else fall back to PATH
+# Always prefer local venv gunicorn
 if [ -x ".venv/bin/gunicorn" ]; then
   GUNICORN="./.venv/bin/gunicorn"
 elif [ -x "env/bin/gunicorn" ]; then
   GUNICORN="./env/bin/gunicorn"
 else
-  GUNICORN="gunicorn"
+  echo "ERROR: gunicorn not found. Install it in .venv or env." >&2
+  exit 1
 fi
+
+echo "[start.sh] PORT=$PORT WEB_CONCURRENCY=$WEB_CONCURRENCY" >&2
 
 exec "$GUNICORN" \
   -k uvicorn.workers.UvicornWorker \
