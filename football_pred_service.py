@@ -1,5 +1,6 @@
 import os
 import socket
+import time
 
 _BOOT_TS = time.time()
 
@@ -58,7 +59,6 @@ API_FOOTBALL_KEY = os.getenv('API_FOOTBALL_KEY', '')
 import io
 import json
 import math
-import time
 import threading
 import base64
 import logging
@@ -3365,7 +3365,6 @@ app = FastAPI(title="WinMatic Predictor (Clean Backend)")
 # ---------------------------
 # WinMatic: incoming request counter (Render path debugging)
 # ---------------------------
-import time
 from collections import defaultdict
 
 try:
@@ -7386,8 +7385,6 @@ def debug_payload_market_stats(league: int = 39, window_days: int = 180):
         "payload_has_odds_1x2_key": has_odds_key,
         "payload_has_implied_1x2_key": has_implied_key,
     }
-
-import time
 from urllib.parse import urlparse
 
 def _get_api_sports_key():
