@@ -262,58 +262,77 @@ html.wm-js .wm-reveal.wm-reveal--visible{
   visibility: visible !important;
 }
 
-/* BEGIN WM MOBILE LOCK (2026-01-11) */
-/* This fixes: content sliding offscreen on mobile + makes landing hero/cards readable above the fold */
-@media (max-width: 900px) {
-  /* --- GLOBAL: stop desktop sidebar layout from reserving space --- */
-  .app-shell { grid-template-columns: 1fr !important; }
-  .app-main  { margin-left: 0 !important; padding-left: 0 !important; width: 100% !important; }
 
-  /* Off-canvas side nav */
-  .side-nav{
-    position: fixed !important;
-    left: 0; top: 0; bottom: 0;
-    width: min(78vw, 320px) !important;
-    transform: translateX(-105%);
-    transition: transform .22s ease;
-    z-index: 60;
-    box-shadow: 0 24px 80px rgba(0,0,0,.65);
+/* BEGIN WM MOBILE LANDING HERO v3 (2026-01-12)
+   Purpose: make index hero + cards premium on mobile, and stop desktop layouts bleeding through.
+*/
+@media (max-width: 900px){
+
+  /* Layout: remove desktop spacing assumptions */
+  .app-main, .wm-shell-main, main {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
   }
-  body.wm-nav-open .side-nav{ transform: translateX(0); }
 
-  /* Prevent bottom nav from covering content (if you have one) */
-  .app-main{ padding-bottom: 96px !important; }
+  /* Hero container */
+  .wm-hero{
+    padding: 18px 14px 26px !important;
+  }
 
-  /* --- LANDING (index) HERO LOCK --- */
-  .wm-hero{ padding: 18px 14px 26px !important; }
-  .wm-hero-grid{ grid-template-columns: 1fr !important; gap: 14px !important; }
-  .wm-hero-left{ padding: 0 !important; }
-  .wm-hero-right{ margin-top: 8px !important; }
+  /* Make the grid single-column */
+  .wm-hero-grid{
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    align-items: start !important;
+  }
 
+  /* Headline/subtitle */
   .wm-hero-title{
     font-size: clamp(28px, 7.2vw, 40px) !important;
     line-height: 1.08 !important;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.02em !important;
+    margin: 0 0 10px 0 !important;
   }
   .wm-hero-sub{
     font-size: 15px !important;
     line-height: 1.45 !important;
+    margin: 0 0 14px 0 !important;
   }
 
-  /* Cards: single column, bigger tap targets */
-  .wm-hero-card-grid{ grid-template-columns: 1fr !important; gap: 12px !important; }
-  .wm-hero-card{ padding: 14px !important; border-radius: 18px !important; }
+  /* CTA row: stack buttons full-width */
+  .wm-hero-cta-row{
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    margin-top: 12px !important;
+  }
+  .wm-hero-cta-row a,
+  .wm-hero-cta-row button{
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 12px 14px !important;
+    border-radius: 16px !important;
+  }
 
-  /* CTAs: stack, full width */
-  .wm-hero-actions{ display: grid !important; grid-template-columns: 1fr !important; gap: 10px !important; }
-  .wm-hero-actions .wm-btn{ width: 100% !important; justify-content: center !important; padding: 12px 14px !important; }
-
-  /* Metrics: swipe row (premium app feel) */
-  .wm-hero-metrics-row{
-    display:flex !important;
-    overflow-x:auto !important;
+  /* Benefit cards grid: single column */
+  .wm-hero-card-grid{
+    display: grid !important;
+    grid-template-columns: 1fr !important;
     gap: 12px !important;
-    padding-bottom: 8px !important;
+    margin-top: 14px !important;
+  }
+  .wm-hero-card{
+    padding: 14px !important;
+    border-radius: 18px !important;
+  }
+
+  /* Metrics row: horizontal swipe (feels like an app) */
+  .wm-hero-metrics-row{
+    display: flex !important;
+    overflow-x: auto !important;
+    gap: 12px !important;
+    padding: 6px 2px 10px !important;
     -webkit-overflow-scrolling: touch;
     scroll-snap-type: x mandatory;
   }
@@ -323,6 +342,22 @@ html.wm-js .wm-reveal.wm-reveal--visible{
     scroll-snap-align: start;
     border-radius: 18px !important;
   }
+
+  /* Card footer text: prevent “tiny unreadable” */
+  .wm-hero-footer-text{
+    font-size: 13px !important;
+    line-height: 1.35 !important;
+  }
+
+  /* Reduce excessive badge wrapping */
+  .wm-hero-badges{
+    gap: 8px !important;
+  }
+  .wm-hero-badge{
+    font-size: 12px !important;
+    padding: 6px 10px !important;
+    border-radius: 999px !important;
+  }
 }
-/* END WM MOBILE LOCK */
+/* END WM MOBILE LANDING HERO v3 */
 
