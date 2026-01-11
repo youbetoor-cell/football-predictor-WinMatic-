@@ -7897,3 +7897,44 @@ except Exception:
     pass
 # --- END UPCOMING_HTTP_CACHE_MW_V2 ---
 
+@app.get("/debug/db-info")
+def debug_db_info(x_admin_token: str = Header(default="")):
+    """
+    Safe DB diagnostics (admin only):
+    - db_mode: postgres|sqlite
+    - db_host_masked: masked hostname (no creds)
+    """
+    import os
+    from urllib.parse import urlparse
+    from fastapi import Header, HTTPException
+
+    admin = os.getenv("ADMIN_TOKEN", "")
+    if admin and x_admin_token != admin:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    url = (os.getenv("DATABASE_URL", "") or "").strip()
+    if not url:
+        return {"ok": True, "db_mode": "sqlite", "db_host_masked": None}
+
+    # Neon / Postgres URLs commonly start with postgresql://
+    if url.startswith("postgresql://") or url.startswith("postgres://"):
+        u = urlparse(url.replace("postgres://", "postgresql://", 1))
+        host = (u.hostname or "").strip() or None
+        port = u.port
+
+        def mask(h: str | None) -> str | None:
+            if not h:
+                return None
+            # keep it readable but non-identifying
+            if len(h) <= 8:
+                return h[:2] + "***"
+            return f"{h[:3]}***{h[-4:]}"
+
+        return {
+            "ok": True,
+            "db_mode": "postgres",
+            "db_host_masked": mask(host),
+            "db_port": port,
+        }
+
+    return {"ok": True, "db_mode": "sqlite", "db_host_masked": None}
