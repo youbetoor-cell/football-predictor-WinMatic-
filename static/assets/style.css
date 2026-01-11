@@ -5492,70 +5492,26 @@ body {
    Make reveal sections visible by default (no blank page if JS fails).
    When JS runs, it adds html.wm-js and animations apply.
 */
-.wm-reveal { opacity: 1 !important; transform: none !important; }
-
-html.wm-js .wm-reveal {
-  opacity: 0 !important;
-  transform: translateY(18px) !important;
-  transition: opacity .55s ease, transform .55s ease;
-  will-change: opacity, transform;
+/* Only hide/reveal when JS is active */
+.wm-js .wm-js .wm-reveal--visible {
+  opacity: 1;
+  transform: none;
+  filter: none;
 }
 
-html.wm-js .wm-reveal.is-visible {
+.wm-reveal{opacity:1; transform:none;}
+html.wm-js .wm-reveal.wm-reveal--visible{opacity:1; transform:translateY(0);}
+
+/* WM REVEAL HARD FIX (2026-01-11)
+   Fixes: content appears then disappears on mobile/web.
+   Rule: .wm-reveal is ALWAYS visible, regardless of JS state.
+*/
+.wm-reveal,
+html.wm-js .wm-reveal,
+html.wm-js .wm-reveal.wm-reveal--visible{
   opacity: 1 !important;
   transform: none !important;
+  filter: none !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  html.wm-js .wm-reveal {
-    transition: none !important;
-    transform: none !important;
-    opacity: 1 !important;
-  }
-}
-
-/* Mobile hero polish (tighten spacing, nicer cards) */
-@media (max-width: 640px) {
-  .wm-landing-main { padding-top: 88px !important; } /* sits nicely under fixed header */
-  .wm-hero { padding: 14px !important; border-radius: 22px !important; }
-  .wm-hero-title { font-size: 36px !important; line-height: 1.05 !important; }
-  .wm-hero-subtitle { font-size: 14px !important; }
-  .wm-hero-card { padding: 18px !important; border-radius: 20px !important; }
-  .wm-mini-metrics { grid-template-columns: 1fr !important; }
-  .wm-mini-metric { padding: 12px 14px !important; border-radius: 16px !important; }
-}
-
-/* --- WM REVEAL VISIBILITY FIX (20260111_212146) ---
-   Problem: .wm-reveal was hidden (opacity:0) even when JS/IntersectionObserver fails (common on mobile Safari),
-   making the landing look empty.
-   Fix: default visible; only hide when html has .wm-js and then reveal via .wm-reveal--visible.
---- */
-
-/* Default: visible (no-JS, or JS failure => user still sees content) */
-.wm-reveal {
-  opacity: 1;
-  transform: none;
-  filter: none;
-}
-
-/* Only hide/reveal when JS is active */
-.wm-js .wm-reveal {
-  opacity: 0;
-  transform: translateY(8px);
-  filter: blur(1px);
-  transition: opacity .35s ease, transform .35s ease, filter .35s ease;
-}
-
-.wm-js .wm-reveal--visible {
-  opacity: 1;
-  transform: none;
-  filter: none;
-}
-
-/* WM REVEAL SAFETY (2026-01-11)
-   - Without JS: ALWAYS show content (prevents blank page)
-   - With JS (html.wm-js set by landing.js): enable reveal animation
-*/
-.wm-reveal{opacity:1; transform:none;}
-html.wm-js .wm-reveal{opacity:0; transform:translateY(20px); transition: opacity .5s ease, transform .5s ease;}
-html.wm-js .wm-reveal.wm-reveal--visible{opacity:1; transform:translateY(0);}

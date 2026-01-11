@@ -1,3 +1,29 @@
+/* WM FORCE REVEAL VISIBLE (2026-01-11)
+   Prevent "appears then disappears" by forcing all reveal blocks visible.
+*/
+(function(){
+  try {
+    document.documentElement.classList.add('wm-js');
+    const forceVisible = () => {
+      document.querySelectorAll('.wm-reveal').forEach(el => {
+        el.classList.add('wm-reveal--visible');
+        el.style.opacity = '1';
+        el.style.transform = 'none';
+        el.style.visibility = 'visible';
+      });
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', forceVisible, { once: true });
+    } else {
+      forceVisible();
+    }
+    // Re-apply after any other scripts run (kills flicker)
+    setTimeout(forceVisible, 50);
+    setTimeout(forceVisible, 250);
+    setTimeout(forceVisible, 1000);
+  } catch (e) {}
+})();
+
 document.documentElement.classList.add("wm-js");
 // landing.js
 // Home page metrics pulled from /model-info.

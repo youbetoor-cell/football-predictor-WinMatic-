@@ -247,3 +247,17 @@ img, svg {
     max-width: 10ch !important;
   }
 }
+
+/* WM REVEAL HARD FIX (2026-01-11)
+   Fixes: content appears then disappears on mobile/web.
+   Rule: .wm-reveal is ALWAYS visible, regardless of JS state.
+*/
+.wm-reveal,
+html.wm-js .wm-reveal,
+html.wm-js .wm-reveal.wm-reveal--visible{
+  opacity: 1 !important;
+  transform: none !important;
+  filter: none !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+}
