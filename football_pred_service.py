@@ -44,7 +44,7 @@ def api_predict_upcoming_cached(league: int, days_ahead: int):
     """Cached wrapper around api_predict_upcoming_cached().
     Uses PREDICT_UPCOMING_TTL_SEC (default 60) but enforces UPCOMING_CACHE_TTL_MIN_S (default 300) via _pu_cache_set.
     """
-    ttl_sec = int(os.getenv("PREDICT_UPCOMING_TTL_SEC", "60"))
+    ttl_sec = int(os.getenv("UPCOMING_CACHE_TTL_SEC", os.getenv("PREDICT_UPCOMING_TTL_SEC","300")))
     _key = ("api_predict_upcoming", int(league), int(days_ahead))
     if ttl_sec > 0:
         _cached = _pu_cache_get(_key)
@@ -4124,7 +4124,7 @@ def api_predict_upcoming(
 ):
 
     # TTL cache to protect API-Football quota (default 60s). Set PREDICT_UPCOMING_TTL_SEC=0 to disable.
-    ttl_sec = int(os.getenv("PREDICT_UPCOMING_TTL_SEC", "60"))
+    ttl_sec = int(os.getenv("UPCOMING_CACHE_TTL_SEC", os.getenv("PREDICT_UPCOMING_TTL_SEC","300")))
     if ttl_sec > 0:
         _key = ("predict_upcoming", int(league), int(days_ahead))
         _cached = _pu_cache_get(_key)
