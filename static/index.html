@@ -1130,6 +1130,141 @@ body.nav-open .nav-scrim{ display:block; }
   .nav-toggle{ display:none !important; }
 }
 
+
+/* wm-landing-mobile-v1 */
+/* Mobile-first: make the landing hero feel like a premium app */
+.wm-landing-main { width: 100%; }
+
+.wm-hero{
+  padding: 24px 16px 10px;
+}
+
+.wm-hero-inner{
+  max-width: 1120px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 980px){
+  .wm-hero-inner{
+    grid-template-columns: 1.25fr 0.85fr;
+    align-items: start;
+    gap: 22px;
+  }
+}
+
+.wm-hero-left{
+  min-width: 0;
+}
+
+.wm-hero-title{
+  margin: 0 0 10px;
+  font-size: clamp(28px, 8vw, 52px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.wm-hero-subtitle{
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-soft);
+  max-width: 60ch;
+}
+
+.wm-hero-ctas{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 18px;
+}
+
+.wm-btn-primary,
+.wm-btn-secondary{
+  -webkit-tap-highlight-color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.10);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.wm-btn-primary{
+  background: linear-gradient(135deg, rgba(139,92,246,.95), rgba(56,189,248,.55));
+  border-color: rgba(139,92,246,.45);
+  color: var(--text);
+  box-shadow: 0 16px 55px rgba(0,0,0,.55);
+}
+
+.wm-btn-secondary{
+  background: rgba(2,6,23,.35);
+  color: var(--text);
+}
+
+.wm-hero-card-grid{
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+@media (min-width: 560px){
+  .wm-hero-card-grid{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.wm-hero-card{
+  background: rgba(2,6,23,.55);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: 0 14px 45px rgba(0,0,0,.45);
+  min-width: 0;
+}
+
+.wm-hero-card h3{
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.wm-hero-card p{
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.wm-hero-card small{
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-softer);
+}
+
+/* Optional: make sections below the hero breathe on mobile */
+.wm-section{
+  padding: 16px 16px;
+}
+
+@media (min-width: 980px){
+  .wm-section{
+    padding: 26px 16px;
+  }
+}
+
 </style>
   <link rel="stylesheet" href="/static/app.css?v=1">
   <script defer src="/static/app.js?v=1"></script>
