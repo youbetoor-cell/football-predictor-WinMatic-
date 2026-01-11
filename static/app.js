@@ -18,3 +18,13 @@
 
   if (active) active.dataset.active = "1";
 })();
+
+
+// --- PWA: service worker registration (static pages) ---
+(() => {
+  if (!(serviceWorker in navigator)) return;
+  window.addEventListener(load, () => {
+    navigator.serviceWorker.register(/static/sw.js, { scope: /static/ })
+      .catch(() => {});
+  });
+})();
