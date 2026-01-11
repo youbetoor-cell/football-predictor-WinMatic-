@@ -1,3 +1,4 @@
+document.documentElement.classList.add("wm-js");
 // landing.js
 // Home page metrics pulled from /model-info.
 // Make sure you've run /train at least once so /model-info has data.
