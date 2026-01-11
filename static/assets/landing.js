@@ -74,7 +74,21 @@ async function loadMetrics() {
 function initReveal() {
   const elements = document.querySelectorAll(".wm-reveal");
 
+  
+
+  // --- WM REVEAL FALLBACK (mobile Safari / no IntersectionObserver) ---
+  // If IO is unavailable or fails, show content immediately so the page never looks empty.
   if (!("IntersectionObserver" in window)) {
+    elements.forEach((el) => el.classList.add("wm-reveal--visible"));
+    return;
+  }
+
+  // Safety: force-show anything still hidden after 1s (prevents “blank hero” reports)
+  setTimeout(() => {
+    elements.forEach((el) => el.classList.add("wm-reveal--visible"));
+  }, 1000);
+  // --- END WM REVEAL FALLBACK ---
+if (!("IntersectionObserver" in window)) {
     elements.forEach((el) => el.classList.add("wm-reveal--visible"));
     return;
   }

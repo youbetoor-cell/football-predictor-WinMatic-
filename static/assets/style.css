@@ -4930,17 +4930,6 @@ body.wm-landing {
 
 /* SCROLL REVEAL */
 
-.wm-reveal {
-  opacity: 0;
-  transform: translateY(20px);
-  transition: opacity 0.5s ease, transform 0.5s ease;
-}
-
-.wm-reveal--visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
 /* RESPONSIVE */
 
 @media (max-width: 900px) {
@@ -5534,4 +5523,31 @@ html.wm-js .wm-reveal.is-visible {
   .wm-hero-card { padding: 18px !important; border-radius: 20px !important; }
   .wm-mini-metrics { grid-template-columns: 1fr !important; }
   .wm-mini-metric { padding: 12px 14px !important; border-radius: 16px !important; }
+}
+
+/* --- WM REVEAL VISIBILITY FIX (20260111_212146) ---
+   Problem: .wm-reveal was hidden (opacity:0) even when JS/IntersectionObserver fails (common on mobile Safari),
+   making the landing look empty.
+   Fix: default visible; only hide when html has .wm-js and then reveal via .wm-reveal--visible.
+--- */
+
+/* Default: visible (no-JS, or JS failure => user still sees content) */
+.wm-reveal {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+/* Only hide/reveal when JS is active */
+.wm-js .wm-reveal {
+  opacity: 0;
+  transform: translateY(8px);
+  filter: blur(1px);
+  transition: opacity .35s ease, transform .35s ease, filter .35s ease;
+}
+
+.wm-js .wm-reveal--visible {
+  opacity: 1;
+  transform: none;
+  filter: none;
 }
