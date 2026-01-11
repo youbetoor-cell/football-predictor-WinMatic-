@@ -35,6 +35,21 @@ def _pu_cache_set(key, ttl_sec, val):
     exp = time.time() + ttl
     with _PREDICT_UPCOMING_LOCK:
         _PREDICT_UPCOMING_CACHE[key] = (exp, val)
+
+
+def _env_int(name: str, default: int) -> int:
+    v = (os.getenv(name) or "").strip()
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+def _upcoming_cache_ttl_sec() -> int:
+    # Prefer new name; fallback to old; tolerate empty strings.
+    return _env_int("UPCOMING_CACHE_TTL_SEC",
+        _env_int("UPCOMING_CACHE_TTL_S",
+            _env_int("PREDICT_UPCOMING_TTL_SEC", 300)))
+
 # --- end predict/upcoming TTL cache ---
 
 _api_predict_upcoming_uncached = None
@@ -44,7 +59,7 @@ def api_predict_upcoming_cached(league: int, days_ahead: int):
     """Cached wrapper around api_predict_upcoming_cached().
     Uses PREDICT_UPCOMING_TTL_SEC (default 60) but enforces UPCOMING_CACHE_TTL_MIN_S (default 300) via _pu_cache_set.
     """
-    ttl_sec = int(os.getenv("UPCOMING_CACHE_TTL_SEC", os.getenv("PREDICT_UPCOMING_TTL_SEC","300")))
+    ttl_sec = _upcoming_cache_ttl_sec()
     _key = ("api_predict_upcoming", int(league), int(days_ahead))
     if ttl_sec > 0:
         _cached = _pu_cache_get(_key)
@@ -4124,7 +4139,7 @@ def api_predict_upcoming(
 ):
 
     # TTL cache to protect API-Football quota (default 60s). Set PREDICT_UPCOMING_TTL_SEC=0 to disable.
-    ttl_sec = int(os.getenv("UPCOMING_CACHE_TTL_SEC", os.getenv("PREDICT_UPCOMING_TTL_SEC","300")))
+    ttl_sec = _upcoming_cache_ttl_sec()
     if ttl_sec > 0:
         _key = ("predict_upcoming", int(league), int(days_ahead))
         _cached = _pu_cache_get(_key)
@@ -7835,7 +7850,7 @@ try:
             if request.method != "GET" or request.url.path != "/predict/upcoming":
                 return await call_next(request)
 
-            ttl = int(_os.getenv("PREDICT_UPCOMING_TTL_SEC", "60"))
+            ttl = _upcoming_cache_ttl_sec()
             # PROBE header so we can confirm middleware is active
             probe_hdr = {"X-Upcoming-Cache-MW": "v2"}
 
