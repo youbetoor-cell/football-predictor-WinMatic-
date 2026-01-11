@@ -5551,3 +5551,11 @@ html.wm-js .wm-reveal.is-visible {
   transform: none;
   filter: none;
 }
+
+/* WM REVEAL SAFETY (2026-01-11)
+   - Without JS: ALWAYS show content (prevents blank page)
+   - With JS (html.wm-js set by landing.js): enable reveal animation
+*/
+.wm-reveal{opacity:1; transform:none;}
+html.wm-js .wm-reveal{opacity:0; transform:translateY(20px); transition: opacity .5s ease, transform .5s ease;}
+html.wm-js .wm-reveal.wm-reveal--visible{opacity:1; transform:translateY(0);}
