@@ -126,3 +126,124 @@ img, svg {
     padding: 0.22rem 0.55rem !important;
   }
 }
+
+/* ================================
+   WinMatic Landing (index) Mobile Fix
+   Targets wm-* hero + cards used on /static/index.html
+   ================================ */
+
+@media (max-width: 720px) {
+  /* If reveal JS fails on mobile, never hide content */
+  .wm-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* Make room for bottom nav */
+  .wm-landing-main {
+    padding-bottom: 96px !important;
+  }
+
+  /* HERO: force single-column layout */
+  .wm-hero {
+    padding: 18px 0 10px !important;
+  }
+
+  .wm-hero-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .wm-hero-left,
+  .wm-hero-right {
+    min-width: 0 !important;
+  }
+
+  /* HERO typography */
+  .wm-hero-title {
+    font-size: 1.75rem !important;
+    line-height: 1.12 !important;
+    letter-spacing: -0.02em !important;
+    margin: 10px 0 10px !important;
+  }
+
+  .wm-hero-subtitle {
+    font-size: 0.98rem !important;
+    line-height: 1.45 !important;
+  }
+
+  /* CTA buttons: full-width stack */
+  .wm-button-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    margin-top: 14px !important;
+  }
+
+  .wm-button {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* Stat cards: 2-up grid on mobile */
+  .wm-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    margin-top: 14px !important;
+  }
+
+  .wm-stat-card {
+    padding: 12px !important;
+    border-radius: 18px !important;
+  }
+
+  .wm-stat-value {
+    font-size: 1.05rem !important;
+  }
+
+  /* Right-side live card: keep it compact and readable */
+  .wm-live-card {
+    border-radius: 20px !important;
+  }
+
+  .wm-live-badges {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .wm-live-team {
+    min-width: 0 !important;
+  }
+
+  .wm-live-team-name {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 12ch !important;
+  }
+
+  /* Section spacing */
+  .wm-section {
+    padding: 18px 0 !important;
+  }
+
+  /* Feature cards become 1-column */
+  .wm-feature-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .wm-hero-title {
+    font-size: 1.55rem !important;
+  }
+
+  .wm-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .wm-live-team-name {
+    max-width: 10ch !important;
+  }
+}
