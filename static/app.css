@@ -1,0 +1,89 @@
+:root{
+  --wm-bg0:#050b18;
+  --wm-bg1:#070f24;
+  --wm-card: rgba(17, 25, 40, .72);
+  --wm-border: rgba(148,163,184,.18);
+  --wm-text: rgba(226,232,240,.92);
+  --wm-muted: rgba(226,232,240,.68);
+  --wm-accent: rgba(99,102,241,1);
+  --wm-accent2: rgba(56,189,248,1);
+  --wm-shadow: 0 18px 50px rgba(0,0,0,.45);
+}
+
+html, body { height: 100%; }
+body{
+  margin:0;
+  color: var(--wm-text);
+  background:
+    radial-gradient(900px 520px at 18% 10%, rgba(99,102,241,.22), transparent 55%),
+    radial-gradient(900px 520px at 82% 20%, rgba(56,189,248,.16), transparent 58%),
+    radial-gradient(900px 520px at 55% 90%, rgba(16,185,129,.12), transparent 60%),
+    linear-gradient(180deg, var(--wm-bg0), var(--wm-bg1));
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a{ color: inherit; text-decoration: none; }
+a:focus{ outline: 2px solid rgba(99,102,241,.55); outline-offset: 2px; border-radius: 10px; }
+
+.wm-bottom-nav{
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 74px;
+  z-index: 9999;
+  background: rgba(8, 12, 20, .74);
+  border-top: 1px solid var(--wm-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: none;
+}
+
+.wm-bottom-nav .wm-wrap{
+  max-width: 1100px;
+  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 10px;
+  gap: 6px;
+}
+
+.wm-bottom-nav a{
+  flex: 1;
+  text-align: center;
+  padding: 10px 6px;
+  border-radius: 14px;
+  color: rgba(226,232,240,.70);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, background .18s ease, color .18s ease;
+}
+
+.wm-bottom-nav a svg{
+  width: 20px;
+  height: 20px;
+  display: block;
+  margin: 0 auto 6px;
+  opacity: .9;
+}
+
+.wm-bottom-nav a .wm-label{
+  font-size: 11.5px;
+  line-height: 1;
+  letter-spacing: .2px;
+}
+
+.wm-bottom-nav a[data-active="1"]{
+  color: rgba(255,255,255,.96);
+  background: rgba(99,102,241,.16);
+}
+
+.wm-bottom-nav a:active{
+  transform: scale(.98);
+}
+
+@media (max-width: 900px){
+  .wm-bottom-nav{ display: block; }
+  body{ padding-bottom: 88px; }
+}
