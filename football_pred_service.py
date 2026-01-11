@@ -118,7 +118,7 @@ import os
 # We keep your existing SQL mostly unchanged by translating '?' -> '%s' for psycopg.
 
 def _is_pg_url(url: str) -> bool:
-    return bool(url) and url.startswith("postgresql://")
+    return bool(url) and (url.startswith("postgresql://") or url.startswith("postgres://"))
 
 class PGCursor:
     def __init__(self, cur):
