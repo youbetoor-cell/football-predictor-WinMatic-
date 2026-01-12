@@ -4615,6 +4615,8 @@ def api_value_bets(
         days_ahead=days_ahead,
         min_edge=min_edge,
         limit=limit,
+    ,
+        x_client_key=x_client_key,
     )
 
     # Safety: never return None
@@ -4856,6 +4858,14 @@ def api_value_upcoming(
     This version is quota-safe: it limits the number of live /odds calls
     per request.
     """
+
+    # WM_VALUE_UPCOMING_TIER_GATING_V1
+    tier = wm_client_tier_from_key(x_client_key)
+    premium = (tier == "premium")
+    cap = wm_value_limit_for_tier(tier)
+    requested_limit = limit
+    if cap is not None:
+        limit = min(limit, cap)
     try:
         model, meta = load_model_and_meta(league)
     except HTTPException:
@@ -5080,6 +5090,16 @@ def api_value_upcoming(
     if not value_rows:
         return {
             "ok": True,
+            "tier": tier,
+
+            "locked": (tier != "premium"),
+
+            "requested_limit": requested_limit,
+
+            "effective_limit": limit,
+
+            "preview_limit": cap,
+
             "premium": premium,
             "locked": (not premium),
             "preview_limit": preview_n,
