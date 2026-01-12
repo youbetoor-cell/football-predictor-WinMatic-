@@ -110,3 +110,8 @@ backups/*.bundle
 *.bak.*
 static/*.bak.*
 static/assets/*.bak.*
+
+# WinMatic backups
+*.bak.*
+static/*.bak.*
+static/assets/*.bak.*
