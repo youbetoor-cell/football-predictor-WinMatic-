@@ -3450,7 +3450,7 @@ async def _wm_count_requests(request: Request, call_next):
     _WM_REQ_BY_PATH[path] += 1
     resp = await call_next(request)
     _WM_REQ_BY_STATUS[str(resp.status_code)] += 1
-    return resp
+    return _wm_annotate_value_bets(resp)
 
 
 # --- recent requests ring buffer (helps debug quota drains) ---
@@ -3483,7 +3483,7 @@ async def _capture_recent_requests(request, call_next):
         })
     except Exception:
         pass
-    return resp
+    return _wm_annotate_value_bets(resp)
 
 @app.get("/debug/recent-requests")
 def debug_recent_requests(limit: int = 50, admin_ok: bool = Depends(require_admin)):
@@ -4581,14 +4581,34 @@ def api_value_bets(
     mode: str = Query("value", description="Pick mode: value, accuracy, or profit"),
     min_prob: float = Query(0.40, ge=0.0, le=1.0, description="Profit filter: minimum model probability for the pick"),
     max_ratio: float = Query(1.35, ge=1.0, description="Profit filter: max (model_p / market_p) allowed to avoid outliers"),
+    x_client_key: str = Header(default=""),
 ):
     """
     Wrapper around /value/upcoming.
+
+    # WM_VALUE_BETS_GATING_V1
+    premium = is_valid_client_key(x_client_key)
+    preview_n = value_preview_limit()
+    requested_limit = limit
+    if not premium:
+        limit = min(limit, preview_n)
 
     mode=value     -> best_side/best_edge are EV-based (value_pick/value_pick_ev)
     mode=accuracy  -> best_side/best_edge become model_pick/model_pick_prob (draw allowed)
     mode=profit    -> returns only 'sane' +EV bets (EV>0, p>=min_prob, p/market<=max_ratio)
     """
+
+    def _wm_annotate_value_bets(r: dict):
+        try:
+            r["premium"] = premium
+            r["locked"] = (not premium)
+            r["preview_limit"] = preview_n
+            r["requested_limit"] = requested_limit
+            if not premium:
+                r["upgrade_hint"] = "Preview mode: unlock premium to see all value bets."
+        except Exception:
+            pass
+        return r
 
     resp = api_value_upcoming(
         league=league,
@@ -4661,7 +4681,7 @@ def api_value_bets(
         resp["count"] = len(resp["fixtures"])
         resp["source"] = (resp.get("source") or "") + "+profit"
         resp["filters"] = {"min_prob": min_prob, "max_ratio": max_ratio}
-        return resp
+        return _wm_annotate_value_bets(resp)
 
     # ----------------------------
     # ACCURACY MODE
@@ -4689,7 +4709,7 @@ def api_value_bets(
             f["best_edge"] = f["model_pick_prob"]
 
         resp["source"] = (resp.get("source") or "") + "+accuracy"
-        return resp
+        return _wm_annotate_value_bets(resp)
 
     # ----------------------------
     # VALUE MODE (default)
@@ -4699,7 +4719,7 @@ def api_value_bets(
         f["best_edge"] = f.get("value_pick_ev")
 
     resp["source"] = (resp.get("source") or "") + "+value"
-    return resp
+    return _wm_annotate_value_bets(resp)
 
 
 
@@ -4816,9 +4836,17 @@ def api_value_upcoming(
     days_ahead: int = Query(7, ge=1, le=14),
     min_edge: float = Query(0.05, description="Minimum edge to consider (e.g. 0.05 = 5%)"),
     limit: int = Query(5, ge=1, le=50),
+    x_client_key: str = Header(default=""),
 ):
     """
     Show the top 'value' upcoming matches for a league.
+
+    # WM_VALUE_GATING_V1
+    premium = is_valid_client_key(x_client_key)
+    preview_n = value_preview_limit()
+    requested_limit = limit
+    if not premium:
+        limit = min(limit, preview_n)
 
     - Uses the model's 1X2 probabilities
     - Fetches bookmaker 1X2 odds from API-FOOTBALL /odds
@@ -5052,6 +5080,10 @@ def api_value_upcoming(
     if not value_rows:
         return {
             "ok": True,
+            "premium": premium,
+            "locked": (not premium),
+            "preview_limit": preview_n,
+            "requested_limit": requested_limit,
             "count": 0,
             "fixtures": [],
             "detail": f"No fixtures with edge >= {min_edge:.2f} found.",
@@ -5063,6 +5095,10 @@ def api_value_upcoming(
 
     return {
         "ok": True,
+        "premium": premium,
+        "locked": (not premium),
+        "preview_limit": preview_n,
+        "requested_limit": requested_limit,
         "count": len(value_rows),
         "fixtures": value_rows,
         "source": "model+odds",
@@ -5083,6 +5119,18 @@ def api_bet_of_day(
     - Returns either a single fixture or a friendly 'no value spots' message
     """
     # Reuse the /value/upcoming logic with limit=1 so we don't duplicate any odds/model code.
+    def _wm_annotate_value_bets(r: dict):
+        try:
+            r["premium"] = premium
+            r["locked"] = (not premium)
+            r["preview_limit"] = preview_n
+            r["requested_limit"] = requested_limit
+            if not premium:
+                r["upgrade_hint"] = "Preview mode: unlock premium to see all value bets."
+        except Exception:
+            pass
+        return r
+
     resp = api_value_upcoming(
         league=league,
         days_ahead=days_ahead,
@@ -5092,7 +5140,7 @@ def api_bet_of_day(
 
     # If /value/upcoming itself failed (ok == False), just forward that
     if not resp.get("ok", False) and resp.get("fixtures") is None:
-        return resp
+        return _wm_annotate_value_bets(resp)
 
     fixtures = resp.get("fixtures") or []
 
@@ -7896,7 +7944,7 @@ try:
                 resp.headers.update(probe_hdr)
             except Exception:
                 pass
-            return resp
+            return _wm_annotate_value_bets(resp)
 
         key = request.url.path + "?" + (request.url.query or "")
         cached = _upc_v2_get(key)
@@ -7948,7 +7996,7 @@ try:
             resp.headers.update(probe_hdr)
         except Exception:
             pass
-        return resp
+        return _wm_annotate_value_bets(resp)
 
 except Exception:
     pass
