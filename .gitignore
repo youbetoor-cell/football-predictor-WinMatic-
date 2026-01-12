@@ -105,3 +105,8 @@ backups/*.bundle
 
 # Local git bundle backups
 backups/*.bundle
+
+# WinMatic patch backups
+*.bak.*
+static/*.bak.*
+static/assets/*.bak.*
