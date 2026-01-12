@@ -5,7 +5,7 @@
   const clearKey = () => localStorage.removeItem(KEY);
 
   async function verify(code){
-    const res = await fetch("/auth/verify-code", {
+    const res = await fetch("/auth/verify-tier", {
       method: "POST",
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({code})
