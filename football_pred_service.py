@@ -4856,6 +4856,15 @@ def api_value_upcoming(
     This version is quota-safe: it limits the number of live /odds calls
     per request.
     """
+    # WM_VALUE_UPCOMING_PREMIUM_FIX_V1
+    # /value/upcoming returns fields that reference `premium`. Ensure it's always defined.
+    premium = False
+    try:
+        k = (locals().get("x_client_key") or "").strip()
+        premium = is_valid_client_key(k) if "is_valid_client_key" in globals() else False
+    except Exception:
+        premium = False
+
     try:
         model, meta = load_model_and_meta(league)
     except HTTPException:
