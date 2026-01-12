@@ -7842,18 +7842,15 @@ except Exception:
 
 
 # --- UPCOMING_HTTP_CACHE_MW_V2 ---
-# This is appended at EOF so it binds to the FINAL exported `app`.
-# Adds headers so we can prove it is active.
 try:
-    import os as _os
-    import time as _time
     import threading as _thr
+    import time as _time
+    import os as _os
+    import socket as _socket
     from starlette.responses import Response as _StarletteResponse
 
     _UPCOMING_HTTP_CACHE_V2 = {}
     _UPCOMING_HTTP_LOCK_V2 = _thr.Lock()
-
-
     _UPCOMING_HTTP_STATS_V2 = {"requests": 0, "hits": 0, "misses": 0, "sets": 0}
 
     def _upc_v2_get(key: str):
@@ -7866,85 +7863,98 @@ try:
             if exp <= now:
                 _UPCOMING_HTTP_CACHE_V2.pop(key, None)
                 return None
-            return (body, headers, exp - now)
+            remain = exp - now
+            return body, headers, remain
 
-    def _upc_v2_set(key: str, ttl_s: int, body: bytes, headers: dict):
-        exp = _time.time() + max(0, int(ttl_s))
+    def _upc_v2_set(key: str, ttl_sec: int, body: bytes, headers: dict):
+        exp = _time.time() + float(ttl_sec)
         with _UPCOMING_HTTP_LOCK_V2:
             _UPCOMING_HTTP_CACHE_V2[key] = (exp, body, headers)
 
-    if "app" in globals():
-        @app.middleware("http")
-        async def _predict_upcoming_http_cache_mw_v2(request, call_next):
-            # only for this one endpoint
-            if request.method != "GET" or request.url.path != "/predict/upcoming":
-                return await call_next(request)
+    @app.middleware("http")
+    async def upcoming_http_cache_mw_v2(request, call_next):
+        # Only cache GET /predict/upcoming
+        if request.method != "GET" or request.url.path != "/predict/upcoming":
+            return await call_next(request)
 
-            ttl = _upcoming_cache_ttl_sec()
-            # PROBE header so we can confirm middleware is active
-            import os as _os
-            import socket as _socket
-            probe_hdr = {
-                "X-Upcoming-Cache-MW": "v2",
-                "X-Upcoming-Cache-Worker": f"{_socket.gethostname()}:{_os.getpid()}",
-            }
-            try:
-                _UPCOMING_HTTP_STATS_V2["requests"] += 1
-            except Exception:
-                pass
+        ttl = _upcoming_cache_ttl_sec()
 
+        worker = f"{_socket.gethostname()}:{_os.getpid()}"
+        probe_hdr = {
+            "X-Upcoming-Cache-MW": "v2",
+            "X-Upcoming-Cache-Worker": worker,
+        }
 
-            if ttl <= 0:
-                resp = await call_next(request)
-                try:
-                    resp.headers.update(probe_hdr)
-                except Exception:
-                    pass
-                return resp
+        try:
+            _UPCOMING_HTTP_STATS_V2["requests"] += 1
+        except Exception:
+            pass
 
-            key = request.url.path + "?" + (request.url.query or "")
-            cached = _upc_v2_get(key)
-            if cached:
-                body, headers, remain = cached
-            try:
-                _UPCOMING_HTTP_STATS_V2["hits"] += 1
-            except Exception:
-                pass
-                hdrs = dict(headers or {})
-                hdrs.update(probe_hdr)
-                hdrs["X-Cache"] = "HIT"
-                hdrs["X-Cache-TTL"] = str(int(remain))
-                return _StarletteResponse(content=body, media_type="application/json", headers=hdrs)
-
+        # TTL disabled → just pass through, but still mark middleware active
+        if ttl <= 0:
             resp = await call_next(request)
-
-            # cache only 200 JSON
-            try:
-                ctype = (resp.headers.get("content-type") or "").lower()
-                if resp.status_code == 200 and "application/json" in ctype:
-                    body = b"".join([chunk async for chunk in resp.body_iterator])
-                    headers = {"content-type": resp.headers.get("content-type", "application/json")}
-                    try:
-                        _UPCOMING_HTTP_STATS_V2["misses"] += 1
-                        _UPCOMING_HTTP_STATS_V2["sets"] += 1
-                    except Exception:
-                        pass
-                    _upc_v2_set(key, ttl, body, headers)
-                    hdrs = dict(headers)
-                    hdrs.update(probe_hdr)
-                    hdrs["X-Cache"] = "MISS"
-                    return _StarletteResponse(content=body, status_code=200, headers=hdrs)
-            except Exception:
-                pass
-
             try:
                 resp.headers.update(probe_hdr)
             except Exception:
                 pass
             return resp
+
+        key = request.url.path + "?" + (request.url.query or "")
+        cached = _upc_v2_get(key)
+
+        # HIT
+        if cached is not None:
+            body, headers, remain = cached
+            try:
+                _UPCOMING_HTTP_STATS_V2["hits"] += 1
+            except Exception:
+                pass
+
+            hdrs = dict(headers or {})
+            hdrs.update(probe_hdr)
+            hdrs["X-Cache"] = "HIT"
+            hdrs["X-Cache-TTL"] = str(int(remain))
+            return _StarletteResponse(content=body, media_type="application/json", headers=hdrs)
+
+        # MISS (count it once, always)
+        try:
+            _UPCOMING_HTTP_STATS_V2["misses"] += 1
+        except Exception:
+            pass
+
+        resp = await call_next(request)
+
+        # Cache only 200 + JSON
+        try:
+            ctype = (resp.headers.get("content-type") or "").lower()
+            if resp.status_code == 200 and "application/json" in ctype:
+                body = b"".join([chunk async for chunk in resp.body_iterator])
+                headers = {"content-type": resp.headers.get("content-type", "application/json")}
+                _upc_v2_set(key, ttl, body, headers)
+
+                try:
+                    _UPCOMING_HTTP_STATS_V2["sets"] += 1
+                except Exception:
+                    pass
+
+                hdrs = dict(headers)
+                hdrs.update(probe_hdr)
+                hdrs["X-Cache"] = "MISS"
+                hdrs["X-Cache-TTL"] = str(int(ttl))
+                return _StarletteResponse(content=body, status_code=200, headers=hdrs)
+        except Exception:
+            pass
+
+        # Fallback: still expose middleware probe headers
+        try:
+            resp.headers.update(probe_hdr)
+        except Exception:
+            pass
+        return resp
 except Exception:
     pass
 # --- END UPCOMING_HTTP_CACHE_MW_V2 ---
+
 
 @app.get("/debug/db-info")
 def debug_db_info(x_admin_token: str = Header(default="")):
