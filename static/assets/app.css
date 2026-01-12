@@ -154,3 +154,17 @@ body.wm-nav-open .wm-drawer{ transform: translateX(0); }
   border: 1px solid var(--wm-border);
 }
 .wm-table-scroll table{ min-width: 640px; }
+
+/* WM skeleton loader */
+.wm-skel { background: rgba(10,14,26,.70); border: 1px solid rgba(148,163,184,.14); }
+.wm-skel-line{
+  height: 14px;
+  border-radius: 999px;
+  margin: 10px 6px;
+  background: linear-gradient(90deg, rgba(148,163,184,.12), rgba(148,163,184,.22), rgba(148,163,184,.12));
+  background-size: 200% 100%;
+  animation: wmShimmer 1.1s infinite linear;
+}
+.wm-skel-title{ height: 18px; margin-top: 14px; }
+.wm-skel-short{ width: 55%; }
+@keyframes wmShimmer { 0%{background-position:0% 0} 100%{background-position:200% 0} }

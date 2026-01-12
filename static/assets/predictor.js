@@ -38,7 +38,24 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function setLoading(isLoading) {
+  
+// WM_SKELETON_V1
+function wmRenderSkeleton(container, n = 6) {
+  if (!container) return;
+  container.innerHTML = "";
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement("article");
+    el.className = "wm-match-card wm-skel";
+    el.innerHTML = `
+      <div class="wm-skel-line wm-skel-title"></div>
+      <div class="wm-skel-line"></div>
+      <div class="wm-skel-line wm-skel-short"></div>
+    `;
+    container.appendChild(el);
+  }
+}
+
+function setLoading(isLoading) {
     if (isLoading) {
       loadBtn.classList.add("is-loading");
       loadBtn.disabled = true;
@@ -339,6 +356,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     clearState();
     setLoading(true);
+    wmRenderSkeleton(matchesContainer, 7);
 
     let url;
     if (date) {
