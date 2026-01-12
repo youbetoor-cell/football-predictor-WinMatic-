@@ -8091,6 +8091,48 @@ def debug_cache_stats(x_admin_token: str = Header(default="")):
     }
 
 
+
+# --- CLIENT_TIER_AUTH_V1_START ---
+def _env_csv_set(name: str) -> set[str]:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return set()
+    return {c.strip() for c in raw.split(",") if c.strip()}
+
+def client_tier_from_key(key: str | None) -> str:
+    """free | pro | premium"""
+    k = (key or "").strip()
+    if not k:
+        return "free"
+    if k in _env_csv_set("CLIENT_KEYS_PREMIUM"):
+        return "premium"
+    if k in _env_csv_set("CLIENT_KEYS_PRO"):
+        return "pro"
+    return "free"
+
+def value_limit_for_tier(tier: str) -> int | None:
+    """None => unlimited"""
+    tier = (tier or "free").lower()
+    if tier == "premium":
+        return None
+    if tier == "pro":
+        try:
+            return max(1, min(200, int(os.getenv("VALUE_LIMIT_PRO") or "10")))
+        except Exception:
+            return 10
+    try:
+        return max(1, min(50, int(os.getenv("VALUE_LIMIT_FREE") or "3")))
+    except Exception:
+        return 3
+
+@app.post("/auth/verify-code")
+def auth_verify_code(payload: VerifyCodeIn):
+    code = (payload.code or "").strip()
+    tier = client_tier_from_key(code)
+    valid = (tier != "free")
+    return {"ok": True, "valid": valid, "tier": tier}
+# --- CLIENT_TIER_AUTH_V1_END ---
+
 # --- CLIENT_ACCESS_CODE_AUTH_V1 ---
 from pydantic import BaseModel
 from fastapi import Header
@@ -8110,10 +8152,4 @@ def is_valid_client_key(key: str | None) -> bool:
 class VerifyCodeIn(BaseModel):
     code: str
 
-@app.post("/auth/verify-code")
-def auth_verify_code(payload: VerifyCodeIn):
-    code = (payload.code or "").strip()
-    ok = is_valid_client_key(code)
-    return {"ok": ok, "premium": ok}
-# --- END CLIENT_ACCESS_CODE_AUTH_V1 ---
 
