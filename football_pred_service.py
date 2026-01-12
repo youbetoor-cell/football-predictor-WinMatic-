@@ -4856,6 +4856,24 @@ def api_value_upcoming(
     This version is quota-safe: it limits the number of live /odds calls
     per request.
     """
+    # WM_VALUE_UPCOMING_PREVIEW_FIX_V1
+    # /value/upcoming returns preview metadata; ensure vars exist to prevent 500s.
+    if "premium" not in locals():
+        premium = False
+    requested_limit = limit
+    preview_n = 3
+    try:
+        if "value_preview_limit" in globals():
+            preview_n = int(value_preview_limit())
+    except Exception:
+        preview_n = 3
+    # (Optional) enforce preview cap for non-premium here
+    if not premium:
+        try:
+            limit = min(int(limit), int(preview_n))
+        except Exception:
+            pass
+
     # WM_VALUE_UPCOMING_PREMIUM_FIX_V2
     # Ensure `premium` is always defined (prevents /value-bets 500).
     premium = False
