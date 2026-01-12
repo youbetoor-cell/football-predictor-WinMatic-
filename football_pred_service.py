@@ -4856,6 +4856,48 @@ def api_value_upcoming(
     This version is quota-safe: it limits the number of live /odds calls
     per request.
     """
+    # WM_VALUE_UPCOMING_3TIER_CAP_V1
+    # 3-tier cap logic (FREE/PRO/PREMIUM) without relying on signature params.
+    requested_limit = limit
+    k = ""
+    try:
+        k = (locals().get("x_client_key") or "").strip()
+    except Exception:
+        k = ""
+
+    # Determine tier
+    tier = "free"
+    try:
+        if "wm_client_tier_from_key" in globals():
+            tier = wm_client_tier_from_key(k)
+        elif "is_valid_client_key" in globals() and is_valid_client_key(k):
+            tier = "premium"
+    except Exception:
+        tier = "free"
+
+    premium = (tier == "premium")
+    locked = (tier != "premium")
+
+    # Determine cap
+    cap = None
+    try:
+        if "wm_value_limit_for_tier" in globals():
+            cap = wm_value_limit_for_tier(tier)   # free->3, pro->10, premium->None
+        elif not premium and "value_preview_limit" in globals():
+            cap = int(value_preview_limit())
+    except Exception:
+        cap = 3 if tier == "free" else (10 if tier == "pro" else None)
+
+    # Apply cap
+    if cap is not None:
+        try:
+            limit = min(int(limit), int(cap))
+        except Exception:
+            pass
+
+    preview_n = cap if cap is not None else None
+    effective_limit = limit
+
     # WM_VALUE_UPCOMING_PREVIEW_FIX_V1
     # /value/upcoming returns preview metadata; ensure vars exist to prevent 500s.
     if "premium" not in locals():
