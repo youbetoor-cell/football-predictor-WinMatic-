@@ -8041,3 +8041,31 @@ def debug_cache_stats(x_admin_token: str = Header(default="")):
             "keys_sample": keys_sample,
         },
     }
+
+
+# --- CLIENT_ACCESS_CODE_AUTH_V1 ---
+from pydantic import BaseModel
+from fastapi import Header
+
+def _client_keys_set() -> set[str]:
+    raw = (os.getenv("CLIENT_KEYS") or "").strip()
+    if not raw:
+        return set()
+    return {c.strip() for c in raw.split(",") if c.strip()}
+
+def is_valid_client_key(key: str | None) -> bool:
+    if not key:
+        return False
+    keys = _client_keys_set()
+    return (key in keys) if keys else False
+
+class VerifyCodeIn(BaseModel):
+    code: str
+
+@app.post("/auth/verify-code")
+def auth_verify_code(payload: VerifyCodeIn):
+    code = (payload.code or "").strip()
+    ok = is_valid_client_key(code)
+    return {"ok": ok, "premium": ok}
+# --- END CLIENT_ACCESS_CODE_AUTH_V1 ---
+
