@@ -298,3 +298,83 @@ body.wm-nav-open .wm-drawer{ transform: translateX(0); }
   .wm-match-modal{ border-radius: 18px; }
   .wm-match-modal-body{ padding: 12px; }
 }
+
+/* Premium button + modal + preview banner */
+.wm-upgrade-btn{
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 2500;
+  border: 1px solid rgba(148,163,184,.20);
+  background: rgba(2,6,23,.65);
+  color: rgba(226,232,240,.95);
+  border-radius: 999px;
+  padding: 10px 12px;
+  font-size: 13px;
+  backdrop-filter: blur(14px);
+}
+
+.wm-preview-banner{
+  margin: 10px 14px 12px;
+  padding: 12px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(148,163,184,.18);
+  background: rgba(10,14,26,.88);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wm-preview-text{ font-size: 13px; opacity: .92; }
+.wm-preview-cta{
+  border: 0;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(120,140,255,.22);
+  color: rgba(240,244,255,.98);
+  white-space: nowrap;
+}
+
+.wm-premium-modal{
+  position: fixed; inset: 0;
+  z-index: 3000;
+  background: rgba(0,0,0,.55);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.wm-premium-card{
+  width: min(520px, 100%);
+  background: rgba(10,14,26,.92);
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 22px;
+  padding: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.55);
+}
+
+.wm-premium-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.wm-premium-title{ font-size: 18px; font-weight: 800; }
+.wm-premium-x{ background: transparent; border: 0; color: rgba(226,232,240,.8); font-size: 20px; }
+.wm-premium-sub{ opacity:.8; margin: 10px 0 12px; }
+.wm-premium-input{
+  width: 100%;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148,163,184,.18);
+  background: rgba(2,6,23,.55);
+  color: rgba(226,232,240,.95);
+  outline: none;
+}
+.wm-premium-cta{
+  margin-top: 10px;
+  width: 100%;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 0;
+  background: rgba(120,140,255,.22);
+  color: rgba(240,244,255,.98);
+}
+.wm-premium-msg{ margin-top: 10px; min-height: 18px; opacity: .9; }
+.wm-premium-logout{ margin-top: 10px; width:100%; background:transparent; border:1px solid rgba(148,163,184,.18); color:rgba(226,232,240,.8); padding:10px; border-radius: 14px; }

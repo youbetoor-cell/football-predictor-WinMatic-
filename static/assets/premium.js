@@ -1,5 +1,6 @@
 (function(){
   const KEY = "wm_client_key";
+
   const getKey = () => localStorage.getItem(KEY) || "";
   const setKey = (v) => localStorage.setItem(KEY, v);
   const clearKey = () => localStorage.removeItem(KEY);
@@ -12,15 +13,6 @@
     });
     if (!res.ok) return {ok:false};
     return await res.json();
-  }
-
-  function mountButton(){
-    const btn = document.createElement("button");
-    btn.className = "wm-upgrade-btn";
-    btn.type = "button";
-    btn.textContent = getKey() ? "Premium ✓" : "Sign in / Upgrade";
-    btn.addEventListener("click", openModal);
-    document.body.appendChild(btn);
   }
 
   function openModal(){
@@ -84,28 +76,69 @@
     input.focus();
   }
 
-  // Attach X-Client-Key to same-origin requests
+  function mountButton(){
+    const btn = document.createElement("button");
+    btn.className = "wm-upgrade-btn";
+    btn.type = "button";
+    btn.textContent = getKey() ? "Premium ✓" : "Sign in / Upgrade";
+    btn.addEventListener("click", openModal);
+    document.body.appendChild(btn);
+  }
+
+  function ensurePreviewBanner(data){
+    // show banner on Value + anywhere value endpoints are used
+    if (!data || !data.locked) return;
+
+    const existing = document.querySelector(".wm-preview-banner");
+    if (existing) return;
+
+    const banner = document.createElement("div");
+    banner.className = "wm-preview-banner";
+    const shown = (data.count ?? (data.fixtures && data.fixtures.length) ?? 0);
+    const limit = data.preview_limit ?? 3;
+
+    banner.innerHTML = `
+      <div class="wm-preview-text">
+        <strong>Preview mode</strong> — showing top ${shown} (limit ${limit}). Unlock Premium to see all value bets.
+      </div>
+      <button class="wm-preview-cta" type="button">Unlock</button>
+    `;
+    banner.querySelector(".wm-preview-cta").onclick = openModal;
+
+    // Try to insert near top of content
+    const target = document.querySelector("main, .main, .wm-landing-main, body");
+    if (target) target.prepend(banner);
+  }
+
+  // Attach X-Client-Key to same-origin requests + sniff value responses for banner
   const _fetch = window.fetch.bind(window);
-  window.fetch = function(input, init){
-    try{
-      const url = (typeof input === "string") ? input : (input && input.url) || "";
-      if (url.startsWith("/") || url.startsWith(window.location.origin)) {
-        init = init || {};
-        init.headers = init.headers || {};
-        const k = getKey();
-        if (k) init.headers["X-Client-Key"] = k;
+  window.fetch = async function(input, init){
+    let url = "";
+    try { url = (typeof input === "string") ? input : (input && input.url) || ""; } catch {}
+    init = init || {};
+    init.headers = init.headers || {};
+
+    const k = getKey();
+    if (k && (url.startsWith("/") || url.startsWith(window.location.origin))) {
+      init.headers["X-Client-Key"] = k;
+    }
+
+    const resp = await _fetch(input, init);
+
+    try {
+      if (url.includes("/value-bets") || url.includes("/value/upcoming")) {
+        resp.clone().json().then(ensurePreviewBanner).catch(()=>{});
       }
-    }catch(e){}
-    return _fetch(input, init);
+    } catch {}
+
+    return resp;
   };
 
-  // Set premium class on load if key exists
   document.addEventListener("DOMContentLoaded", () => {
     if (getKey()) document.documentElement.classList.add("wm-premium");
     mountButton();
-
-    // Lock Value page until premium (UI-only for now)
-    const isValue = /value\.html/i.test(window.location.pathname);
-    if (isValue && !getKey()) openModal();
   });
+
+  // expose for other scripts
+  window.WM_Premium = { getKey, openModal };
 })();
