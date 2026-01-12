@@ -4856,6 +4856,20 @@ def api_value_upcoming(
     This version is quota-safe: it limits the number of live /odds calls
     per request.
     """
+    # WM_VALUE_UPCOMING_PREMIUM_FIX_V2
+    # Ensure `premium` is always defined (prevents /value-bets 500).
+    premium = False
+    try:
+        k = (globals().get("x_client_key", "") or "").strip()
+    except Exception:
+        k = ""
+    try:
+        # legacy premium check (keeps old behavior if used)
+        if "is_valid_client_key" in globals():
+            premium = bool(is_valid_client_key(k))
+    except Exception:
+        premium = False
+
     # WM_VALUE_UPCOMING_PREMIUM_FIX_V1
     # /value/upcoming returns fields that reference `premium`. Ensure it's always defined.
     premium = False
