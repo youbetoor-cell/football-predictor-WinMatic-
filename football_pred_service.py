@@ -4597,28 +4597,6 @@ def api_value_bets(
     mode=accuracy  -> best_side/best_edge become model_pick/model_pick_prob (draw allowed)
     mode=profit    -> returns only 'sane' +EV bets (EV>0, p>=min_prob, p/market<=max_ratio)
     """
-    # WM_VALUE_BETS_TIER_CAP_V1
-    tier = "free"
-    try:
-        if "wm_client_tier_from_key" in globals():
-            tier = wm_client_tier_from_key(x_client_key)
-    except Exception:
-        tier = "free"
-
-    requested_limit = limit
-    cap = None
-    try:
-        if "wm_value_limit_for_tier" in globals():
-            cap = wm_value_limit_for_tier(tier)
-    except Exception:
-        cap = None
-
-    if cap is not None:
-        try:
-            limit = min(int(limit), int(cap))
-        except Exception:
-            pass
-
 
     def _wm_annotate_value_bets(r: dict):
         try:
@@ -4626,7 +4604,6 @@ def api_value_bets(
             r["locked"] = (tier != "premium")
             r["preview_limit"] = cap
             r["requested_limit"] = requested_limit
-            r["effective_limit"] = limit
             if tier != "premium":
                 r["upgrade_hint"] = "Preview mode: unlock premium to see all value bets."
         except Exception:
@@ -4638,8 +4615,6 @@ def api_value_bets(
         days_ahead=days_ahead,
         min_edge=min_edge,
         limit=limit,
-    ,
-        x_client_key=x_client_key,
     )
 
     # Safety: never return None
