@@ -66,7 +66,14 @@ def api_predict_upcoming_cached(league: int, days_ahead: int):
         if _cached is not None:
             return _cached
 
-    payload = api_predict_upcoming_cached(league=league, days_ahead=days_ahead)
+    # Call the original (uncached) handler safely.
+    fn = globals().get("_api_predict_upcoming_uncached")
+    if fn is None:
+        fn = globals().get("api_predict_upcoming")
+    # Guard against accidental self-recursion
+    if fn is None or fn is api_predict_upcoming_cached:
+        raise RuntimeError("api_predict_upcoming uncached function not bound")
+    payload = fn(league=league, days_ahead=days_ahead)
 
     if ttl_sec > 0:
         _pu_cache_set(_key, ttl_sec, payload)
@@ -7775,16 +7782,36 @@ try:
 
     @app.get("/model-info")
     def model_info(league: int = 39):
-        # Minimal response to stop UI 404 spam
-        return {
-            "ok": True,
-            "league": league,
-            "info": {
-                "snapshot_first_supported": True,
-                "has_value_endpoints": True
-            }
-        }
+        """UI-facing model metadata for the landing page.
 
+        - If a trained model exists for this league, returns its stored meta (incl. metrics).
+        - If not, returns a minimal-safe payload so the UI doesn't 404.
+        """
+        try:
+            _league = int(league)
+        except Exception:
+            _league = 39
+
+        try:
+            _model, _meta = load_model_and_meta(_league)
+            info = {
+                "league": _league,
+                "seasons": _meta.get("seasons"),
+                "trained_at": _meta.get("trained_at"),
+                "metrics": _meta.get("metrics"),
+                "snapshot_first_supported": True,
+                "has_value_endpoints": True,
+            }
+            return {"ok": True, "league": _league, "info": info}
+        except Exception:
+            return {
+                "ok": True,
+                "league": _league,
+                "info": {
+                    "snapshot_first_supported": True,
+                    "has_value_endpoints": True,
+                },
+            }
     @app.get("/snapshots/predict/upcoming")
     def snapshots_predict_upcoming(league: int = 39, days_ahead: int = 7):
         artifacts_dir = _wm_artifacts_dir()
@@ -7826,6 +7853,9 @@ try:
     _UPCOMING_HTTP_CACHE_V2 = {}
     _UPCOMING_HTTP_LOCK_V2 = _thr.Lock()
 
+
+    _UPCOMING_HTTP_STATS_V2 = {"requests": 0, "hits": 0, "misses": 0, "sets": 0}
+
     def _upc_v2_get(key: str):
         now = _time.time()
         with _UPCOMING_HTTP_LOCK_V2:
@@ -7853,6 +7883,11 @@ try:
             ttl = _upcoming_cache_ttl_sec()
             # PROBE header so we can confirm middleware is active
             probe_hdr = {"X-Upcoming-Cache-MW": "v2"}
+            try:
+                _UPCOMING_HTTP_STATS_V2["requests"] += 1
+            except Exception:
+                pass
+
 
             if ttl <= 0:
                 resp = await call_next(request)
@@ -7866,6 +7901,10 @@ try:
             cached = _upc_v2_get(key)
             if cached:
                 body, headers, remain = cached
+            try:
+                _UPCOMING_HTTP_STATS_V2["hits"] += 1
+            except Exception:
+                pass
                 hdrs = dict(headers or {})
                 hdrs.update(probe_hdr)
                 hdrs["X-Cache"] = "HIT"
@@ -7880,6 +7919,11 @@ try:
                 if resp.status_code == 200 and "application/json" in ctype:
                     body = b"".join([chunk async for chunk in resp.body_iterator])
                     headers = {"content-type": resp.headers.get("content-type", "application/json")}
+                    try:
+                        _UPCOMING_HTTP_STATS_V2["misses"] += 1
+                        _UPCOMING_HTTP_STATS_V2["sets"] += 1
+                    except Exception:
+                        pass
                     _upc_v2_set(key, ttl, body, headers)
                     hdrs = dict(headers)
                     hdrs.update(probe_hdr)
@@ -7938,3 +7982,41 @@ def debug_db_info(x_admin_token: str = Header(default="")):
         }
 
     return {"ok": True, "db_mode": "sqlite", "db_host_masked": None}
+
+
+@app.get("/debug/cache-stats")
+def debug_cache_stats(x_admin_token: str = Header(default="")):
+    """Cache diagnostics (admin-only).
+
+    Currently reports the in-memory HTTP cache used by /predict/upcoming (mw v2).
+    """
+    import os
+    from fastapi import HTTPException
+
+    admin = os.getenv("ADMIN_TOKEN", "")
+    if admin and x_admin_token != admin:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    try:
+        entries = len(_UPCOMING_HTTP_CACHE_V2)
+    except Exception:
+        entries = None
+
+    try:
+        stats = dict(_UPCOMING_HTTP_STATS_V2)
+    except Exception:
+        stats = None
+
+    try:
+        keys_sample = list(_UPCOMING_HTTP_CACHE_V2.keys())[:25]
+    except Exception:
+        keys_sample = []
+
+    return {
+        "ok": True,
+        "upcoming_http_cache_v2": {
+            "entries": entries,
+            "stats": stats,
+            "keys_sample": keys_sample,
+        },
+    }
