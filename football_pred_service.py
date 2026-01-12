@@ -7842,11 +7842,13 @@ except Exception:
 
 
 # --- UPCOMING_HTTP_CACHE_MW_V2 ---
+# This block is appended at EOF so it binds to the FINAL exported `app`.
+# Adds headers so we can prove it is active and so caching is observable.
 try:
-    import threading as _thr
-    import time as _time
     import os as _os
     import socket as _socket
+    import time as _time
+    import threading as _thr
     from starlette.responses import Response as _StarletteResponse
 
     _UPCOMING_HTTP_CACHE_V2 = {}
@@ -7863,8 +7865,7 @@ try:
             if exp <= now:
                 _UPCOMING_HTTP_CACHE_V2.pop(key, None)
                 return None
-            remain = exp - now
-            return body, headers, remain
+            return body, headers, exp - now
 
     def _upc_v2_set(key: str, ttl_sec: int, body: bytes, headers: dict):
         exp = _time.time() + float(ttl_sec)
@@ -7873,12 +7874,10 @@ try:
 
     @app.middleware("http")
     async def upcoming_http_cache_mw_v2(request, call_next):
-        # Only cache GET /predict/upcoming
         if request.method != "GET" or request.url.path != "/predict/upcoming":
             return await call_next(request)
 
         ttl = _upcoming_cache_ttl_sec()
-
         worker = f"{_socket.gethostname()}:{_os.getpid()}"
         probe_hdr = {
             "X-Upcoming-Cache-MW": "v2",
@@ -7890,7 +7889,7 @@ try:
         except Exception:
             pass
 
-        # TTL disabled → just pass through, but still mark middleware active
+        # TTL disabled: pass through, but keep probe headers
         if ttl <= 0:
             resp = await call_next(request)
             try:
@@ -7916,7 +7915,7 @@ try:
             hdrs["X-Cache-TTL"] = str(int(remain))
             return _StarletteResponse(content=body, media_type="application/json", headers=hdrs)
 
-        # MISS (count it once, always)
+        # MISS
         try:
             _UPCOMING_HTTP_STATS_V2["misses"] += 1
         except Exception:
@@ -7924,7 +7923,6 @@ try:
 
         resp = await call_next(request)
 
-        # Cache only 200 + JSON
         try:
             ctype = (resp.headers.get("content-type") or "").lower()
             if resp.status_code == 200 and "application/json" in ctype:
@@ -7945,15 +7943,17 @@ try:
         except Exception:
             pass
 
-        # Fallback: still expose middleware probe headers
+        # Fallback: still expose probe headers
         try:
             resp.headers.update(probe_hdr)
         except Exception:
             pass
         return resp
+
 except Exception:
     pass
 # --- END UPCOMING_HTTP_CACHE_MW_V2 ---
+
 
 
 @app.get("/debug/db-info")
