@@ -373,3 +373,35 @@ document.addEventListener("DOMContentLoaded", () => {
   // Auto-load on open
   loadMatches();
 });
+
+
+// WM_MOBILE_DEFAULT_COLLAPSE_V1
+(function() {
+  function wmIsMobile() {
+    try {
+      return window.matchMedia && window.matchMedia("(max-width: 600px)").matches;
+    } catch (e) {
+      return (window.innerWidth || 9999) <= 600;
+    }
+  }
+
+  function wmCollapseAllExpanded() {
+    if (!wmIsMobile()) return;
+    // Common patterns used across pages
+    const expanded = document.querySelectorAll(".is-expanded, [data-expanded='true']");
+    expanded.forEach(el => el.classList.remove("is-expanded"));
+    // Some implementations expand via inline style
+    document.querySelectorAll(".wm-match-expanded").forEach(el => {
+      el.style.display = "none";
+    });
+  }
+
+  // Collapse immediately and after dynamic render
+  document.addEventListener("DOMContentLoaded", () => {
+    wmCollapseAllExpanded();
+    // If your UI renders cards after fetch, this catches it
+    setTimeout(wmCollapseAllExpanded, 200);
+    setTimeout(wmCollapseAllExpanded, 800);
+  });
+})();
+
