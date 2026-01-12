@@ -4598,7 +4598,7 @@ def api_value_bets(
     mode=profit    -> returns only 'sane' +EV bets (EV>0, p>=min_prob, p/market<=max_ratio)
     """
 
-    def (r: dict):
+    def _wm_annotate_value_bets(r: dict):
         try:
             r["premium"] = premium
             r["locked"] = (not premium)
@@ -5119,7 +5119,7 @@ def api_bet_of_day(
     - Returns either a single fixture or a friendly 'no value spots' message
     """
     # Reuse the /value/upcoming logic with limit=1 so we don't duplicate any odds/model code.
-    def (r: dict):
+    def _wm_annotate_value_bets(r: dict):
         try:
             r["premium"] = premium
             r["locked"] = (not premium)
