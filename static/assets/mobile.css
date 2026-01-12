@@ -462,3 +462,63 @@ html.wm-js .wm-reveal.wm-reveal--visible{
 }
 /* === WM PORTRAIT FIX (STATS-AI) END === */
 
+
+/* === WM MOBILE BASELINE (STATS-AI) v3 START === */
+@media (max-width: 560px) {
+  html, body { overflow-x: hidden !important; }
+  *, *::before, *::after { box-sizing: border-box !important; }
+
+  /* Force common desktop grids to stack */
+  .wm-hero,
+  .wm-hero-card-grid,
+  .wm-feature-grid,
+  .wm-expand-grid,
+  .wm-stats-grid,
+  .wm-hero-metrics-row,
+  .wm-hero-card-row {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* Better spacing */
+  .wm-section { padding: 18px 14px !important; }
+  .wm-hero { padding: 18px 0 14px !important; }
+
+  /* Cleaner “stats.ai” cards */
+  .wm-panel,
+  .wm-hero-card,
+  .wm-hero-testimonial-card,
+  .wm-expand-box,
+  .wm-feature-card,
+  .wm-card {
+    background: rgba(10, 14, 26, 0.82) !important;
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.40) !important;
+  }
+
+  /* Make text readable (your testimonials were too faint on mobile) */
+  .wm-hero-testimonial-card, .wm-hero-testimonial-card * { opacity: 1 !important; }
+
+  /* Generic “bad pages” fixes: wide tables & cards */
+  table {
+    display: block !important;
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  th, td { white-space: nowrap !important; }
+
+  /* Predictor / value filters usually overflow: force wrap */
+  .filters-row, .controls-row, .toolbar, .filters, .filter-row {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+  .filter, .control, .field {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Prevent bottom nav from covering content */
+  body { padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important; }
+}
+/* === WM MOBILE BASELINE (STATS-AI) v3 END === */
