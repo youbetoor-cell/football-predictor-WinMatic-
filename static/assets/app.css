@@ -226,3 +226,75 @@ body.wm-nav-open .wm-drawer{ transform: translateX(0); }
 }
 .wm-premium-msg{ margin-top: 10px; min-height: 18px; opacity: .9; }
 .wm-premium-logout{ margin-top: 10px; width:100%; background:transparent; border:1px solid rgba(148,163,184,.18); color:rgba(226,232,240,.8); padding:10px; border-radius: 14px; }
+
+/* === WM Match Modal (Option 2) === */
+.wm-modal-open { overflow: hidden; }
+
+.wm-match-modal-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: rgba(0,0,0,.60);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.wm-match-modal{
+  width: min(900px, 100%);
+  max-height: min(82vh, 820px);
+  overflow: hidden;
+  border-radius: 22px;
+  background: rgba(10,14,26,.92);
+  border: 1px solid rgba(148,163,184,.18);
+  box-shadow: 0 22px 70px rgba(0,0,0,.60);
+  backdrop-filter: blur(18px);
+}
+
+.wm-match-modal-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px;
+  border-bottom: 1px solid rgba(148,163,184,.12);
+}
+
+.wm-match-modal-title{
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+.wm-match-modal-x{
+  background: transparent;
+  border: 0;
+  color: rgba(226,232,240,.80);
+  font-size: 20px;
+  padding: 6px 10px;
+  border-radius: 12px;
+}
+
+.wm-match-modal-body{
+  padding: 14px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Make cloned card look native inside modal */
+.wm-modal-card{
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+
+/* In modal: always show expanded details even if your global CSS collapses */
+.wm-match-modal .wm-match-expanded{
+  display: block !important;
+}
+
+/* Mobile sizing */
+@media (max-width: 600px){
+  .wm-match-modal{ border-radius: 18px; }
+  .wm-match-modal-body{ padding: 12px; }
+}
