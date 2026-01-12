@@ -604,3 +604,114 @@ html.wm-js .wm-reveal.wm-reveal--visible{
   }
 }
 /* === WM GLOBAL PORTRAIT FIX v4 END === */
+
+/* === WM PREDICTOR + VALUE MOBILE FIX v1 START === */
+@media (max-width: 600px) {
+
+  /* Bottom nav: make it smaller (portrait + landscape) */
+  .wm-bottom-nav{
+    left: 10px !important;
+    right: 10px !important;
+    padding: 8px 8px !important;
+    border-radius: 18px !important;
+    gap: 6px !important;
+  }
+  .wm-bottom-link{
+    padding: 8px 6px !important;
+    border-radius: 14px !important;
+    gap: 4px !important;
+  }
+  .wm-bottom-ico svg{ width: 18px !important; height: 18px !important; }
+  .wm-bottom-text{ font-size: 0.72rem !important; }
+
+  /* In landscape: hide labels so nav stops eating the screen */
+  @media (max-height: 450px) {
+    .wm-bottom-text{ display:none !important; }
+    .wm-bottom-link{ padding: 10px 6px !important; }
+    body{ padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)) !important; }
+  }
+
+  /* Predictor “accuracy + controls” should stack */
+  .accuracy-header{
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 14px !important;
+  }
+  .accuracy-ring{
+    width: 160px !important;
+    height: 160px !important;
+    margin: 0 auto !important;
+  }
+  .accuracy-controls{ width: 100% !important; }
+  .accuracy-row{
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+  .select-group, .select-with-logo{
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Match cards: compact header row, smaller orbs, no overflow */
+  .wm-match-card{
+    padding: 12px 12px !important;
+    border-radius: 18px !important;
+  }
+  .wm-match-row{
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .wm-team-col{
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    min-width: 0 !important;
+  }
+  .wm-team-col--away{
+    flex-direction: row-reverse !important;
+    justify-content: space-between !important;
+  }
+
+  .wm-orb{
+    width: 52px !important;
+    height: 52px !important;
+    flex: 0 0 auto !important;
+  }
+
+  .wm-team-meta{ min-width: 0 !important; }
+  .wm-team-name{
+    font-size: 16px !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 68vw !important;
+  }
+  .wm-team-prob{ font-size: 18px !important; }
+
+  /* Collapse expanded details unless the card is expanded (keeps list tight) */
+  .wm-match-card:not(.is-expanded) .wm-match-expanded{
+    display: none !important;
+  }
+
+  /* When expanded: keep stats usable, not 1-item-per-row tall */
+  .wm-stats-grid{
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+  .wm-stat-box{ padding: 10px 10px !important; border-radius: 14px !important; }
+  .wm-stat-label{ font-size: 12px !important; }
+  .wm-stat-value{ font-size: 14px !important; }
+
+  /* Big decorative logos in expanded view: shrink */
+  .team-logo-orb-lg{ width: 72px !important; height: 72px !important; }
+  .team-logo-initial-lg{ width: 72px !important; height: 72px !important; font-size: 26px !important; }
+
+}
+/* === WM PREDICTOR + VALUE MOBILE FIX v1 END === */
+
