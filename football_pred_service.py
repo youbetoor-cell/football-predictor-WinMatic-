@@ -3450,7 +3450,7 @@ async def _wm_count_requests(request: Request, call_next):
     _WM_REQ_BY_PATH[path] += 1
     resp = await call_next(request)
     _WM_REQ_BY_STATUS[str(resp.status_code)] += 1
-    return _wm_annotate_value_bets(resp)
+    return resp
 
 
 # --- recent requests ring buffer (helps debug quota drains) ---
@@ -3483,7 +3483,7 @@ async def _capture_recent_requests(request, call_next):
         })
     except Exception:
         pass
-    return _wm_annotate_value_bets(resp)
+    return resp
 
 @app.get("/debug/recent-requests")
 def debug_recent_requests(limit: int = 50, admin_ok: bool = Depends(require_admin)):
@@ -4598,7 +4598,7 @@ def api_value_bets(
     mode=profit    -> returns only 'sane' +EV bets (EV>0, p>=min_prob, p/market<=max_ratio)
     """
 
-    def _wm_annotate_value_bets(r: dict):
+    def (r: dict):
         try:
             r["premium"] = premium
             r["locked"] = (not premium)
@@ -4681,7 +4681,7 @@ def api_value_bets(
         resp["count"] = len(resp["fixtures"])
         resp["source"] = (resp.get("source") or "") + "+profit"
         resp["filters"] = {"min_prob": min_prob, "max_ratio": max_ratio}
-        return _wm_annotate_value_bets(resp)
+        return resp
 
     # ----------------------------
     # ACCURACY MODE
@@ -4709,7 +4709,7 @@ def api_value_bets(
             f["best_edge"] = f["model_pick_prob"]
 
         resp["source"] = (resp.get("source") or "") + "+accuracy"
-        return _wm_annotate_value_bets(resp)
+        return resp
 
     # ----------------------------
     # VALUE MODE (default)
@@ -4719,7 +4719,7 @@ def api_value_bets(
         f["best_edge"] = f.get("value_pick_ev")
 
     resp["source"] = (resp.get("source") or "") + "+value"
-    return _wm_annotate_value_bets(resp)
+    return resp
 
 
 
@@ -5119,7 +5119,7 @@ def api_bet_of_day(
     - Returns either a single fixture or a friendly 'no value spots' message
     """
     # Reuse the /value/upcoming logic with limit=1 so we don't duplicate any odds/model code.
-    def _wm_annotate_value_bets(r: dict):
+    def (r: dict):
         try:
             r["premium"] = premium
             r["locked"] = (not premium)
@@ -5140,7 +5140,7 @@ def api_bet_of_day(
 
     # If /value/upcoming itself failed (ok == False), just forward that
     if not resp.get("ok", False) and resp.get("fixtures") is None:
-        return _wm_annotate_value_bets(resp)
+        return resp
 
     fixtures = resp.get("fixtures") or []
 
@@ -7944,7 +7944,7 @@ try:
                 resp.headers.update(probe_hdr)
             except Exception:
                 pass
-            return _wm_annotate_value_bets(resp)
+            return resp
 
         key = request.url.path + "?" + (request.url.query or "")
         cached = _upc_v2_get(key)
@@ -7996,7 +7996,7 @@ try:
             resp.headers.update(probe_hdr)
         except Exception:
             pass
-        return _wm_annotate_value_bets(resp)
+        return resp
 
 except Exception:
     pass
