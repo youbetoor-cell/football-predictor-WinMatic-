@@ -7882,7 +7882,12 @@ try:
 
             ttl = _upcoming_cache_ttl_sec()
             # PROBE header so we can confirm middleware is active
-            probe_hdr = {"X-Upcoming-Cache-MW": "v2"}
+            import os as _os
+            import socket as _socket
+            probe_hdr = {
+                "X-Upcoming-Cache-MW": "v2",
+                "X-Upcoming-Cache-Worker": f"{_socket.gethostname()}:{_os.getpid()}",
+            }
             try:
                 _UPCOMING_HTTP_STATS_V2["requests"] += 1
             except Exception:
@@ -7996,6 +8001,10 @@ def debug_cache_stats(x_admin_token: str = Header(default="")):
     admin = os.getenv("ADMIN_TOKEN", "")
     if admin and x_admin_token != admin:
         raise HTTPException(status_code=401, detail="unauthorized")
+    import socket, time
+    worker = f"{socket.gethostname()}:{os.getpid()}"
+    now_utc = time.time()
+
 
     try:
         entries = len(_UPCOMING_HTTP_CACHE_V2)
@@ -8015,6 +8024,8 @@ def debug_cache_stats(x_admin_token: str = Header(default="")):
     return {
         "ok": True,
         "upcoming_http_cache_v2": {
+            "worker": worker,
+            "now_utc": now_utc,
             "entries": entries,
             "stats": stats,
             "keys_sample": keys_sample,
