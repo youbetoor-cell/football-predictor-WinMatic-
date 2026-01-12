@@ -4586,12 +4586,12 @@ def api_value_bets(
     """
     Wrapper around /value/upcoming.
 
-    # WM_VALUE_BETS_GATING_V1
-    premium = is_valid_client_key(x_client_key)
-    preview_n = value_preview_limit()
+    # WM_VALUE_BETS_GATING_V2
+    tier = client_tier_from_key(x_client_key)
+    cap = value_limit_for_tier(tier)
     requested_limit = limit
-    if not premium:
-        limit = min(limit, preview_n)
+    if cap is not None:
+        limit = min(limit, cap)
 
     mode=value     -> best_side/best_edge are EV-based (value_pick/value_pick_ev)
     mode=accuracy  -> best_side/best_edge become model_pick/model_pick_prob (draw allowed)
@@ -4600,11 +4600,11 @@ def api_value_bets(
 
     def _wm_annotate_value_bets(r: dict):
         try:
-            r["premium"] = premium
-            r["locked"] = (not premium)
-            r["preview_limit"] = preview_n
+            r["tier"] = tier
+            r["locked"] = (tier != "premium")
+            r["preview_limit"] = cap
             r["requested_limit"] = requested_limit
-            if not premium:
+            if tier != "premium":
                 r["upgrade_hint"] = "Preview mode: unlock premium to see all value bets."
         except Exception:
             pass
@@ -4845,7 +4845,7 @@ def api_value_upcoming(
     premium = is_valid_client_key(x_client_key)
     preview_n = value_preview_limit()
     requested_limit = limit
-    if not premium:
+    if tier != "premium":
         limit = min(limit, preview_n)
 
     - Uses the model's 1X2 probabilities
@@ -5121,11 +5121,11 @@ def api_bet_of_day(
     # Reuse the /value/upcoming logic with limit=1 so we don't duplicate any odds/model code.
     def _wm_annotate_value_bets(r: dict):
         try:
-            r["premium"] = premium
-            r["locked"] = (not premium)
-            r["preview_limit"] = preview_n
+            r["tier"] = tier
+            r["locked"] = (tier != "premium")
+            r["preview_limit"] = cap
             r["requested_limit"] = requested_limit
-            if not premium:
+            if tier != "premium":
                 r["upgrade_hint"] = "Preview mode: unlock premium to see all value bets."
         except Exception:
             pass
