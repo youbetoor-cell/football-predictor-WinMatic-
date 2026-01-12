@@ -522,3 +522,85 @@ html.wm-js .wm-reveal.wm-reveal--visible{
   body { padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important; }
 }
 /* === WM MOBILE BASELINE (STATS-AI) v3 END === */
+
+/* === WM GLOBAL PORTRAIT FIX v4 START ===
+   Fix: pages bad in portrait (good in landscape)
+   Cause: desktop grids/fixed widths/min-widths still apply
+   Goal: force 1-col layout + prevent overflow everywhere
+*/
+@media (max-width: 600px) {
+  html, body { overflow-x: hidden !important; }
+  *, *::before, *::after { box-sizing: border-box !important; }
+  img, svg { max-width: 100% !important; height: auto !important; }
+
+  /* Core layout padding */
+  main, .main, .wm-landing-main, .wm-page, .page, .content {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+    max-width: 100% !important;
+  }
+
+  /* LANDING HERO: force to single column (fixes card clipping) */
+  .wm-hero {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+    padding: 18px 0 16px !important;
+    align-items: start !important;
+  }
+  .wm-hero-left, .wm-hero-right { width: 100% !important; min-width: 0 !important; }
+  .wm-hero-right { justify-content: stretch !important; }
+  .wm-hero-card {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  /* Internal hero stats grid: allow shrink without overflow */
+  .wm-hero-card-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+  .wm-hero-card-row { min-width: 0 !important; }
+  .wm-hero-card-value, .wm-hero-card-label {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  /* Make most page grids collapse in portrait (keeps results OK) */
+  .main [class*="grid"]:not(.wm-hero-card-grid),
+  main  [class*="grid"]:not(.wm-hero-card-grid),
+  .wm-page [class*="grid"]:not(.wm-hero-card-grid) {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Wrap toolbars/rows */
+  .main [class*="row"],
+  main  [class*="row"],
+  .wm-page [class*="row"],
+  .filters-row, .controls-row, .toolbar, .filters, .filter-row {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  /* Tables: always scroll instead of breaking layout */
+  table {
+    display: block !important;
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  th, td { white-space: nowrap !important; }
+
+  /* Predictor/value controls: stop overflow */
+  .filter, .control, .field { width: 100% !important; min-width: 0 !important; }
+  input, select, button { max-width: 100% !important; }
+
+  /* Stats.ai-ish: reduce glow, increase contrast on cards */
+  .wm-panel, .wm-card, .wm-hero-card, .wm-expand-box, .wm-feature-card {
+    background: rgba(10, 14, 26, 0.84) !important;
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.40) !important;
+  }
+}
+/* === WM GLOBAL PORTRAIT FIX v4 END === */
