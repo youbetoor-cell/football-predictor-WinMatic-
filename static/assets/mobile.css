@@ -715,3 +715,31 @@ html.wm-js .wm-reveal.wm-reveal--visible{
 }
 /* === WM PREDICTOR + VALUE MOBILE FIX v1 END === */
 
+
+/* === WM CARD TOGGLE + COLLAPSE STYLE START === */
+.wm-match-expanded { display: none; }
+.wm-match-card.is-expanded .wm-match-expanded { display: block; }
+
+.wm-card-toggle{
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: 1px solid rgba(148,163,184,.20);
+  background: rgba(2,6,23,.55);
+  color: rgba(226,232,240,.95);
+  border-radius: 999px;
+  padding: 8px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  backdrop-filter: blur(14px);
+}
+
+.wm-card-toggle:active{ transform: scale(.98); }
+
+@media (max-width: 600px){
+  .wm-match-card{ padding: 12px 12px !important; }
+  .wm-orb{ width: 52px !important; height: 52px !important; }
+}
+/* === WM CARD TOGGLE + COLLAPSE STYLE END === */
