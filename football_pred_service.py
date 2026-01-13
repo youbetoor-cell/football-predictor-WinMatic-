@@ -4961,6 +4961,15 @@ def api_value_upcoming(
     This version is quota-safe: it limits the number of live /odds calls
     per request.
     """
+    # WM_VALUE_UPCOMING_DEBUG_COUNTERS_V1
+    dbg = {
+        "upcoming_total": 0,
+        "with_odds_total": 0,
+        "scored_total": 0,
+        "skipped_no_odds": 0,
+        "skipped_bad_odds": 0,
+        "skipped_exception": 0,
+    }
     # WM_VALUE_UPCOMING_3TIER_CAP_V1
     # 3-tier cap logic (FREE/PRO/PREMIUM) without relying on signature params.
     requested_limit = limit
