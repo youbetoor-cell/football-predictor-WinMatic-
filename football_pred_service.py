@@ -3498,6 +3498,7 @@ def debug_req_usage(request: Request, limit: int = 50):
     top = sorted(_WM_REQ_BY_PATH.items(), key=lambda kv: kv[1], reverse=True)[: int(limit)]
     return {
         "ok": True,
+        "debug": dbg,
         "uptime_sec": int(time.time() - _WM_REQ_STARTED),
         "total_requests": int(_WM_REQ_TOTAL),
         "by_path_top": top,
