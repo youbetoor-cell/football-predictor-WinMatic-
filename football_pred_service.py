@@ -4597,6 +4597,47 @@ def api_value_bets(
     mode=accuracy  -> best_side/best_edge become model_pick/model_pick_prob (draw allowed)
     mode=profit    -> returns only 'sane' +EV bets (EV>0, p>=min_prob, p/market<=max_ratio)
     """
+    # WM_VALUE_BETS_3TIER_CAP_V3
+    # Capture requested limit BEFORE any capping
+    requested_limit = limit
+
+    # Determine tier from X-Client-Key (already present as x_client_key param)
+    k = ""
+    try:
+        k = (x_client_key or "").strip()
+    except Exception:
+        k = ""
+
+    tier = "free"
+    try:
+        if "wm_client_tier_from_key" in globals():
+            tier = wm_client_tier_from_key(k)          # free/pro/premium
+        elif "is_valid_client_key" in globals() and is_valid_client_key(k):
+            tier = "premium"
+    except Exception:
+        tier = "free"
+
+    # Determine cap (None => unlimited)
+    cap = None
+    try:
+        if "wm_value_limit_for_tier" in globals():
+            cap = wm_value_limit_for_tier(tier)        # free->3, pro->10, premium->None
+        elif tier != "premium" and "value_preview_limit" in globals():
+            cap = int(value_preview_limit())
+    except Exception:
+        cap = 3 if tier == "free" else (10 if tier == "pro" else None)
+
+    # Apply cap
+    if cap is not None:
+        try:
+            limit = min(int(limit), int(cap))
+        except Exception:
+            pass
+
+    effective_limit = limit
+    premium = (tier == "premium")
+    locked = (not premium)
+    preview_n = cap
     # WM_VALUE_BETS_3TIER_CAP_SAFE_V1
     # 3-tier gating for /value-bets using existing x_client_key (no signature/import edits)
     requested_limit = limit
@@ -4646,6 +4687,15 @@ def api_value_bets(
         limit=limit,
     )
 
+    # WM_VALUE_BETS_METADATA_FIX_V1
+    # Force correct metadata (even if api_value_upcoming adds its own)
+    if isinstance(resp, dict):
+        resp["tier"] = tier
+        resp["premium"] = premium
+        resp["locked"] = locked
+        resp["preview_limit"] = preview_n
+        resp["requested_limit"] = requested_limit
+        resp["effective_limit"] = effective_limit
     # Safety: never return None
     if not isinstance(resp, dict):
         return {
