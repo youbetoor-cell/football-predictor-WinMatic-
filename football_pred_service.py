@@ -5278,6 +5278,7 @@ def api_value_upcoming(
     if not value_rows:
         return {
             "ok": True,
+        "debug": dbg,
             "premium": premium,
             "locked": (not premium),
             "preview_limit": preview_n,
