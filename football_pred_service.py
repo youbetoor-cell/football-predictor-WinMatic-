@@ -4581,8 +4581,7 @@ def api_value_bets(
     mode: str = Query("value", description="Pick mode: value, accuracy, or profit"),
     min_prob: float = Query(0.40, ge=0.0, le=1.0, description="Profit filter: minimum model probability for the pick"),
     max_ratio: float = Query(1.35, ge=1.0, description="Profit filter: max (model_p / market_p) allowed to avoid outliers"),
-    x_client_key: str = Header(default=""),,
-    request: Request,
+    x_client_key: str = Header(default=""),
 ):
     """
     Wrapper around /value/upcoming.
@@ -4598,39 +4597,6 @@ def api_value_bets(
     mode=accuracy  -> best_side/best_edge become model_pick/model_pick_prob (draw allowed)
     mode=profit    -> returns only 'sane' +EV bets (EV>0, p>=min_prob, p/market<=max_ratio)
     """
-    # WM_VALUE_BETS_3TIER_CAP_V2
-    # Read client key from headers (no fragile signature/header injection).
-    client_key = ""
-    try:
-        client_key = (request.headers.get("x-client-key") or "").strip()
-    except Exception:
-        client_key = ""
-
-    tier = "free"
-    try:
-        if "wm_client_tier_from_key" in globals():
-            tier = wm_client_tier_from_key(client_key)
-        elif "is_valid_client_key" in globals() and is_valid_client_key(client_key):
-            tier = "premium"
-    except Exception:
-        tier = "free"
-
-    requested_limit = limit
-    cap = None
-    try:
-        if "wm_value_limit_for_tier" in globals():
-            cap = wm_value_limit_for_tier(tier)
-        elif tier != "premium" and "value_preview_limit" in globals():
-            cap = int(value_preview_limit())
-    except Exception:
-        cap = 3 if tier == "free" else (10 if tier == "pro" else None)
-
-    if cap is not None:
-        try:
-            limit = min(int(limit), int(cap))
-        except Exception:
-            pass
-
 
     def _wm_annotate_value_bets(r: dict):
         try:
