@@ -4599,7 +4599,7 @@ def api_value_bets(
     """
     # WM_VALUE_BETS_3TIER_CAP_V3
     # Capture requested limit BEFORE any capping
-    requested_limit = limit
+    requested_limit_original = limit
 
     # Determine tier from X-Client-Key (already present as x_client_key param)
     k = ""
@@ -4679,6 +4679,14 @@ def api_value_bets(
         except Exception:
             pass
         return r
+    # WM_VALUE_BETS_UPSTREAM_LIMIT_V1
+    # Ask upstream for the full requested_limit_original, then slice locally by cap.
+    try:
+        limit = int(requested_limit_original)
+    except Exception:
+        pass
+
+
 
     resp = api_value_upcoming(
         league=league,
@@ -4696,6 +4704,24 @@ def api_value_bets(
         resp["preview_limit"] = preview_n
         resp["requested_limit"] = requested_limit
         resp["effective_limit"] = effective_limit
+
+    # WM_VALUE_BETS_SLICE_FIXTURES_V1
+    # Enforce cap locally (upstream may return more; we always slice here)
+    try:
+        fx = resp.get("fixtures") or []
+        if isinstance(fx, list):
+            if cap is not None:
+                fx = fx[: int(cap)]
+            resp["fixtures"] = fx
+            resp["count"] = len(fx)
+    except Exception:
+        pass
+
+    # Ensure requested_limit reflects what the client asked for (not the capped limit)
+    try:
+        resp["requested_limit"] = int(requested_limit_original)
+    except Exception:
+        resp["requested_limit"] = requested_limit_original
     # Safety: never return None
     if not isinstance(resp, dict):
         return {
