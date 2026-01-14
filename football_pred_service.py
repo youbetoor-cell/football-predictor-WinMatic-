@@ -5090,8 +5090,11 @@ def api_value_upcoming(
 
     value_rows: List[Dict[str, Any]] = []
 
-    # 🔒 Quota protection: cap live /odds calls per request
-    MAX_ODDS_CALLS = 5
+    # 🔒 Quota protection: cap live /odds calls per request (tier-aware)
+    k = (x_client_key or "").strip().upper()
+    tier = "premium" if k.startswith("PREM-") else ("pro" if k.startswith("PRO-") else "free")
+    tier_cap = 50 if tier == "premium" else (10 if tier == "pro" else 3)
+    MAX_ODDS_CALLS = min(int(limit), int(tier_cap))
     odds_calls = 0
 
     for pred in predictions:
