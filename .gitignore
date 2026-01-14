@@ -115,3 +115,5 @@ static/assets/*.bak.*
 *.bak.*
 static/*.bak.*
 static/assets/*.bak.*
+.DS_Store
+static/.DS_Store
