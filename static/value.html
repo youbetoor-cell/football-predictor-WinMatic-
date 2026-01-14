@@ -929,7 +929,7 @@ body.nav-open .nav-scrim{ display:block; }
       betDayContainer.innerHTML = "";
       scannerList.innerHTML = "";
 
-      const url = `/value-bets?league=${league}&days_ahead=${daysAhead}&min_edge=${minEdge}&limit=40`;
+      const url = `/value-bets?league=${league}&days_ahead=${daysAhead}&min_edge=${minEdge}&limit=50`;
 
       try {
         const resp = await fetch(url);
@@ -942,7 +942,16 @@ body.nav-open .nav-scrim{ display:block; }
         }
 
         const data = await resp.json();
-        if (!data.ok) {
+        
+      // WM_VALUE_MODAL_LOCKED_V1
+      const tier = (data && data.tier) ? data.tier : (data && data.premium ? 'premium' : 'free');
+      const effectiveLimit = (data && typeof data.effective_limit === 'number') ? data.effective_limit
+        : (data && typeof data.preview_limit === 'number') ? data.preview_limit
+        : (tier === 'premium' ? 9999 : (tier === 'pro' ? 10 : 3));
+      // expose for UI
+      window.__wm_value_tier = tier;
+      window.__wm_value_effective_limit = effectiveLimit;
+if (!data.ok) {
           statusLine.textContent = data.message || "Backend reported an error.";
           statusLine.classList.add("error");
           betDayContainer.innerHTML = '<div class="empty">No bet of the day (backend error).</div>';
@@ -950,7 +959,8 @@ body.nav-open .nav-scrim{ display:block; }
           return;
         }
 
-        const fixtures = data.fixtures || [];
+        const fixtures = window.__wm_value_last_fixtures = (data.fixtures || []);
+        data.fixtures || [];
         if (!fixtures.length) {
           statusLine.textContent = "No value bets found for this league / window.";
           betDayContainer.innerHTML =
@@ -1040,6 +1050,58 @@ body.nav-open .nav-scrim{ display:block; }
 </script>
   <script src="/static/assets/premium.js?v=1"></script>
   <script src="/static/assets/match-modal.js?v=1"></script>
-  <script src="/static/assets/premium.js?v=1"></script>
+  <script src="/static/assets/premium.js?v=1">
+      // WM_VALUE_MODAL_LOCKED_V1 helpers
+      function wmEscapeHtml(str){
+        try { return String(str).replace(/[&<>"']/g, (m)=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m])); }
+        catch(e){ return str; }
+      }
+
+      function wmValueCardHtml(fx, idx, locked){
+        const home = fx.home_name || fx.home || "Home";
+        const away = fx.away_name || fx.away || "Away";
+        const ko = fx.kickoff_utc || fx.kickoff || "";
+        const best = (fx.value_pick || fx.best_side || fx.best_pick || "—").toString().toUpperCase();
+        const ev = (typeof fx.value_pick_ev === "number") ? fx.value_pick_ev
+                 : (typeof fx.best_edge === "number") ? fx.best_edge : null;
+
+        return `
+          <div class="wm-match-card ${locked ? "is-locked" : ""}" data-idx="${idx}">
+            <div class="wm-match-shell">
+              <div class="wm-match-row">
+                <div class="wm-match-left">
+                  <div class="wm-match-teams">${wmEscapeHtml(home)} <span class="vs">vs</span> ${wmEscapeHtml(away)}</div>
+                  <div class="wm-match-sub">${wmEscapeHtml(ko)}</div>
+                </div>
+                <div class="wm-match-right">
+                  <div class="wm-pill">${best}</div>
+                  <div class="wm-ev">${(typeof ev === "number") ? ev.toFixed(3) : "—"}</div>
+                </div>
+              </div>
+              ${locked ? `<div class="wm-locked-row">Locked • Upgrade to see full details</div>` : ``}
+            </div>
+          </div>
+        `;
+      }
+
+
+      // WM_VALUE_MODAL_LOCKED_V1 click -> modal
+      document.addEventListener("click", (e) => {
+        const card = e.target && e.target.closest ? e.target.closest(".wm-match-card") : null;
+        if (!card) return;
+        // only on Value page cards
+        if (!document.body || !document.body.innerHTML.includes("/value-bets")) {
+          // lightweight heuristic; if false positive, still fine
+        }
+        const idx = parseInt(card.getAttribute("data-idx") || "-1", 10);
+        const locked = card.classList.contains("is-locked");
+        try { e.preventDefault(); e.stopPropagation(); } catch(_) {}
+
+        // Try to find fixtures array in the last fetched data
+        const fx = (window.__wm_value_last_fixtures && idx >= 0) ? window.__wm_value_last_fixtures[idx] : null;
+        if (fx && window.wmOpenMatchModal) window.wmOpenMatchModal(fx, { locked });
+      }, true);
+
+</script>
 </body>
 </html>
