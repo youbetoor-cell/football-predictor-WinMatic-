@@ -5294,6 +5294,7 @@ def api_value_upcoming(
 
     return {
         "ok": True,
+        "debug": dbg,  # WM_VALUE_UPCOMING_DEBUG_ATTACH_FORCE_V1
         "premium": premium,
         "locked": (not premium),
         "preview_limit": preview_n,
