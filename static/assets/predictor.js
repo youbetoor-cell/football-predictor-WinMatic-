@@ -179,7 +179,7 @@ function setLoading(isLoading) {
   function createMatchCard(fx, expandedInitially = false) {
     const card = document.createElement("article");
     card.className = "wm-match-card";
-    if (expandedInitially) card.classList.add("is-expanded");
+    // WM_PREDICTOR_MODAL_V1: default collapsed on mobile
 
     const p = fx.predictions || fx;
 
@@ -245,15 +245,11 @@ function setLoading(isLoading) {
     `;
 
     // Expand/collapse on click
-    card.addEventListener("click", () => {
-      const isExpanded = card.classList.contains("is-expanded");
-      document.querySelectorAll(".wm-match-card.is-expanded").forEach((c) => {
-        if (c !== card) c.classList.remove("is-expanded");
-      });
-      if (!isExpanded) {
-        card.classList.add("is-expanded");
-      } else {
-        card.classList.remove("is-expanded");
+    // WM_PREDICTOR_MODAL_V1 - open modal instead of expanding cards
+    card.addEventListener("click", (e) => {
+      try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+      if (window.wmOpenMatchModal) {
+        window.wmOpenMatchModal(fx, { locked: false });
       }
     });
 
