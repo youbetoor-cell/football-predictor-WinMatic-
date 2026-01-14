@@ -4978,6 +4978,10 @@ def api_value_upcoming(
     try:
         k = (locals().get("x_client_key") or "").strip()
     except Exception:
+        try:
+            dbg["skipped_exception"] += 1
+        except Exception:
+            pass
         k = ""
 
     # Determine tier
@@ -5067,6 +5071,11 @@ def api_value_upcoming(
     # Get fixtures just like /predict/upcoming
     data = api_get("/fixtures", {"league": league, "season": season, "next": 50})
     fixtures = data.get("response", []) or []
+    # WM_VALUE_UPCOMING_COUNTER_INCREMENTS_V1
+    try:
+        dbg["upcoming_total"] = len(fixtures) if isinstance(fixtures, list) else 0
+    except Exception:
+        pass
     if not fixtures:
         cached_fixtures = cached_upcoming_fixtures(league, season)
         if cached_fixtures:
@@ -5095,6 +5104,30 @@ def api_value_upcoming(
     odds_calls = 0
 
     for pred in predictions:
+
+        # WM_VALUE_UPCOMING_COUNTER_INCREMENTS_V1
+
+        # classify odds presence very defensively
+
+        try:
+
+            _od = None
+
+            if isinstance(pred, dict):
+
+                _od = pred.get("bookmaker_odds") or pred.get("odds") or None
+
+            if _od:
+
+                dbg["with_odds_total"] += 1
+
+            else:
+
+                dbg["skipped_no_odds"] += 1
+
+        except Exception:
+
+            pass
         if odds_calls >= MAX_ODDS_CALLS:
             # We've already made enough /odds calls – stop here
             break
@@ -5196,7 +5229,11 @@ def api_value_upcoming(
         value_sides = []
         for s in ("home", "draw", "away"):
             v = evs_map.get(s)
-            if isinstance(v, (int, float)) and v >= float(min_edge):
+            if isinstance(v, (int, float)) and v >= float(min_edge):               try:
+                   dbg["scored_total"] += 1
+               except Exception:
+                   pass
+
                value_sides.append({"side": s, "ev": round(v, 4)})
 
         value_sides.sort(key=lambda x: x["ev"], reverse=True)
