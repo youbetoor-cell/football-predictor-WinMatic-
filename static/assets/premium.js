@@ -162,3 +162,110 @@
 
   window.WM_Premium = { getKey, openModal };
 })();
+
+
+/* WM_MATCH_MODAL_V1 - Match Details Modal (shared across Predictor/Value) */
+(function(){
+  function ensureModal(){
+    if (document.getElementById("wm-modal-overlay")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "wm-modal-overlay";
+    overlay.className = "wm-modal-overlay";
+    overlay.innerHTML = `
+      <div class="wm-modal-sheet" role="dialog" aria-modal="true" aria-label="Match details">
+        <button class="wm-modal-close" aria-label="Close">×</button>
+        <div class="wm-modal-body"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.classList.remove("is-open");
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector(".wm-modal-close").addEventListener("click", close);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  }
+
+  function pct(x){
+    if (typeof x !== "number") return "—";
+    return Math.round(x * 100) + "%";
+  }
+
+  function get(obj, ...paths){
+    for (const path of paths){
+      try{
+        let v = obj;
+        for (const k of path) v = v?.[k];
+        if (v !== undefined && v !== null) return v;
+      }catch(e){}
+    }
+    return undefined;
+  }
+
+  window.wmOpenMatchModal = function(fx, opts){
+    ensureModal();
+    opts = opts || {};
+
+    const overlay = document.getElementById("wm-modal-overlay");
+    const body = overlay.querySelector(".wm-modal-body");
+
+    const home = get(fx, ["home_name"], ["home"]) || "Home";
+    const away = get(fx, ["away_name"], ["away"]) || "Away";
+    const kickoff = get(fx, ["kickoff_utc"], ["kickoff"]) || "";
+
+    const probs = get(fx, ["model_probs"], ["predictions","model_probs"], ["predictions","probs"]) || {};
+    const odds  = get(fx, ["bookmaker_odds"], ["odds"]) || {};
+    const best  = get(fx, ["value_pick"], ["best_side"], ["best_pick"]) || "—";
+    const ev    = (get(fx, ["value_pick_ev"], ["best_edge"]) ?? (get(fx, ["evs", best]) ?? null));
+
+    const reasoning = get(fx, ["reasoning"], ["explanation"]) || "";
+    const locked = !!opts.locked;
+
+    body.innerHTML = `
+      <div class="wm-modal-head">
+        <div class="wm-modal-title">${home} <span>vs</span> ${away}</div>
+        <div class="wm-modal-sub">${kickoff}</div>
+      </div>
+
+      <div class="wm-modal-kpi">
+        <div class="wm-kpi">
+          <div class="wm-kpi-label">Best</div>
+          <div class="wm-kpi-val">${String(best).toUpperCase()}</div>
+        </div>
+        <div class="wm-kpi">
+          <div class="wm-kpi-label">EV</div>
+          <div class="wm-kpi-val">${(typeof ev === "number") ? ev.toFixed(3) : "—"}</div>
+        </div>
+      </div>
+
+      ${locked ? `
+        <div class="wm-modal-card">
+          <div class="wm-modal-card-title">Locked</div>
+          <div class="wm-modal-text">Upgrade to PRO/PREMIUM to view full value breakdown and all picks for this match.</div>
+        </div>
+      ` : `
+        <div class="wm-modal-card">
+          <div class="wm-modal-card-title">Model probabilities</div>
+          <div class="wm-modal-grid">
+            <div><div class="k">Home</div><div class="v">${pct(probs.home)}</div></div>
+            <div><div class="k">Draw</div><div class="v">${pct(probs.draw)}</div></div>
+            <div><div class="k">Away</div><div class="v">${pct(probs.away)}</div></div>
+          </div>
+        </div>
+
+        <div class="wm-modal-card">
+          <div class="wm-modal-card-title">Book odds</div>
+          <div class="wm-modal-grid">
+            <div><div class="k">Home</div><div class="v">${odds.home ?? "—"}</div></div>
+            <div><div class="k">Draw</div><div class="v">${odds.draw ?? "—"}</div></div>
+            <div><div class="k">Away</div><div class="v">${odds.away ?? "—"}</div></div>
+          </div>
+        </div>
+
+        ${reasoning ? `<div class="wm-modal-card"><div class="wm-modal-card-title">Reasoning</div><div class="wm-modal-text">${reasoning}</div></div>` : ``}
+      `}
+    `;
+
+    overlay.classList.add("is-open");
+  };
+})();
