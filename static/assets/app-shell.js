@@ -138,3 +138,24 @@
     addBottomNav();
   });
 })();
+
+
+/* WM_API_BASE_V1 - allow static site to call Render API when hosted elsewhere */
+(function(){
+  try{
+    const RENDER_API = "https://football-predictor-winmatic.onrender.com";
+    // If we're not on render, force absolute API base
+    const hostedOnRender = (location && location.hostname && location.hostname.includes("onrender.com"));
+    window.WM_API_BASE = hostedOnRender ? "" : RENDER_API;
+
+    const _fetch = window.fetch;
+    window.fetch = function(input, init){
+      try{
+        if (typeof input === "string" && input.startsWith("/") && window.WM_API_BASE){
+          input = window.WM_API_BASE + input;
+        }
+      }catch(e){}
+      return _fetch(input, init);
+    };
+  }catch(e){}
+})();
