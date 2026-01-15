@@ -1,44 +1,54 @@
-// Cloudflare Pages Function: proxy /api/* -> Render API
-// Route: /api/<anything>  =>  https://football-predictor-winmatic.onrender.com/<anything>
-
-const ORIGIN = "https://football-predictor-winmatic.onrender.com";
-
 export async function onRequest(context) {
+  const ORIGIN = "https://football-predictor-winmatic.onrender.com";
+
   const req = context.request;
-
-  // Build target URL
   const url = new URL(req.url);
-  const parts = context.params.catchall || [];
-  const path = Array.isArray(parts) ? parts.join("/") : String(parts || "");
-  const target = new URL(ORIGIN.replace(/\/$/, "") + "/" + path.replace(/^\//, ""));
-  target.search = url.search;
 
-  // Clone headers safely
+  // Strip "/api" prefix
+  let path = url.pathname;
+  if (path.startsWith("/api/")) path = path.slice(4);     // "/api" removed, keep "/..."
+  else if (path === "/api") path = "/";
+
+  const upstreamUrl = new URL(ORIGIN);
+  upstreamUrl.pathname = path;
+  upstreamUrl.search = url.search;
+
+  // Avoid accidental loops
+  if (upstreamUrl.origin === url.origin) {
+    return new Response("Proxy misconfigured (origin loop).", { status: 500 });
+  }
+
+  // Clone headers but drop hop-by-hop + host
   const headers = new Headers(req.headers);
   headers.delete("host");
-  headers.delete("cf-connecting-ip");
-  headers.delete("cf-ipcountry");
-  headers.delete("cf-ray");
-  headers.delete("x-forwarded-proto");
-  headers.delete("x-forwarded-for");
+  headers.delete("connection");
+  headers.delete("content-length");
 
-  // Create proxied request
   const init = {
     method: req.method,
     headers,
     redirect: "manual",
   };
 
-  // Only attach body for non-GET/HEAD
+  // Only forward body when it exists
   if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = await req.arrayBuffer();
+    init.body = req.body;
   }
 
-  const upstream = await fetch(target.toString(), init);
+  const upstream = await fetch(upstreamUrl.toString(), init);
 
-  // Pass response back
+  // Copy response headers, add CORS for browser, and disable caching for API
   const respHeaders = new Headers(upstream.headers);
+  respHeaders.set("access-control-allow-origin", "*");
+  respHeaders.set("access-control-allow-headers", "*");
+  respHeaders.set("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   respHeaders.set("cache-control", "no-store");
+  respHeaders.set("x-wm-pages-proxy", "1");
+
+  // Handle preflight fast
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: respHeaders });
+  }
 
   return new Response(upstream.body, {
     status: upstream.status,
