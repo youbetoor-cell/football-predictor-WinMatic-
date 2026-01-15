@@ -129,6 +129,29 @@
 
   // Attach X-Client-Key to same-origin requests + sniff value responses
   const _fetch = window.fetch.bind(window);
+
+// WM_API_BASE_V1 (Pages -> Render API)
+const WM_API_BASE = (window.WM_API_BASE || "").replace(/\/$/, "");
+
+function wmAbsUrl(input) {
+  try {
+    // fetch("/path")
+    if (typeof input === "string") {
+      if (WM_API_BASE && input.startsWith("/")) return WM_API_BASE + input;
+      return input;
+    }
+    // fetch(Request)
+    if (input && typeof input === "object" && input.url) {
+      const u = String(input.url);
+      // Only rewrite same-origin relative-style URLs (Pages)
+      if (WM_API_BASE && u.startsWith(location.origin + "/")) {
+        return WM_API_BASE + u.substring(location.origin.length);
+      }
+    }
+  } catch (e) {}
+  return input;
+}
+
   window.fetch = async function(input, init){
     let url = "";
     try { url = (typeof input === "string") ? input : (input && input.url) || ""; } catch {}
@@ -140,7 +163,7 @@
       init.headers["X-Client-Key"] = k;
     }
 
-    const resp = await _fetch(input, init);
+    const resp = await _fetch(wmAbsUrl(input), init);
 
     try {
       if (url.includes("/value-bets") || url.includes("/value/upcoming")) {
