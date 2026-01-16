@@ -17,7 +17,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (!leagueSelect || !dateInput || !loadBtn || !matchesContainer) {
     console.error("Predictor DOM not found");
     return;
-  }
 
   // Auto-set today
   if (!dateInput.value) {
@@ -130,7 +129,6 @@ function setLoading(isLoading) {
       confidenceText.textContent = "--%";
       confidenceDonut.style.setProperty("--confidence-deg", "0deg");
       return;
-    }
 
     let sum = 0;
     fixtures.forEach((fx) => {
@@ -160,7 +158,6 @@ function setLoading(isLoading) {
       )} • ${shortDateLabel(dateIso || (rangeInfo && rangeInfo.from))}`;
       updateConfidence([]);
       return;
-    }
 
     const labelDate = dateIso || (rangeInfo && rangeInfo.from) || fixtures[0].kickoff_utc;
 
@@ -258,8 +255,6 @@ function setLoading(isLoading) {
       // Fallback (should never happen)
       try { alert("Loading match details… please try again."); } catch (e) {}
       return;
-);
-      }
     });
 
     return card;
@@ -382,7 +377,6 @@ function setLoading(isLoading) {
       errorEl.style.display = "block";
       updateConfidence([]);
       return;
-    }
 
     renderMatches(data.fixtures || [], league, date, data.range);
   }
