@@ -248,8 +248,17 @@ function setLoading(isLoading) {
     // WM_PREDICTOR_MODAL_V1 - open modal instead of expanding cards
     card.addEventListener("click", (e) => {
       try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
-      if (window.wmOpenMatchModal) {
-        window.wmOpenMatchModal(fx, { locked: false });
+      // WM_PREDICTOR_MODAL_V2: modal-only; never expand
+      try {
+        if (window.wmOpenMatchModal && typeof window.wmOpenMatchModal === "function") {
+          window.wmOpenMatchModal(fx, { source: "predictor", locked: false });
+          return; // IMPORTANT: stop here so expand logic never runs
+        }
+      } catch (e) {}
+      // Fallback (should never happen)
+      try { alert("Loading match details… please try again."); } catch (e) {}
+      return;
+);
       }
     });
 
