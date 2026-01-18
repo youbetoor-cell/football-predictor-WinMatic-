@@ -121,3 +121,6 @@ static/.DS_Store
 static/.DS_Store
 .DS_Store
 static/.DS_Store
+
+# Cloudflare Pages limit (25MiB/file)
+backups/*.bundle
