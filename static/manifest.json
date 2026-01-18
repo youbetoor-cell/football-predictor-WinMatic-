@@ -2,21 +2,21 @@
   "name": "WinMatic Football Predictor",
   "short_name": "WinMatic",
   "description": "Premium football predictions, value bets, and performance analytics.",
-  "start_url": "/static/index.html",
-  "scope": "/static/",
+  "start_url": "/index.html",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#050b18",
   "theme_color": "#050b18",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/static/icons/icon.svg",
+      "src": "/icons/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/static/icons/maskable.svg",
+      "src": "/icons/maskable.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "maskable"
