@@ -24,7 +24,7 @@
 (() => {
   if (!(serviceWorker in navigator)) return;
   window.addEventListener(load, () => {
-    navigator.serviceWorker.register(/static/sw.js, { scope: /static/ })
+    navigator.serviceWorker.register(/static/s.js, { scope: /static/ })
       .catch(() => {});
   });
 })();
