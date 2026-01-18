@@ -20,11 +20,17 @@
 })();
 
 
-// --- PWA: service worker registration (static pages) ---
+// --- PWA: service worker registration (Render /static + Pages root-safe) ---
 (() => {
-  if (!(serviceWorker in navigator)) return;
-  window.addEventListener(load, () => {
-    navigator.serviceWorker.register(/static/s.js, { scope: /static/ })
-      .catch(() => {});
+  if (!("serviceWorker" in navigator)) return;
+
+  // Render serves pages under /static/*, Pages serves at root
+  const isStatic = (location.pathname || "").includes("/static/");
+  const swPath = isStatic ? "/static/sw.js" : "/sw.js";
+  const scope  = isStatic ? "/static/"    : "/";
+
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register(swPath, { scope }).catch(() => {});
   });
 })();
+
